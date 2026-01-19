@@ -88,6 +88,10 @@
         
         .loader { border: 4px solid #f3f3f3; border-radius: 50%; border-top: 4px solid var(--navy); width: 20px; height: 20px; -webkit-animation: spin 2s linear infinite; animation: spin 2s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* 수정 모드 테이블 스타일 */
+        .edit-table input { border: 1px solid #ddd; border-radius: 4px; padding: 5px; font-size: 0.85rem; width: 100%; box-sizing: border-box; }
+        .edit-table td { padding: 5px; }
     </style>
 </head>
 <body>
@@ -187,7 +191,7 @@
 
                     <div id="tab-edit" style="display:none;">
                         <div class="input-group">
-                            <label>랫드 ID 검색</label>
+                            <label>랫드 ID 검색 (모든 데이터 수정 가능)</label>
                             <div style="display:flex; gap:10px;"><input type="text" id="edit-id" placeholder="C1101"><button class="btn btn-blue btn-small" onclick="searchForEdit()">검색</button></div>
                         </div>
                         <div id="edit-result"></div>
@@ -246,10 +250,170 @@
             });
         }
         
-        async function searchForEdit() { const id=document.getElementById('edit-id').value; const res=document.getElementById('edit-result'); res.innerHTML="검색 중..."; const rSnap=await db.collection("rats").where("ratId","==",id).get(); if(rSnap.empty){res.innerHTML="해당 랫드가 없습니다.";return;} const ratDoc=rSnap.docs[0]; const rData=ratDoc.data(); const dSnap=await db.collection("dailyLogs").where("ratId","==",id).orderBy("date","desc").limit(3).get(); const mSnap=await db.collection("measurements").where("ratId","==",id).orderBy("date","desc").limit(3).get(); let html=`<div style="margin-top:15px; border-top:1px solid #eee; padding-top:10px;"><div class="edit-row"><span><b>기본 정보</b> (코호트/상태)</span><button class="btn-small" onclick="editRat('${ratDoc.id}','${rData.cohort}','${rData.status}')">수정</button></div><div style="font-size:0.8rem; color:#666;">${rData.cohort} / ${rData.status} / ${rData.arrivalDate}</div></div><h4 style="margin:15px 0 5px 0;">최근 데일리 로그</h4>`; dSnap.forEach(d=>{const v=d.data(); html+=`<div class="edit-row"><span style="font-size:0.8rem;">${v.date}: 점수 ${v.totalScore} (A:${v.scores.activity}, F:${v.scores.fur}, E:${v.scores.eye}) / ${v.note||'-'}</span><button class="btn-small" onclick="editDaily('${d.id}',${v.scores.activity},${v.scores.fur},${v.scores.eye},'${v.note}')">수정</button></div>`;}); html+=`<h4 style="margin:15px 0 5px 0;">최근 측정 기록</h4>`; mSnap.forEach(d=>{const v=d.data(); html+=`<div class="edit-row"><span style="font-size:0.8rem;">${v.date} (${v.timepoint}): BP ${v.sbp} / WT ${v.weight}</span><button class="btn-small" onclick="editMeas('${d.id}','${v.sbp}','${v.weight}','${v.date}')">수정</button></div>`;}); res.innerHTML=html; }
-        async function editDaily(did,a,f,e,n) { const na=prompt("Activity (1-5)",a), nf=prompt("Fur (1-5)",f), ne=prompt("Eye (1-5)",e), nn=prompt("Note",n); if(na&&nf&&ne){await db.collection("dailyLogs").doc(did).update({scores:{activity:Number(na),fur:Number(nf),eye:Number(ne)},totalScore:Number(na)+Number(nf)+Number(ne),note:nn}); alert("수정완료"); searchForEdit();} }
-        async function editRat(did,c,s) { const nc=prompt("새 코호트",c), ns=prompt("새 상태",s); if(nc&&ns){await db.collection("rats").doc(did).update({cohort:nc,status:ns}); alert("수정됨"); searchForEdit();} }
-        async function editMeas(did,s,w,d) { const nd=prompt("새 날짜 (YYYY-MM-DD)", d), ns=prompt("새 SBP",s), nw=prompt("새 Weight",w); if(nd&&ns&&nw){await db.collection("measurements").doc(did).update({date:nd, sbp:Number(ns),weight:Number(nw)}); alert("수정됨"); searchForEdit();} }
+        // [완전 개편] 통합 수정 기능
+        async function searchForEdit() { 
+            const id = document.getElementById('edit-id').value; 
+            const res = document.getElementById('edit-result'); 
+            res.innerHTML = "<div class='loader'></div> 데이터 불러오는 중..."; 
+            
+            try {
+                // 1. 랫드 정보
+                const rSnap = await db.collection("rats").where("ratId","==",id).get(); 
+                if(rSnap.empty){ res.innerHTML = "해당 랫드가 없습니다."; return; } 
+                const ratDoc = rSnap.docs[0]; 
+                const rData = ratDoc.data(); 
+
+                // 2. 모든 로그 불러오기
+                const dSnap = await db.collection("dailyLogs").where("ratId","==",id).orderBy("date","desc").get(); 
+                const mSnap = await db.collection("measurements").where("ratId","==",id).orderBy("date","desc").get();
+                const doseSnap = await db.collection("doseLogs").where("ratId","==",id).orderBy("date","desc").get();
+
+                let html = `
+                <div style="margin-top:20px; border-top:2px solid var(--navy); padding-top:15px;">
+                    <h4 style="color:var(--navy)">1. 기본 정보 수정</h4>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; background:#f5f5f5; padding:15px; border-radius:8px;">
+                        <input type="hidden" id="edit-rat-docid" value="${ratDoc.id}">
+                        <div><label>ID</label><input type="text" value="${rData.ratId}" readonly style="background:#ddd"></div>
+                        <div><label>상태</label><input type="text" id="edit-rat-status" value="${rData.status}"></div>
+                        <div><label>코호트</label><input type="text" id="edit-rat-cohort" value="${rData.cohort}"></div>
+                        <div><label>번호(Num)</label><input type="text" id="edit-rat-num" value="${rData.num}"></div>
+                        <div><label>반입일</label><input type="date" id="edit-rat-arrival" value="${rData.arrivalDate||''}"></div>
+                        <div><label>수술일</label><input type="date" id="edit-rat-surgery" value="${rData.surgeryDate||''}"></div>
+                        <div><label>사망일</label><input type="date" id="edit-rat-death" value="${rData.deathDate||''}"></div>
+                    </div>
+
+                    <h4 style="color:var(--navy); margin-top:20px;">2. 데일리 로그 수정</h4>
+                    <div style="overflow-x:auto;">
+                        <table class="edit-table">
+                            <tr><th>날짜</th><th>시간</th><th>A</th><th>F</th><th>E</th><th>메모</th></tr>
+                            ${dSnap.docs.map(doc => {
+                                const v = doc.data();
+                                return `
+                                <tr class="daily-row" data-id="${doc.id}">
+                                    <td><input type="date" class="ed-date" value="${v.date}"></td>
+                                    <td><input type="text" class="ed-time" value="${v.timestamp||''}" placeholder="시간"></td>
+                                    <td><input type="number" class="ed-act" value="${v.scores.activity}" style="width:40px"></td>
+                                    <td><input type="number" class="ed-fur" value="${v.scores.fur}" style="width:40px"></td>
+                                    <td><input type="number" class="ed-eye" value="${v.scores.eye}" style="width:40px"></td>
+                                    <td><input type="text" class="ed-note" value="${v.note||''}"></td>
+                                </tr>`;
+                            }).join('')}
+                        </table>
+                    </div>
+
+                    <h4 style="color:var(--navy); margin-top:20px;">3. 혈압/체중 수정</h4>
+                    <div style="overflow-x:auto;">
+                        <table class="edit-table">
+                            <tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT</th></tr>
+                            ${mSnap.docs.map(doc => {
+                                const v = doc.data();
+                                return `
+                                <tr class="meas-row" data-id="${doc.id}">
+                                    <td><input type="date" class="em-date" value="${v.date}"></td>
+                                    <td><input type="text" class="em-tp" value="${v.timepoint||''}"></td>
+                                    <td><input type="number" class="em-sbp" value="${v.sbp||''}"></td>
+                                    <td><input type="number" class="em-wt" value="${v.weight||''}"></td>
+                                </tr>`;
+                            }).join('')}
+                        </table>
+                    </div>
+
+                    <h4 style="color:var(--navy); margin-top:20px;">4. 투약 기록 수정</h4>
+                    <div style="overflow-x:auto;">
+                        <table class="edit-table">
+                            <tr><th>날짜</th><th>WT</th><th>Dose(mg)</th><th>Vol(ml)</th></tr>
+                            ${doseSnap.docs.map(doc => {
+                                const v = doc.data();
+                                return `
+                                <tr class="dose-row" data-id="${doc.id}">
+                                    <td><input type="date" class="edo-date" value="${v.date}"></td>
+                                    <td><input type="number" class="edo-wt" value="${v.weight}"></td>
+                                    <td><input type="number" class="edo-mg" value="${v.doseMg}"></td>
+                                    <td><input type="number" class="edo-vol" value="${v.volMl}"></td>
+                                </tr>`;
+                            }).join('')}
+                        </table>
+                    </div>
+
+                    <button class="btn btn-green" onclick="saveAllEdits()" style="margin-top:30px; font-size:1.2rem; position:sticky; bottom:20px; box-shadow:0 4px 12px rgba(0,0,0,0.3);">💾 일괄 저장 (Save All)</button>
+                </div>`;
+                
+                res.innerHTML = html;
+            } catch(e) {
+                console.error(e);
+                res.innerHTML = "데이터 로딩 실패";
+            }
+        }
+
+        // [신규] 일괄 저장 함수
+        async function saveAllEdits() {
+            if(!confirm("모든 변경사항을 저장하시겠습니까?")) return;
+
+            try {
+                const promises = [];
+
+                // 1. 랫드 정보 저장
+                const ratId = document.getElementById('edit-rat-docid').value;
+                promises.push(db.collection("rats").doc(ratId).update({
+                    status: document.getElementById('edit-rat-status').value,
+                    cohort: document.getElementById('edit-rat-cohort').value,
+                    num: document.getElementById('edit-rat-num').value,
+                    arrivalDate: document.getElementById('edit-rat-arrival').value,
+                    surgeryDate: document.getElementById('edit-rat-surgery').value,
+                    deathDate: document.getElementById('edit-rat-death').value
+                }));
+
+                // 2. 데일리 로그 저장
+                document.querySelectorAll('.daily-row').forEach(row => {
+                    const id = row.getAttribute('data-id');
+                    const date = row.querySelector('.ed-date').value;
+                    const time = row.querySelector('.ed-time').value;
+                    const act = Number(row.querySelector('.ed-act').value);
+                    const fur = Number(row.querySelector('.ed-fur').value);
+                    const eye = Number(row.querySelector('.ed-eye').value);
+                    const note = row.querySelector('.ed-note').value;
+                    const total = act + fur + eye;
+
+                    promises.push(db.collection("dailyLogs").doc(id).update({
+                        date: date,
+                        timestamp: time,
+                        scores: { activity: act, fur: fur, eye: eye },
+                        totalScore: total,
+                        note: note
+                    }));
+                });
+
+                // 3. 측정 기록 저장
+                document.querySelectorAll('.meas-row').forEach(row => {
+                    const id = row.getAttribute('data-id');
+                    promises.push(db.collection("measurements").doc(id).update({
+                        date: row.querySelector('.em-date').value,
+                        timepoint: row.querySelector('.em-tp').value,
+                        sbp: Number(row.querySelector('.em-sbp').value),
+                        weight: Number(row.querySelector('.em-wt').value)
+                    }));
+                });
+
+                // 4. 투약 기록 저장
+                document.querySelectorAll('.dose-row').forEach(row => {
+                    const id = row.getAttribute('data-id');
+                    promises.push(db.collection("doseLogs").doc(id).update({
+                        date: row.querySelector('.edo-date').value,
+                        weight: Number(row.querySelector('.edo-wt').value),
+                        doseMg: Number(row.querySelector('.edo-mg').value),
+                        volMl: Number(row.querySelector('.edo-vol').value)
+                    }));
+                });
+
+                await Promise.all(promises);
+                alert("모든 데이터가 성공적으로 저장되었습니다.");
+                searchForEdit(); // 새로고침
+
+            } catch(e) {
+                console.error(e);
+                alert("저장 중 오류가 발생했습니다: " + e.message);
+            }
+        }
 
         function uploadDailyLogs() {
             const fileInput = document.getElementById('daily-csv');
