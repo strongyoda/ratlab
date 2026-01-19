@@ -89,9 +89,17 @@
         .loader { border: 4px solid #f3f3f3; border-radius: 50%; border-top: 4px solid var(--navy); width: 20px; height: 20px; -webkit-animation: spin 2s linear infinite; animation: spin 2s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* 수정 모드 테이블 스타일 */
+        /* 수정 모드 스타일 */
         .edit-table input { border: 1px solid #ddd; border-radius: 4px; padding: 5px; font-size: 0.85rem; width: 100%; box-sizing: border-box; }
         .edit-table td { padding: 5px; }
+        .deleted-row { background-color: #ffebee !important; opacity: 0.5; text-decoration: line-through; }
+        .del-btn { background: var(--red); color: white; border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 0.7rem; }
+        .add-row-btn { background: var(--navy); color: white; border: none; border-radius: 4px; padding: 5px 15px; margin-top: 5px; cursor: pointer; font-size: 0.8rem; display: inline-flex; align-items: center; }
+        
+        /* 코호트 메모 스타일 */
+        .co-memo-box { display: inline-flex; align-items: center; margin-left: 10px; font-size: 0.9rem; color: #555; font-weight: normal; }
+        .co-memo-input { border: 1px solid #ccc; border-radius: 4px; padding: 2px 5px; width: 150px; font-size: 0.8rem; }
+        .edit-icon { font-size: 1rem; cursor: pointer; color: var(--blue); margin-left: 5px; vertical-align: middle; }
     </style>
 </head>
 <body>
@@ -191,7 +199,7 @@
 
                     <div id="tab-edit" style="display:none;">
                         <div class="input-group">
-                            <label>랫드 ID 검색 (모든 데이터 수정 가능)</label>
+                            <label>랫드 ID 검색 (전체 데이터 수정/추가/삭제)</label>
                             <div style="display:flex; gap:10px;"><input type="text" id="edit-id" placeholder="C1101"><button class="btn btn-blue btn-small" onclick="searchForEdit()">검색</button></div>
                         </div>
                         <div id="edit-result"></div>
@@ -218,7 +226,7 @@
                 const snap = await db.collection("rats").get();
                 const cohorts = new Set();
                 snap.forEach(d => cohorts.add(d.data().cohort));
-                const sorted = Array.from(cohorts).sort();
+                const sorted = Array.from(cohorts).sort((a,b)=>Number(b)-Number(a)); // 여기도 최신순
                 const sel = document.getElementById('co-num');
                 sel.innerHTML = '<option value="">선택하세요</option>';
                 sorted.forEach(c => {
@@ -250,20 +258,17 @@
             });
         }
         
-        // [완전 개편] 통합 수정 기능
         async function searchForEdit() { 
             const id = document.getElementById('edit-id').value; 
             const res = document.getElementById('edit-result'); 
             res.innerHTML = "<div class='loader'></div> 데이터 불러오는 중..."; 
             
             try {
-                // 1. 랫드 정보
                 const rSnap = await db.collection("rats").where("ratId","==",id).get(); 
                 if(rSnap.empty){ res.innerHTML = "해당 랫드가 없습니다."; return; } 
                 const ratDoc = rSnap.docs[0]; 
                 const rData = ratDoc.data(); 
 
-                // 2. 모든 로그 불러오기
                 const dSnap = await db.collection("dailyLogs").where("ratId","==",id).orderBy("date","desc").get(); 
                 const mSnap = await db.collection("measurements").where("ratId","==",id).orderBy("date","desc").get();
                 const doseSnap = await db.collection("doseLogs").where("ratId","==",id).orderBy("date","desc").get();
@@ -284,8 +289,8 @@
 
                     <h4 style="color:var(--navy); margin-top:20px;">2. 데일리 로그 수정</h4>
                     <div style="overflow-x:auto;">
-                        <table class="edit-table">
-                            <tr><th>날짜</th><th>시간</th><th>A</th><th>F</th><th>E</th><th>메모</th></tr>
+                        <table class="edit-table" id="daily-table">
+                            <tr><th>날짜</th><th>시간</th><th>A</th><th>F</th><th>E</th><th>메모</th><th>삭제</th></tr>
                             ${dSnap.docs.map(doc => {
                                 const v = doc.data();
                                 return `
@@ -296,15 +301,17 @@
                                     <td><input type="number" class="ed-fur" value="${v.scores.fur}" style="width:40px"></td>
                                     <td><input type="number" class="ed-eye" value="${v.scores.eye}" style="width:40px"></td>
                                     <td><input type="text" class="ed-note" value="${v.note||''}"></td>
+                                    <td><button class="del-btn" onclick="toggleDelete(this)">삭제</button></td>
                                 </tr>`;
                             }).join('')}
                         </table>
+                        <button class="add-row-btn" onclick="addEditRow('daily')">+ 행 추가</button>
                     </div>
 
                     <h4 style="color:var(--navy); margin-top:20px;">3. 혈압/체중 수정</h4>
                     <div style="overflow-x:auto;">
-                        <table class="edit-table">
-                            <tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT</th></tr>
+                        <table class="edit-table" id="meas-table">
+                            <tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT</th><th>삭제</th></tr>
                             ${mSnap.docs.map(doc => {
                                 const v = doc.data();
                                 return `
@@ -313,15 +320,17 @@
                                     <td><input type="text" class="em-tp" value="${v.timepoint||''}"></td>
                                     <td><input type="number" class="em-sbp" value="${v.sbp||''}"></td>
                                     <td><input type="number" class="em-wt" value="${v.weight||''}"></td>
+                                    <td><button class="del-btn" onclick="toggleDelete(this)">삭제</button></td>
                                 </tr>`;
                             }).join('')}
                         </table>
+                        <button class="add-row-btn" onclick="addEditRow('meas')">+ 행 추가</button>
                     </div>
 
                     <h4 style="color:var(--navy); margin-top:20px;">4. 투약 기록 수정</h4>
                     <div style="overflow-x:auto;">
-                        <table class="edit-table">
-                            <tr><th>날짜</th><th>WT</th><th>Dose(mg)</th><th>Vol(ml)</th></tr>
+                        <table class="edit-table" id="dose-table">
+                            <tr><th>날짜</th><th>WT</th><th>Dose(mg)</th><th>Vol(ml)</th><th>삭제</th></tr>
                             ${doseSnap.docs.map(doc => {
                                 const v = doc.data();
                                 return `
@@ -330,9 +339,11 @@
                                     <td><input type="number" class="edo-wt" value="${v.weight}"></td>
                                     <td><input type="number" class="edo-mg" value="${v.doseMg}"></td>
                                     <td><input type="number" class="edo-vol" value="${v.volMl}"></td>
+                                    <td><button class="del-btn" onclick="toggleDelete(this)">삭제</button></td>
                                 </tr>`;
                             }).join('')}
                         </table>
+                        <button class="add-row-btn" onclick="addEditRow('dose')">+ 행 추가</button>
                     </div>
 
                     <button class="btn btn-green" onclick="saveAllEdits()" style="margin-top:30px; font-size:1.2rem; position:sticky; bottom:20px; box-shadow:0 4px 12px rgba(0,0,0,0.3);">💾 일괄 저장 (Save All)</button>
@@ -345,16 +356,46 @@
             }
         }
 
-        // [신규] 일괄 저장 함수
+        // 행 추가 기능
+        function addEditRow(type) {
+            const table = document.getElementById(`${type}-table`);
+            const tr = document.createElement('tr');
+            tr.className = `${type}-row new-row`;
+            tr.setAttribute('data-id', 'new');
+            const today = new Date().toISOString().split('T')[0];
+
+            if(type === 'daily') {
+                tr.innerHTML = `<td><input type="date" class="ed-date" value="${today}"></td><td><input type="text" class="ed-time" placeholder="시간"></td><td><input type="number" class="ed-act" value="0" style="width:40px"></td><td><input type="number" class="ed-fur" value="0" style="width:40px"></td><td><input type="number" class="ed-eye" value="0" style="width:40px"></td><td><input type="text" class="ed-note"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+            } else if(type === 'meas') {
+                tr.innerHTML = `<td><input type="date" class="em-date" value="${today}"></td><td><input type="text" class="em-tp"></td><td><input type="number" class="em-sbp"></td><td><input type="number" class="em-wt"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+            } else if(type === 'dose') {
+                tr.innerHTML = `<td><input type="date" class="edo-date" value="${today}"></td><td><input type="number" class="edo-wt"></td><td><input type="number" class="edo-mg"></td><td><input type="number" class="edo-vol"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+            }
+            table.appendChild(tr);
+        }
+
+        // 삭제 토글 기능
+        function toggleDelete(btn) {
+            const row = btn.closest('tr');
+            if(row.classList.contains('deleted-row')) {
+                row.classList.remove('deleted-row');
+                btn.innerText = '삭제';
+            } else {
+                row.classList.add('deleted-row');
+                btn.innerText = '복구';
+            }
+        }
+
         async function saveAllEdits() {
-            if(!confirm("모든 변경사항을 저장하시겠습니까?")) return;
+            if(!confirm("모든 변경사항을 저장하시겠습니까? (삭제된 항목은 복구 불가)")) return;
 
             try {
                 const promises = [];
+                const ratId = document.getElementById('edit-id').value;
+                const ratDocId = document.getElementById('edit-rat-docid').value;
 
                 // 1. 랫드 정보 저장
-                const ratId = document.getElementById('edit-rat-docid').value;
-                promises.push(db.collection("rats").doc(ratId).update({
+                promises.push(db.collection("rats").doc(ratDocId).update({
                     status: document.getElementById('edit-rat-status').value,
                     cohort: document.getElementById('edit-rat-cohort').value,
                     num: document.getElementById('edit-rat-num').value,
@@ -363,58 +404,175 @@
                     deathDate: document.getElementById('edit-rat-death').value
                 }));
 
-                // 2. 데일리 로그 저장
+                // 2. 데일리 로그 처리 (수정/삭제/추가)
                 document.querySelectorAll('.daily-row').forEach(row => {
                     const id = row.getAttribute('data-id');
-                    const date = row.querySelector('.ed-date').value;
-                    const time = row.querySelector('.ed-time').value;
-                    const act = Number(row.querySelector('.ed-act').value);
-                    const fur = Number(row.querySelector('.ed-fur').value);
-                    const eye = Number(row.querySelector('.ed-eye').value);
-                    const note = row.querySelector('.ed-note').value;
-                    const total = act + fur + eye;
-
-                    promises.push(db.collection("dailyLogs").doc(id).update({
-                        date: date,
-                        timestamp: time,
-                        scores: { activity: act, fur: fur, eye: eye },
-                        totalScore: total,
-                        note: note
-                    }));
+                    if(row.classList.contains('deleted-row') && id !== 'new') {
+                        promises.push(db.collection("dailyLogs").doc(id).delete());
+                    } else if (!row.classList.contains('deleted-row')) {
+                        const data = {
+                            ratId: ratId,
+                            date: row.querySelector('.ed-date').value,
+                            timestamp: row.querySelector('.ed-time').value,
+                            scores: { 
+                                activity: Number(row.querySelector('.ed-act').value), 
+                                fur: Number(row.querySelector('.ed-fur').value), 
+                                eye: Number(row.querySelector('.ed-eye').value) 
+                            },
+                            totalScore: Number(row.querySelector('.ed-act').value) + Number(row.querySelector('.ed-fur').value) + Number(row.querySelector('.ed-eye').value),
+                            note: row.querySelector('.ed-note').value
+                        };
+                        if(id === 'new') {
+                            data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+                            promises.push(db.collection("dailyLogs").add(data));
+                        } else {
+                            promises.push(db.collection("dailyLogs").doc(id).update(data));
+                        }
+                    }
                 });
 
-                // 3. 측정 기록 저장
+                // 3. 측정 기록 처리
                 document.querySelectorAll('.meas-row').forEach(row => {
                     const id = row.getAttribute('data-id');
-                    promises.push(db.collection("measurements").doc(id).update({
-                        date: row.querySelector('.em-date').value,
-                        timepoint: row.querySelector('.em-tp').value,
-                        sbp: Number(row.querySelector('.em-sbp').value),
-                        weight: Number(row.querySelector('.em-wt').value)
-                    }));
+                    if(row.classList.contains('deleted-row') && id !== 'new') {
+                        promises.push(db.collection("measurements").doc(id).delete());
+                    } else if (!row.classList.contains('deleted-row')) {
+                        const data = {
+                            ratId: ratId,
+                            date: row.querySelector('.em-date').value,
+                            timepoint: row.querySelector('.em-tp').value,
+                            sbp: Number(row.querySelector('.em-sbp').value),
+                            weight: Number(row.querySelector('.em-wt').value)
+                        };
+                        if(id === 'new') promises.push(db.collection("measurements").add(data));
+                        else promises.push(db.collection("measurements").doc(id).update(data));
+                    }
                 });
 
-                // 4. 투약 기록 저장
+                // 4. 투약 기록 처리
                 document.querySelectorAll('.dose-row').forEach(row => {
                     const id = row.getAttribute('data-id');
-                    promises.push(db.collection("doseLogs").doc(id).update({
-                        date: row.querySelector('.edo-date').value,
-                        weight: Number(row.querySelector('.edo-wt').value),
-                        doseMg: Number(row.querySelector('.edo-mg').value),
-                        volMl: Number(row.querySelector('.edo-vol').value)
-                    }));
+                    if(row.classList.contains('deleted-row') && id !== 'new') {
+                        promises.push(db.collection("doseLogs").doc(id).delete());
+                    } else if (!row.classList.contains('deleted-row')) {
+                        const data = {
+                            ratId: ratId,
+                            date: row.querySelector('.edo-date').value,
+                            weight: Number(row.querySelector('.edo-wt').value),
+                            doseMg: Number(row.querySelector('.edo-mg').value),
+                            volMl: Number(row.querySelector('.edo-vol').value)
+                        };
+                        if(id === 'new') promises.push(db.collection("doseLogs").add(data));
+                        else promises.push(db.collection("doseLogs").doc(id).update(data));
+                    }
                 });
 
                 await Promise.all(promises);
-                alert("모든 데이터가 성공적으로 저장되었습니다.");
+                alert("저장 완료!");
                 searchForEdit(); // 새로고침
 
             } catch(e) {
                 console.error(e);
-                alert("저장 중 오류가 발생했습니다: " + e.message);
+                alert("오류: " + e.message);
             }
         }
 
+        // [기능 2, 3] 대시보드 코호트 최신순 정렬 + 메모 기능
+        async function loadDashboard() { 
+            try { 
+                const snap = await db.collection("rats").orderBy("ratId").get(); 
+                if(snap.empty) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } 
+                
+                // 메모 가져오기
+                const memoSnap = await db.collection("cohortNotes").get();
+                const memos = {};
+                memoSnap.forEach(d => memos[d.id] = d.data().memo);
+
+                const grp = {}; 
+                snap.forEach(doc => { 
+                    const d = doc.data(); 
+                    if(!grp[d.cohort]) grp[d.cohort] = { rats: [], surg: d.surgeryDate || null }; 
+                    grp[d.cohort].rats.push(d); 
+                }); 
+                
+                let html = ''; 
+                // [정렬] 내림차순 정렬 (11 -> 10)
+                Object.keys(grp).sort((a,b) => Number(b) - Number(a)).forEach(c => { 
+                    let podTag = `<span style="font-size:0.8rem; color:#888;">수술전</span>`; 
+                    if(grp[c].surg) { 
+                        const pod = Math.floor((new Date() - new Date(grp[c].surg))/(1000*60*60*24)); 
+                        const w = Math.floor(pod/7), d=pod%7; 
+                        podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`; 
+                    } 
+                    
+                    // [메모 기능] UI 추가
+                    const currentMemo = memos[c] || "";
+                    const memoHtml = `
+                        <div class="co-memo-box">
+                            <span id="memo-txt-${c}" style="font-style:italic;">${currentMemo || '메모 없음'}</span>
+                            <input type="text" id="memo-inp-${c}" class="co-memo-input" value="${currentMemo}" style="display:none;">
+                            <i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i>
+                            <button id="memo-btn-${c}" class="btn-small btn-blue" style="display:none; margin-left:5px; padding:2px 8px;" onclick="saveCoMemo('${c}')">OK</button>
+                        </div>
+                    `;
+
+                    html += `<div class="card"><div class="cohort-header"><div style="display:flex; align-items:center;"><span style="font-weight:bold; font-size:1.1rem; color:var(--navy);">Cohort ${c}</span>${memoHtml}</div>${podTag}</div><div class="rat-grid">`; 
+                    grp[c].rats.forEach(r => { 
+                        let statusClass = 'rat-badge'; 
+                        if(r.status === '사망') statusClass += ' status-dead'; 
+                        else if(r.lastScore) { 
+                            if(r.lastScore >= 13) statusClass += ' status-normal'; 
+                            else if(r.lastScore >= 9) statusClass += ' status-mild'; 
+                            else statusClass += ' status-severe'; 
+                        } 
+                        html += `<div class="${statusClass}" onclick="goToDetail('${r.cohort}', '${r.num}')">${r.num}</div>`; 
+                    }); 
+                    html += `</div></div>`; 
+                }); 
+                document.getElementById('dash-container').innerHTML = html; 
+            } catch(e) { document.getElementById('dash-container').innerHTML = `<p style="color:red">${e.message}</p>`; } 
+        }
+
+        // 코호트 메모 관련 함수
+        function toggleCoMemo(c) {
+            const txt = document.getElementById(`memo-txt-${c}`);
+            const inp = document.getElementById(`memo-inp-${c}`);
+            const btn = document.getElementById(`memo-btn-${c}`);
+            if(inp.style.display === 'none') {
+                inp.style.display = 'inline-block';
+                btn.style.display = 'inline-block';
+                txt.style.display = 'none';
+            } else {
+                inp.style.display = 'none';
+                btn.style.display = 'none';
+                txt.style.display = 'inline';
+            }
+        }
+
+        async function saveCoMemo(c) {
+            const val = document.getElementById(`memo-inp-${c}`).value;
+            await db.collection("cohortNotes").doc(c).set({ memo: val }); // 코호트 메모 저장
+            document.getElementById(`memo-txt-${c}`).innerText = val || '메모 없음';
+            toggleCoMemo(c);
+        }
+
+        // ... [기존 함수들: deleteRat, deleteCohort, goToDetail 등 유지] ...
+        async function deleteRat() { const id=document.getElementById('del-id').value; if(!id||!confirm("삭제?"))return; (await db.collection("rats").where("ratId","==",id).get()).forEach(d=>d.ref.delete()); ["dailyLogs","doseLogs","measurements"].forEach(async c=>(await db.collection(c).where("ratId","==",id).get()).forEach(d=>d.ref.delete())); alert("삭제됨"); }
+        async function deleteCohort() { const c=document.getElementById('del-cohort').value; if(!c||!confirm("전체삭제?"))return; (await db.collection("rats").where("cohort","==",c).get()).forEach(d=>d.ref.delete()); alert("삭제됨(로그제외)"); } 
+        function goToDetail(c, r) { go('detail'); setTimeout(() => { document.getElementById('dt-c').value = c; document.getElementById('dt-r').value = r; mkId('dt'); loadDetailData(); }, 100); }
+        async function upSurg(did) { await db.collection("rats").doc(did).update({ surgeryDate: document.getElementById('surg-d').value }); alert("저장됨"); loadDetailData(); }
+        function score(k, n, btn) { btn.parentElement.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentScores[k] = n; const t = currentScores.act+currentScores.fur+currentScores.eye; document.getElementById('score-res').innerText=`총점: ${t}점`; }
+        function mkId(p) { const c=document.getElementById(`${p}-c`).value, r=document.getElementById(`${p}-r`).value; if(c&&r) document.getElementById(`${p}-id`).value = `C${c.padStart(2,'0')}${r.padStart(2,'0')}`; }
+        function calM() { const s=Number(document.getElementById('re-s').value), d=Number(document.getElementById('re-d').value); if(s&&d) document.getElementById('re-m').value = Math.round(d+(s-d)/3); }
+        async function saveBulk() { const c=document.getElementById('add-c').value, s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; for(let i=s; i<=e; i++) { await db.collection("rats").add({ratId:`C${c.padStart(2,'0')}${String(i).padStart(2,'0')}`, cohort:c, num:String(i), arrivalDate:d, status:'생존'}); } alert("완료"); }
+        function upDose() { const ns=document.getElementsByClassName('dn'), c=document.getElementById('ds-c').value; for(let i=0; i<ns.length; i++) document.getElementsByClassName('di')[i].innerText = (c&&ns[i].value)?`C${c.padStart(2,'0')}${ns[i].value.padStart(2,'0')}`:'-'; }
+        async function saveDose() { const c=document.getElementById('ds-c').value, ws=document.getElementsByClassName('dw'), is=document.getElementsByClassName('di'); let cnt=0, lH='<ul>', tMg=0; for(let i=0; i<ws.length; i++) { if(ws[i].value && is[i].innerText!=='-') { const w=Number(ws[i].value), mg=(w/1000)*4*1.15, vol=mg/2.5; tMg+=mg; cnt++; lH+=`<li>${is[i].innerText}: ${vol.toFixed(2)}ml</li>`; await db.collection("doseLogs").add({ratId:is[i].innerText, cohort:c, weight:w, doseMg:mg, volMl:vol, date:new Date().toISOString().split('T')[0]}); } } if(cnt) document.getElementById('dose-res').innerHTML=`완료 (총 ${tMg.toFixed(2)}mg)`; }
+        async function saveRec() { const id=document.getElementById('re-id').value; const s=await db.collection("rats").where("ratId","==",id).get(); if(s.empty) return alert("없는 랫드"); await db.collection("measurements").add({ratId:id, sbp:Number(document.getElementById('re-s').value), weight:Number(document.getElementById('re-w').value), date:document.getElementById('re-date').value, timepoint:document.getElementById('re-tp').value}); alert("저장됨"); }
+        function loadBP(e) { allBPData=[]; Array.from(e.target.files).forEach(f=>{ const r=new FileReader(); r.onload=()=>{ parseCSV(r.result, f.name); if(allBPData.length) analyzeBP(document.querySelector('input[name="bp-mode"]:checked').value); }; r.readAsText(f); }); }
+        function parseCSV(t,f) { const r=t.trim().split("\n").map(l=>l.split(",")), h=r.shift(), idx=n=>h.indexOf(n); r.forEach(l=>{ if(l.length>5) allBPData.push({file:f, time:l[idx("Time")], specimen:l[idx("Specimen Name")], sbp:Number(l[idx("Systolic")]), dbp:Number(l[idx("Diastolic")]), mean:Number(l[idx("Mean")]), accepted:l[idx("Accepted")]==="True", regular:l[idx("Regular Cycle")]==="True", vol:Number(l[12])}); }); }
+        function analyzeBP(m) { const out=document.getElementById('bp-out'); out.innerHTML=""; const grp={}; allBPData.forEach(d=>{ const id=d.specimen.match(/\(([^)]+)\)/)?.[1].trim()||d.specimen.trim(); if(!grp[id]) grp[id]={}; if(!grp[id][d.file]) grp[id][d.file]=[]; grp[id][d.file].push(d); }); Object.keys(grp).sort().forEach(id=>{ const box=document.createElement('div'); box.className='rat-box'; box.innerHTML=`<b>ID: ${id}</b>`; const t=document.createElement('table'); t.innerHTML=`<tr><th>File</th><th>n</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Log</th></tr>`; Object.entries(grp[id]).forEach(([f,rows],ix)=>{ const v=rows.filter(r=>r.accepted&&r.regular), sbps=v.map(r=>r.sbp), max=Math.max(...sbps), min=Math.min(...sbps); const pass=v.filter(r=>{if(r.sbp===max||r.sbp===min)return false; const d=r.sbp-r.dbp; if(m==="control"&&(d<20||d>60))return false; if(m==="induction"&&(d<25||d>80))return false; return true;}); const avg=k=>Math.floor(pass.reduce((a,b)=>a+b[k],0)/pass.length); const lid=`l_${id}_${ix}`; t.innerHTML+=`<tr><td>${f}</td><td>${pass.length}</td><td>${avg('sbp')}</td><td>${avg('dbp')}</td><td>${avg('mean')}</td><td><button class="toggle-btn" onclick="document.getElementById('${lid}').style.display=document.getElementById('${lid}').style.display==='none'?'table-row':'none'">보기</button></td></tr><tr id="${lid}" style="display:none;"><td colspan="6"><div style="font-size:0.8rem; background:#eee; padding:5px;">(상세 로그 생략)</div></td></tr>`; }); box.appendChild(t); out.appendChild(box); }); }
+        
+        // ... [기존 유지: uploadDailyLogs, loadCohortDetail, loadDetailData, saveDaily 등] ...
         function uploadDailyLogs() {
             const fileInput = document.getElementById('daily-csv');
             const status = document.getElementById('imp-status');
