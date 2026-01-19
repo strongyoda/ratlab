@@ -156,7 +156,6 @@
             ol.style.display = nav.classList.contains('open') ? 'block' : 'none';
         }
 
-        // [수정] 1. 코호트 분석: select 박스 생성 및 옵션 자동 로딩
         async function go(view) {
             const main = document.getElementById('content');
             if(document.getElementById('sidebar').classList.contains('open')) toggleMenu();
@@ -211,15 +210,11 @@
             }
 
             if(view === 'cohort') {
-                // [기능 1] 코호트 번호를 select로 변경
                 main.innerHTML = `<div class="card"><h3>📊 코호트 분석</h3><div style="display:flex; gap:10px;"><select id="co-num"><option value="">로딩 중...</option></select><button class="btn btn-blue btn-small" onclick="loadCohortDetail()">분석</button></div></div><div id="cohort-res"></div>`;
-                
-                // 코호트 목록 불러오기
                 const snap = await db.collection("rats").get();
                 const cohorts = new Set();
                 snap.forEach(d => cohorts.add(d.data().cohort));
                 const sorted = Array.from(cohorts).sort();
-                
                 const sel = document.getElementById('co-num');
                 sel.innerHTML = '<option value="">선택하세요</option>';
                 sorted.forEach(c => {
@@ -505,7 +500,6 @@
                     deathInfo = `<div class="info-item" style="color:var(--red); border:1px solid var(--red); background:#ffebee;"><b>사망: ${rat.deathDate||'날짜미상'}</b><br>POD ${dPod}</div>`;
                 }
 
-                // [기능 3] 수술일자 입력 라벨 추가
                 view.innerHTML = `
                     <div class="card"><div style="display:flex; justify-content:space-between;"><h3>${id}</h3><span style="color:${rat.status==='생존'?'green':'red'}">${rat.status}</span></div>
                     <div class="info-grid">
@@ -551,8 +545,7 @@
 
                 const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[], pColors=[];
 
-                // [기능 2] 상세 로그 표 생성
-                let tableHtml = `<table><tr><th>날짜</th><th>시간</th><th>Act</th><th>Fur</th><th>Eye</th><th>총점</th></tr>`;
+                let tableHtml = `<table><tr><th>날짜</th><th>시간</th><th>Act</th><th>Fur</th><th>Eye</th><th>총점</th><th>메모</th></tr>`;
                 
                 finalLogs.forEach(v => { 
                     dLab.push(v.cleanDate); 
@@ -570,7 +563,7 @@
                         pColors.push('#1a237e');
                     }
                     
-                    tableHtml += `<tr><td>${v.cleanDate}</td><td>${v.timestamp || '-'}</td><td>${v.scores.activity}</td><td>${v.scores.fur}</td><td>${v.scores.eye}</td><td>${v.totalScore}</td></tr>`;
+                    tableHtml += `<tr><td>${v.cleanDate}</td><td>${v.timestamp || '-'}</td><td>${v.scores.activity}</td><td>${v.scores.fur}</td><td>${v.scores.eye}</td><td>${v.totalScore}</td><td style="text-align:left; max-width:200px; white-space:normal;">${v.note || ''}</td></tr>`;
                 });
                 tableHtml += `</table>`;
                 document.getElementById('daily-detail-table').innerHTML = tableHtml;
