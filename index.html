@@ -198,7 +198,8 @@
                             <b>[CSV 파일 준비]</b><br>
                             가지고 계신 '설문지 응답' 파일을 그대로 선택하시면 됩니다.<br>
                             - 시스템이 자동으로 랫드가 없으면 <b>신규 등록</b>해줍니다.<br>
-                            - 이미 기록이 있으면 <b>중복 생성하지 않고 업데이트</b>합니다.
+                            - 이미 기록이 있으면 <b>중복 생성하지 않고 업데이트</b>합니다.<br>
+                            - 한글 깨짐 현상이 수정되었습니다.
                         </div>
                         <input type="file" id="daily-csv" accept=".csv" style="margin-bottom:10px;">
                         <button class="btn btn-green" onclick="uploadDailyLogs()">데일리 로그 업로드 시작</button>
@@ -238,7 +239,7 @@
         async function editRat(did,c,s) { const nc=prompt("새 코호트",c), ns=prompt("새 상태",s); if(nc&&ns){await db.collection("rats").doc(did).update({cohort:nc,status:ns}); alert("수정됨"); searchForEdit();} }
         async function editMeas(did,s,w,d) { const nd=prompt("새 날짜 (YYYY-MM-DD)", d), ns=prompt("새 SBP",s), nw=prompt("새 Weight",w); if(nd&&ns&&nw){await db.collection("measurements").doc(did).update({date:nd, sbp:Number(ns),weight:Number(nw)}); alert("수정됨"); searchForEdit();} }
 
-        // [최종 수정] 랫드 자동 생성 + 로그 중복 방지 기능 탑재
+        // [수정] 1. 한글 깨짐 방지(EUC-KR) 적용
         function uploadDailyLogs() {
             const fileInput = document.getElementById('daily-csv');
             const status = document.getElementById('imp-status');
@@ -289,26 +290,22 @@
                     try {
                         const total = dAct + dFur + dEye;
                         
-                        // [1] 랫드 존재 여부 확인 및 생성 (자동 등록 기능)
                         const ratQuery = await db.collection("rats").where("ratId", "==", dId).limit(1).get();
                         if(ratQuery.empty) {
-                            // 랫드가 없으면 생성
                             let cohort = dId.length >= 3 ? dId.substring(1, 3) : "00";
                             let num = dId.length >= 3 ? dId.substring(3) : "0";
                             await db.collection("rats").add({
                                 ratId: dId,
                                 cohort: cohort,
                                 num: num,
-                                arrivalDate: dDate, // 첫 로그 날짜를 반입일로 임시 지정
+                                arrivalDate: dDate, 
                                 status: '생존',
                                 lastScore: total
                             });
                         } else {
-                            // 있으면 점수만 업데이트
                             await ratQuery.docs[0].ref.update({ lastScore: total });
                         }
 
-                        // [2] 로그 중복 방지 (같은 날짜, 같은 ID의 로그가 있는지 확인)
                         const logQuery = await db.collection("dailyLogs")
                             .where("ratId", "==", dId)
                             .where("date", "==", dDate)
@@ -316,7 +313,6 @@
                             .get();
 
                         if(logQuery.empty) {
-                            // 로그가 없으면 새로 추가
                             await db.collection("dailyLogs").add({
                                 ratId: dId,
                                 date: dDate,
@@ -326,7 +322,6 @@
                                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
                             });
                         } else {
-                            // 로그가 이미 있으면 내용만 업데이트 (중복 생성 방지)
                             await logQuery.docs[0].ref.update({
                                 scores: { activity: dAct, fur: dFur, eye: dEye },
                                 totalScore: total,
@@ -346,7 +341,8 @@
                 alert("업로드 완료! (누락된 랫드 자동 등록됨)");
             };
             
-            reader.readAsText(file);
+            // 한글 CSV(엑셀 저장) 깨짐 방지를 위해 euc-kr로 읽기
+            reader.readAsText(file, 'euc-kr');
         }
 
         async function loadCohortDetail() {
@@ -510,7 +506,19 @@
                 const logs = await db.collection("dailyLogs").where("ratId", "==", id).orderBy("date").get();
                 const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[];
                 logs.forEach(d => { const v=d.data(); dLab.push(v.date.substr(5)); dVal.push(v.totalScore); if(v.note&&v.note.trim()){dNotes.push(v.note);pStyles.push('rectRot');pSizes.push(6);}else{dNotes.push(null);pStyles.push('circle');pSizes.push(3);} });
-                if(dVal.length) new Chart(document.getElementById('dailyChart'), { type:'line', data:{labels:dLab, datasets:[{label:'Score', data:dVal, borderColor:'#1a237e', pointStyle:pStyles, pointRadius:pSizes}]}, options:{maintainAspectRatio:false, plugins:{tooltip:{callbacks:{footer:(ti)=>dNotes[ti[0].dataIndex]?`📝 ${dNotes[ti[0].dataIndex]}`:''}}}} });
+                
+                // [수정] 3. 그래프 Y축 0~15 고정, 정수 단위
+                if(dVal.length) new Chart(document.getElementById('dailyChart'), { 
+                    type:'line', 
+                    data:{labels:dLab, datasets:[{label:'Score', data:dVal, borderColor:'#1a237e', pointStyle:pStyles, pointRadius:pSizes}]}, 
+                    options:{
+                        maintainAspectRatio:false, 
+                        scales: { 
+                            y: { min: 0, max: 15, ticks: { stepSize: 1 } } // Y축 고정
+                        },
+                        plugins:{tooltip:{callbacks:{footer:(ti)=>dNotes[ti[0].dataIndex]?`📝 ${dNotes[ti[0].dataIndex]}`:''}}}
+                    } 
+                });
 
                 const ms = await db.collection("measurements").where("ratId", "==", id).get();
                 const ds = await db.collection("doseLogs").where("ratId", "==", id).get();
@@ -535,10 +543,33 @@
             const dv = document.getElementById('dc-date').value;
             const snap = await db.collection("rats").where("ratId", "==", id).get();
             if(snap.empty) { alert("없는 랫드입니다."); return; }
+            
+            // [수정] 3. 사망 체크 시 점수 0점으로 강제 (그래프 0점 표시용)
+            if(document.getElementById('is-dead').checked) {
+                currentScores = { act: 0, fur: 0, eye: 0 };
+            }
+
             const total = currentScores.act + currentScores.fur + currentScores.eye;
-            await db.collection("dailyLogs").add({ratId: id, scores: currentScores, totalScore: total, note: document.getElementById('dc-note').value, date: dv, createdAt: firebase.firestore.FieldValue.serverTimestamp()});
+            
+            // [수정] 2. 수동 기록 시에도 '시간' 정보를 timestamp 필드에 저장
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('ko-KR');
+
+            await db.collection("dailyLogs").add({
+                ratId: id, 
+                scores: currentScores, 
+                totalScore: total, 
+                note: document.getElementById('dc-note').value, 
+                date: dv, 
+                timestamp: timeStr, // 시간 기록 추가
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
             await db.collection("rats").doc(snap.docs[0].id).update({ lastScore: total });
-            if(document.getElementById('is-dead').checked) await db.collection("rats").doc(snap.docs[0].id).update({ status: "사망", deathDate: dv }); 
+            
+            if(document.getElementById('is-dead').checked) {
+                await db.collection("rats").doc(snap.docs[0].id).update({ status: "사망", deathDate: dv }); 
+            }
             alert("저장 완료"); go('daily');
         }
 
