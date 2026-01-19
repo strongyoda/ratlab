@@ -239,7 +239,7 @@
         async function editRat(did,c,s) { const nc=prompt("새 코호트",c), ns=prompt("새 상태",s); if(nc&&ns){await db.collection("rats").doc(did).update({cohort:nc,status:ns}); alert("수정됨"); searchForEdit();} }
         async function editMeas(did,s,w,d) { const nd=prompt("새 날짜 (YYYY-MM-DD)", d), ns=prompt("새 SBP",s), nw=prompt("새 Weight",w); if(nd&&ns&&nw){await db.collection("measurements").doc(did).update({date:nd, sbp:Number(ns),weight:Number(nw)}); alert("수정됨"); searchForEdit();} }
 
-        // [수정] 1. 한글 깨짐 방지(EUC-KR) 적용
+        // [기존 유지] 한글 깨짐 방지(EUC-KR) 적용된 업로드 함수
         function uploadDailyLogs() {
             const fileInput = document.getElementById('daily-csv');
             const status = document.getElementById('imp-status');
@@ -341,7 +341,6 @@
                 alert("업로드 완료! (누락된 랫드 자동 등록됨)");
             };
             
-            // 한글 CSV(엑셀 저장) 깨짐 방지를 위해 euc-kr로 읽기
             reader.readAsText(file, 'euc-kr');
         }
 
@@ -504,19 +503,63 @@
                     <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`;
 
                 const logs = await db.collection("dailyLogs").where("ratId", "==", id).orderBy("date").get();
-                const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[];
-                logs.forEach(d => { const v=d.data(); dLab.push(v.date.substr(5)); dVal.push(v.totalScore); if(v.note&&v.note.trim()){dNotes.push(v.note);pStyles.push('rectRot');pSizes.push(6);}else{dNotes.push(null);pStyles.push('circle');pSizes.push(3);} });
+                const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[], pColors=[];
+
+                // [수정] 2. & 3. 데이터 포인트 색상 및 날짜 포맷 수정
+                logs.forEach(d => { 
+                    const v = d.data(); 
+                    
+                    // X축 날짜만 표시 (YYYY-MM-DD)
+                    dLab.push(v.date); 
+                    
+                    dVal.push(v.totalScore); 
+                    
+                    if(v.note && v.note.trim()) {
+                        dNotes.push(v.note);
+                        pStyles.push('rectRot');
+                        pSizes.push(8);         // 크기 키움
+                        pColors.push('#fdd835'); // 메모 있으면 노란색
+                    } else {
+                        dNotes.push(null);
+                        pStyles.push('circle');
+                        pSizes.push(3);
+                        pColors.push('#1a237e'); // 기본 남색
+                    } 
+                });
                 
-                // [수정] 3. 그래프 Y축 0~15 고정, 정수 단위
+                // [수정] 1. & 3. 그래프 최댓값 17, 메모 툴팁 줄바꿈
                 if(dVal.length) new Chart(document.getElementById('dailyChart'), { 
                     type:'line', 
-                    data:{labels:dLab, datasets:[{label:'Score', data:dVal, borderColor:'#1a237e', pointStyle:pStyles, pointRadius:pSizes}]}, 
+                    data:{
+                        labels: dLab, 
+                        datasets:[{
+                            label:'Score', 
+                            data: dVal, 
+                            borderColor:'#1a237e', 
+                            pointStyle: pStyles, 
+                            pointRadius: pSizes,
+                            pointBackgroundColor: pColors, // 포인트 배경색 (노랑/남색)
+                            pointBorderColor: pColors      // 포인트 테두리색
+                        }]
+                    }, 
                     options:{
                         maintainAspectRatio:false, 
                         scales: { 
-                            y: { min: 0, max: 15, ticks: { stepSize: 1 } } // Y축 고정
+                            y: { min: 0, max: 17, ticks: { stepSize: 1 } } // 최댓값 17 설정
                         },
-                        plugins:{tooltip:{callbacks:{footer:(ti)=>dNotes[ti[0].dataIndex]?`📝 ${dNotes[ti[0].dataIndex]}`:''}}}
+                        plugins:{
+                            tooltip:{
+                                callbacks:{
+                                    footer: (ti) => {
+                                        const n = dNotes[ti[0].dataIndex];
+                                        if(!n) return '';
+                                        // 긴 텍스트 줄바꿈 (20자마다)
+                                        const match = n.match(/.{1,20}/g);
+                                        return ['📝 메모:', ...match];
+                                    }
+                                }
+                            }
+                        }
                     } 
                 });
 
@@ -544,14 +587,11 @@
             const snap = await db.collection("rats").where("ratId", "==", id).get();
             if(snap.empty) { alert("없는 랫드입니다."); return; }
             
-            // [수정] 3. 사망 체크 시 점수 0점으로 강제 (그래프 0점 표시용)
             if(document.getElementById('is-dead').checked) {
                 currentScores = { act: 0, fur: 0, eye: 0 };
             }
 
             const total = currentScores.act + currentScores.fur + currentScores.eye;
-            
-            // [수정] 2. 수동 기록 시에도 '시간' 정보를 timestamp 필드에 저장
             const now = new Date();
             const timeStr = now.toLocaleTimeString('ko-KR');
 
@@ -561,7 +601,7 @@
                 totalScore: total, 
                 note: document.getElementById('dc-note').value, 
                 date: dv, 
-                timestamp: timeStr, // 시간 기록 추가
+                timestamp: timeStr, 
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
 
