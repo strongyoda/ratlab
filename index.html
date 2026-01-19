@@ -164,7 +164,6 @@
                 const pw = prompt("관리자 비밀번호를 입력하세요");
                 if(pw !== '1234') { alert("비밀번호 오류"); return; }
                 
-                // 일괄 등록(CSV) 화면 구성 (안내 문구 수정됨)
                 main.innerHTML = `
                 <div class="card">
                     <h3>🛠 데이터 관리</h3>
@@ -198,7 +197,8 @@
                         <div style="background:#e3f2fd; padding:15px; border-radius:8px; margin-bottom:15px; font-size:0.9rem;">
                             <b>[CSV 파일 준비]</b><br>
                             가지고 계신 '설문지 응답' 파일을 그대로 선택하시면 됩니다.<br>
-                            (시스템이 자동으로 날짜 포맷 변환 및 칸 밀림을 보정합니다)
+                            - 시스템이 자동으로 랫드가 없으면 <b>신규 등록</b>해줍니다.<br>
+                            - 이미 기록이 있으면 <b>중복 생성하지 않고 업데이트</b>합니다.
                         </div>
                         <input type="file" id="daily-csv" accept=".csv" style="margin-bottom:10px;">
                         <button class="btn btn-green" onclick="uploadDailyLogs()">데일리 로그 업로드 시작</button>
@@ -226,7 +226,6 @@
             else if(view === 'bp') { main.innerHTML = `<div class="card"><h3>BP 계산기</h3><div style="margin-bottom:15px;"><label><input type="radio" name="bp-mode" value="control" checked> Control</label><label style="margin-left:20px;"><input type="radio" name="bp-mode" value="induction"> Induction</label></div><input type="file" id="csv" multiple accept=".csv"> <div id="bp-out" style="margin-top:15px;"></div></div>`; document.getElementById('csv').addEventListener('change', loadBP); }
         }
 
-        // 데이터 관리 탭 전환
         function admTab(t) { 
             ['del','edit','imp'].forEach(x => {
                 document.getElementById(`adm-${x}`).className = (t===x ? 'tab active' : 'tab');
@@ -239,7 +238,7 @@
         async function editRat(did,c,s) { const nc=prompt("새 코호트",c), ns=prompt("새 상태",s); if(nc&&ns){await db.collection("rats").doc(did).update({cohort:nc,status:ns}); alert("수정됨"); searchForEdit();} }
         async function editMeas(did,s,w,d) { const nd=prompt("새 날짜 (YYYY-MM-DD)", d), ns=prompt("새 SBP",s), nw=prompt("새 Weight",w); if(nd&&ns&&nw){await db.collection("measurements").doc(did).update({date:nd, sbp:Number(ns),weight:Number(nw)}); alert("수정됨"); searchForEdit();} }
 
-        // [수정된 기능] 업로드 로직 개선 (날짜 파싱 및 컬럼 인덱스 자동 보정)
+        // [최종 수정] 랫드 자동 생성 + 로그 중복 방지 기능 탑재
         function uploadDailyLogs() {
             const fileInput = document.getElementById('daily-csv');
             const status = document.getElementById('imp-status');
@@ -266,7 +265,6 @@
                     const col = rows[i];
                     if(col.length < 5) continue; 
                     
-                    // 1. 날짜 파싱 ("2025. 12. 23 오후..." -> "2025-12-23")
                     let dDate = col[0].trim();
                     if(dDate.includes('.')) {
                         const parts = dDate.split('.');
@@ -282,10 +280,6 @@
                     const dAct = Number(col[2]);
                     const dFur = Number(col[3]);
                     const dEye = Number(col[4]);
-                    
-                    // 2. 컬럼 보정: 업로드하신 파일은 5번째에 Total이 있고, 6번째가 Note임
-                    // col[5] = Total (무시)
-                    // col[6] = Note
                     const dNote = (col.length > 6 && col[6]) ? col[6].trim() : "";
                     
                     if(!dId || !dDate || isNaN(dAct)) {
@@ -294,14 +288,51 @@
 
                     try {
                         const total = dAct + dFur + dEye;
-                        await db.collection("dailyLogs").add({
-                            ratId: dId,
-                            date: dDate,
-                            scores: { activity: dAct, fur: dFur, eye: dEye },
-                            totalScore: total,
-                            note: dNote,
-                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                        });
+                        
+                        // [1] 랫드 존재 여부 확인 및 생성 (자동 등록 기능)
+                        const ratQuery = await db.collection("rats").where("ratId", "==", dId).limit(1).get();
+                        if(ratQuery.empty) {
+                            // 랫드가 없으면 생성
+                            let cohort = dId.length >= 3 ? dId.substring(1, 3) : "00";
+                            let num = dId.length >= 3 ? dId.substring(3) : "0";
+                            await db.collection("rats").add({
+                                ratId: dId,
+                                cohort: cohort,
+                                num: num,
+                                arrivalDate: dDate, // 첫 로그 날짜를 반입일로 임시 지정
+                                status: '생존',
+                                lastScore: total
+                            });
+                        } else {
+                            // 있으면 점수만 업데이트
+                            await ratQuery.docs[0].ref.update({ lastScore: total });
+                        }
+
+                        // [2] 로그 중복 방지 (같은 날짜, 같은 ID의 로그가 있는지 확인)
+                        const logQuery = await db.collection("dailyLogs")
+                            .where("ratId", "==", dId)
+                            .where("date", "==", dDate)
+                            .limit(1)
+                            .get();
+
+                        if(logQuery.empty) {
+                            // 로그가 없으면 새로 추가
+                            await db.collection("dailyLogs").add({
+                                ratId: dId,
+                                date: dDate,
+                                scores: { activity: dAct, fur: dFur, eye: dEye },
+                                totalScore: total,
+                                note: dNote,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            // 로그가 이미 있으면 내용만 업데이트 (중복 생성 방지)
+                            await logQuery.docs[0].ref.update({
+                                scores: { activity: dAct, fur: dFur, eye: dEye },
+                                totalScore: total,
+                                note: dNote
+                            });
+                        }
                         
                         successCnt++;
                         if(successCnt % 10 === 0) status.innerText = `진행 중... (${successCnt}/${rows.length})`;
@@ -311,8 +342,8 @@
                         failCnt++;
                     }
                 }
-                status.innerText = `완료! 성공: ${successCnt}건, 실패/무시: ${failCnt}건`;
-                alert("업로드가 완료되었습니다.");
+                status.innerText = `완료! 처리됨: ${successCnt}건, 무시/실패: ${failCnt}건`;
+                alert("업로드 완료! (누락된 랫드 자동 등록됨)");
             };
             
             reader.readAsText(file);
