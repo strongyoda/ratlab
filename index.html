@@ -156,7 +156,8 @@
             ol.style.display = nav.classList.contains('open') ? 'block' : 'none';
         }
 
-        function go(view) {
+        // [수정] 1. 코호트 분석: select 박스 생성 및 옵션 자동 로딩
+        async function go(view) {
             const main = document.getElementById('content');
             if(document.getElementById('sidebar').classList.contains('open')) toggleMenu();
 
@@ -210,7 +211,23 @@
             }
 
             if(view === 'cohort') {
-                main.innerHTML = `<div class="card"><h3>📊 코호트 분석</h3><div style="display:flex; gap:10px;"><input type="number" id="co-num" placeholder="코호트 번호"><button class="btn btn-blue btn-small" onclick="loadCohortDetail()">분석</button></div></div><div id="cohort-res"></div>`;
+                // [기능 1] 코호트 번호를 select로 변경
+                main.innerHTML = `<div class="card"><h3>📊 코호트 분석</h3><div style="display:flex; gap:10px;"><select id="co-num"><option value="">로딩 중...</option></select><button class="btn btn-blue btn-small" onclick="loadCohortDetail()">분석</button></div></div><div id="cohort-res"></div>`;
+                
+                // 코호트 목록 불러오기
+                const snap = await db.collection("rats").get();
+                const cohorts = new Set();
+                snap.forEach(d => cohorts.add(d.data().cohort));
+                const sorted = Array.from(cohorts).sort();
+                
+                const sel = document.getElementById('co-num');
+                sel.innerHTML = '<option value="">선택하세요</option>';
+                sorted.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c;
+                    opt.innerText = `Cohort ${c}`;
+                    sel.appendChild(opt);
+                });
                 return;
             }
 
@@ -254,7 +271,7 @@
                 const text = e.target.result;
                 const rows = text.trim().split("\n").map(r => r.split(","));
                 
-                if(rows.length > 0) rows.shift(); // 헤더 제거
+                if(rows.length > 0) rows.shift(); 
                 
                 let successCnt = 0;
                 let failCnt = 0;
@@ -346,7 +363,7 @@
         async function loadCohortDetail() {
             const c = document.getElementById('co-num').value;
             const res = document.getElementById('cohort-res');
-            if(!c) return alert("코호트 번호 입력");
+            if(!c) return alert("코호트 선택 필요");
             res.innerHTML = "<p style='text-align:center'>분석 중...</p>";
 
             try {
@@ -488,6 +505,7 @@
                     deathInfo = `<div class="info-item" style="color:var(--red); border:1px solid var(--red); background:#ffebee;"><b>사망: ${rat.deathDate||'날짜미상'}</b><br>POD ${dPod}</div>`;
                 }
 
+                // [기능 3] 수술일자 입력 라벨 추가
                 view.innerHTML = `
                     <div class="card"><div style="display:flex; justify-content:space-between;"><h3>${id}</h3><span style="color:${rat.status==='생존'?'green':'red'}">${rat.status}</span></div>
                     <div class="info-grid">
@@ -495,13 +513,14 @@
                         <div class="info-item"><b>POD ${pod}</b><br>수술 후</div>
                         ${deathInfo}
                     </div>
-                    <div style="text-align:right;"><input type="date" id="surg-d" value="${rat.surgeryDate||''}"><button class="btn-small" onclick="upSurg('${docId}')">저장</button></div></div>
-                    <div class="card"><h4>데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div></div>
+                    <div style="text-align:right;"><label style="font-size:0.8rem; margin-right:5px;">수술일자 입력</label><input type="date" id="surg-d" value="${rat.surgeryDate||''}"><button class="btn-small" onclick="upSurg('${docId}')">저장</button></div></div>
+                    <div class="card"><h4>데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div>
+                    <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleDailyLog()">Detail ▼</button></div>
+                    <div id="daily-detail-table" style="display:none; margin-top:10px;"></div></div>
                     <div class="card"><h4>혈압/체중</h4><div class="chart-area"><canvas id="bpChart"></canvas></div></div>
                     <div class="card"><h4>투약 이력</h4><div id="dose-logs"></div></div>
                     <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`;
 
-                // [수정] 날짜 포맷 통일 및 정렬/중복제거 로직 적용
                 const logs = await db.collection("dailyLogs").where("ratId", "==", id).get();
                 
                 let processedLogs = [];
@@ -509,7 +528,6 @@
                     let v = doc.data();
                     let dStr = v.date.trim();
 
-                    // "YYYY. M. D" -> "YYYY-MM-DD" 변환
                     if(dStr.includes('.')) {
                         const parts = dStr.split('.').map(s => s.trim());
                         if(parts.length >= 3) {
@@ -523,10 +541,8 @@
                     processedLogs.push(v);
                 });
 
-                // 1. 날짜순 정렬
                 processedLogs.sort((a, b) => new Date(a.cleanDate) - new Date(b.cleanDate));
 
-                // 2. 날짜별 중복 제거 (가장 나중 데이터 유지)
                 const uniqueMap = {};
                 processedLogs.forEach(log => {
                     uniqueMap[log.cleanDate] = log;
@@ -535,8 +551,11 @@
 
                 const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[], pColors=[];
 
+                // [기능 2] 상세 로그 표 생성
+                let tableHtml = `<table><tr><th>날짜</th><th>시간</th><th>Act</th><th>Fur</th><th>Eye</th><th>총점</th></tr>`;
+                
                 finalLogs.forEach(v => { 
-                    dLab.push(v.cleanDate); // 날짜만 X축에 표시
+                    dLab.push(v.cleanDate); 
                     dVal.push(v.totalScore); 
                     
                     if(v.note && v.note.trim()) {
@@ -549,8 +568,12 @@
                         pStyles.push('circle');
                         pSizes.push(3);
                         pColors.push('#1a237e');
-                    } 
+                    }
+                    
+                    tableHtml += `<tr><td>${v.cleanDate}</td><td>${v.timestamp || '-'}</td><td>${v.scores.activity}</td><td>${v.scores.fur}</td><td>${v.scores.eye}</td><td>${v.totalScore}</td></tr>`;
                 });
+                tableHtml += `</table>`;
+                document.getElementById('daily-detail-table').innerHTML = tableHtml;
                 
                 if(dVal.length) new Chart(document.getElementById('dailyChart'), { 
                     type:'line', 
@@ -602,6 +625,11 @@
                 else document.getElementById('dose-logs').innerHTML='데이터 없음';
 
             } catch(e) { console.error(e); }
+        }
+
+        function toggleDailyLog() {
+            const t = document.getElementById('daily-detail-table');
+            t.style.display = t.style.display === 'none' ? 'block' : 'none';
         }
 
         async function saveDaily() {
