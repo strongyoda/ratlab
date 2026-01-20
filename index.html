@@ -324,7 +324,7 @@
                     <h4 style="color:var(--navy); margin-top:20px;">3. 혈압/체중 수정</h4>
                     <div style="overflow-x:auto;">
                         <table class="edit-table" id="meas-table">
-                            <tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT</th><th>삭제</th></tr>
+                            <tr><th>날짜</th><th>시점</th><th>SBP</th><th>DBP</th><th>Mean</th><th>WT</th><th>삭제</th></tr>
                             ${mSnap.docs.map(doc => {
                                 const v = doc.data();
                                 return `
@@ -332,6 +332,8 @@
                                     <td><input type="date" class="em-date" value="${v.date}"></td>
                                     <td><input type="text" class="em-tp" value="${v.timepoint||''}"></td>
                                     <td><input type="number" class="em-sbp" value="${v.sbp||''}"></td>
+                                    <td><input type="number" class="em-dbp" value="${v.dbp||''}"></td>
+                                    <td><input type="number" class="em-mean" value="${v.mean||''}"></td>
                                     <td><input type="number" class="em-wt" value="${v.weight||''}"></td>
                                     <td><button class="del-btn" onclick="toggleDelete(this)">삭제</button></td>
                                 </tr>`;
@@ -379,7 +381,8 @@
             if(type === 'daily') {
                 tr.innerHTML = `<td><input type="date" class="ed-date" value="${today}"></td><td><input type="text" class="ed-time" placeholder="시간"></td><td><input type="number" class="ed-act" value="0" style="width:40px"></td><td><input type="number" class="ed-fur" value="0" style="width:40px"></td><td><input type="number" class="ed-eye" value="0" style="width:40px"></td><td><input type="text" class="ed-note"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             } else if(type === 'meas') {
-                tr.innerHTML = `<td><input type="date" class="em-date" value="${today}"></td><td><input type="text" class="em-tp"></td><td><input type="number" class="em-sbp"></td><td><input type="number" class="em-wt"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+                // [수정] DBP, Mean 컬럼 추가
+                tr.innerHTML = `<td><input type="date" class="em-date" value="${today}"></td><td><input type="text" class="em-tp"></td><td><input type="number" class="em-sbp"></td><td><input type="number" class="em-dbp"></td><td><input type="number" class="em-mean"></td><td><input type="number" class="em-wt"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             } else if(type === 'dose') {
                 tr.innerHTML = `<td><input type="date" class="edo-date" value="${today}"></td><td><input type="number" class="edo-wt"></td><td><input type="number" class="edo-mg"></td><td><input type="number" class="edo-vol"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             }
@@ -450,6 +453,8 @@
                             date: row.querySelector('.em-date').value,
                             timepoint: row.querySelector('.em-tp').value,
                             sbp: Number(row.querySelector('.em-sbp').value),
+                            dbp: Number(row.querySelector('.em-dbp').value),
+                            mean: Number(row.querySelector('.em-mean').value),
                             weight: Number(row.querySelector('.em-wt').value)
                         };
                         if(id === 'new') promises.push(db.collection("measurements").add(data));
