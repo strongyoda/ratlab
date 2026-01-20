@@ -249,7 +249,6 @@
             else if(view === 'detail') { main.innerHTML = `<div class="card"><h3>랫드 상세</h3><div style="display:flex; gap:10px;"><input type="number" id="dt-c" placeholder="C" oninput="mkId('dt')"><input type="number" id="dt-r" placeholder="N" oninput="mkId('dt')"><button class="btn btn-blue btn-small" onclick="loadDetailData()">조회</button></div><input type="text" id="dt-id" readonly style="background:#eee; margin-top:10px;"></div><div id="detail-view"></div>`; }
             else if(view === 'daily') {
                 currentScores = { act: 0, fur: 0, eye: 0 };
-                // [수정] 날짜 KST 기본 적용
                 main.innerHTML = `<div class="card"><h3>데일리 체크</h3><div style="display:flex; gap:10px; margin-bottom:10px"><input type="number" id="dc-c" placeholder="C" oninput="mkId('dc')"><input type="number" id="dc-r" placeholder="N" oninput="mkId('dc')"></div><input type="text" id="dc-id" readonly style="background:#eee; margin-bottom:15px"><div class="input-group"><label>날짜</label><input type="date" id="dc-date"></div>${['act','fur','eye'].map(k => `<div class="input-group"><label>${k.toUpperCase()}</label><div class="rating-box">${[1,2,3,4,5].map(n => `<button class="rate-btn" onclick="score('${k}', ${n}, this)">${n}</button>`).join('')}</div></div>`).join('')}<div id="score-res" class="status-box">선택 필요</div><textarea id="dc-note" rows="2" placeholder="메모" style="margin-top:10px;"></textarea><div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div><button class="btn btn-green" onclick="saveDaily()" style="margin-top:15px;">저장</button></div>`;
                 document.getElementById('dc-date').value = getTodayStr();
             }
@@ -490,11 +489,12 @@
             }
         }
 
-        // [기능 1] spanGaps: true 추가 (빈 데이터 연결)
-        async function renderCohort(c, containerId) {
-            const res = document.getElementById(containerId);
-            res.innerHTML = "<p style='text-align:center'>로딩 중...</p>";
-            
+        async function loadCohortDetail() {
+            const c = document.getElementById('co-num').value;
+            const res = document.getElementById('cohort-res');
+            if(!c) return alert("코호트 선택 필요");
+            res.innerHTML = "<p style='text-align:center'>분석 중...</p>";
+
             try {
                 const rSnap = await db.collection("rats").where("cohort", "==", c).get();
                 if(rSnap.empty) { res.innerHTML = "데이터 없음"; return; }
@@ -540,8 +540,10 @@
                 if(deadRats.length > 0) {
                     html += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}마리)</h4>
                     <table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
+                    
                     const deathByPod = {};
                     let maxPod = 0;
+
                     deadRats.forEach(r => {
                         const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : '?';
                         html += `<tr><td>${r.ratId}</td><td>${r.deathDate||'-'}</td><td>POD ${pod}</td></tr>`;
@@ -551,7 +553,16 @@
                             if(pod > maxPod) maxPod = pod;
                         }
                     });
-                    html += `</table><div class="chart-area"><canvas id="survChart_${containerId}"></canvas></div></div>`;
+                    html += `</table><div class="chart-area"><canvas id="survChart"></canvas></div></div>`;
+                    
+                    var survLabels = [];
+                    var survData = [];
+                    let currentAlive = rats.length;
+                    for(let i=0; i<=maxPod; i++) {
+                        if(deathByPod[i]) currentAlive -= deathByPod[i];
+                        survLabels.push(`POD ${i}`);
+                        survData.push((currentAlive / rats.length) * 100);
+                    }
                 }
 
                 html += `<div class="card"><h4>🩸 혈압(SBP) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${timepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
@@ -567,7 +578,7 @@
                     avgSbpData.push(avg);
                     html += `<td>${avg||'-'}</td>`;
                 });
-                html += `</tr></table></div><div class="chart-area"><canvas id="coChartSbp_${containerId}"></canvas></div></div>`;
+                html += `</tr></table></div><div class="chart-area"><canvas id="coChartSbp"></canvas></div></div>`;
 
                 html += `<div class="card"><h4>⚖️ 체중(Weight) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${timepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => {
@@ -582,63 +593,28 @@
                     avgWtData.push(avg);
                     html += `<td>${avg||'-'}</td>`;
                 });
-                html += `</tr></table></div><div class="chart-area"><canvas id="coChartWt_${containerId}"></canvas></div></div>`;
+                html += `</tr></table></div><div class="chart-area"><canvas id="coChartWt"></canvas></div></div>`;
 
                 res.innerHTML = html;
 
-                if(document.getElementById(`coChartSbp_${containerId}`)) {
-                    new Chart(document.getElementById(`coChartSbp_${containerId}`), {
-                        type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg SBP', data: avgSbpData, borderColor: '#d32f2f', tension: 0.1, spanGaps: true }] },
-                        options: { maintainAspectRatio: false }
+                if(deadRats.length > 0 && typeof survLabels !== 'undefined') {
+                    new Chart(document.getElementById('survChart'), {
+                        type: 'line',
+                        data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor:'rgba(0,0,0,0.1)', fill: true, stepper: true }] },
+                        options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
                     });
                 }
-                if(document.getElementById(`coChartWt_${containerId}`)) {
-                    new Chart(document.getElementById(`coChartWt_${containerId}`), {
-                        type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1, spanGaps: true }] },
-                        options: { maintainAspectRatio: false }
-                    });
-                }
+                new Chart(document.getElementById('coChartSbp'), {
+                    type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg SBP', data: avgSbpData, borderColor: '#d32f2f', tension: 0.1 }] },
+                    options: { maintainAspectRatio: false }
+                });
+                new Chart(document.getElementById('coChartWt'), {
+                    // spanGaps: true 추가됨
+                    type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1, spanGaps: true }] },
+                    options: { maintainAspectRatio: false }
+                });
 
             } catch(e) { console.error(e); res.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
-        }
-
-        async function loadCohortDetail() {
-            const c = document.getElementById('co-num').value;
-            if(!c) return alert("코호트 선택 필요");
-            
-            const wrapper = document.getElementById('cohort-res');
-            wrapper.innerHTML = `
-                <div id="main-view-${c}"></div>
-                <div class="card" style="margin-top:20px; border-left:5px solid var(--orange);">
-                    <h4>🤝 다른 코호트와 비교하기</h4>
-                    <div style="display:flex; gap:10px;">
-                        <select id="comp-select-${c}"><option>로딩 중...</option></select>
-                        <button class="btn btn-blue btn-small" onclick="doCompare('${c}')">비교 (Load Below)</button>
-                    </div>
-                </div>
-                <div id="comp-view-${c}"></div>
-            `;
-            
-            const snap = await db.collection("rats").get();
-            const cohorts = new Set();
-            snap.forEach(d => cohorts.add(d.data().cohort));
-            const sorted = Array.from(cohorts).sort((a,b)=>Number(b)-Number(a));
-            const sel = document.getElementById(`comp-select-${c}`);
-            sel.innerHTML = '<option value="">선택하세요</option>';
-            sorted.forEach(co => {
-                const opt = document.createElement('option');
-                opt.value = co;
-                opt.innerText = `Cohort ${co}`;
-                sel.appendChild(opt);
-            });
-
-            await renderCohort(c, `main-view-${c}`);
-        }
-
-        async function doCompare(baseC) {
-            const compC = document.getElementById(`comp-select-${baseC}`).value;
-            if(!compC) return alert('비교할 코호트를 선택해주세요');
-            await renderCohort(compC, `comp-view-${baseC}`);
         }
 
         async function loadDetailData() {
@@ -726,36 +702,7 @@
                     mData.push({date:v.date, label:v.date.substr(5), sbp:null, wt:v.weight?v.weight:null}); 
                 });
                 mData.sort((a,b)=>new Date(a.date)-new Date(b.date));
-                
-                // [기능 2] 랫드 상세 그래프 축 고정
-                if(mData.length) new Chart(document.getElementById('bpChart'), { 
-                    type:'line', 
-                    data:{
-                        labels:mData.map(d=>d.label), 
-                        datasets:[
-                            {label:'SBP', data:mData.map(d=>d.sbp), borderColor:'#d32f2f', yAxisID:'y', spanGaps:true}, 
-                            {label:'WT', data:mData.map(d=>d.wt), borderColor:'#00c853', yAxisID:'y1', spanGaps:true}
-                        ]
-                    }, 
-                    options:{
-                        maintainAspectRatio:false, 
-                        scales:{
-                            y:{ // SBP
-                                position:'left',
-                                min: 50,
-                                max: 300,
-                                ticks: { stepSize: 50 }
-                            }, 
-                            y1:{ // Weight
-                                position:'right',
-                                min: 50,
-                                max: 450,
-                                ticks: { stepSize: 50 },
-                                grid: { drawOnChartArea: false } 
-                            }
-                        }
-                    } 
-                });
+                if(mData.length) new Chart(document.getElementById('bpChart'), { type:'line', data:{labels:mData.map(d=>d.label), datasets:[{label:'SBP', data:mData.map(d=>d.sbp), borderColor:'#d32f2f', yAxisID:'y', spanGaps:true}, {label:'WT', data:mData.map(d=>d.wt), borderColor:'#00c853', yAxisID:'y1', spanGaps:true}]}, options:{maintainAspectRatio:false, scales:{y:{position:'left'}, y1:{position:'right'}}} });
 
                 let bpTable = '<table><tr><th>날짜</th><th>시점</th><th>SBP</th><th>DBP</th><th>Mean</th><th>WT</th></tr>';
                 const sortedMs = ms.docs.map(d=>d.data()).sort((a,b)=>new Date(b.date)-new Date(a.date));
@@ -827,6 +774,7 @@
         function upDose() { const ns=document.getElementsByClassName('dn'), c=document.getElementById('ds-c').value; for(let i=0; i<ns.length; i++) document.getElementsByClassName('di')[i].innerText = (c&&ns[i].value)?`C${c.padStart(2,'0')}${ns[i].value.padStart(2,'0')}`:'-'; }
         async function saveDose() { const c=document.getElementById('ds-c').value, ws=document.getElementsByClassName('dw'), is=document.getElementsByClassName('di'); let cnt=0, lH='<ul>', tMg=0; for(let i=0; i<ws.length; i++) { if(ws[i].value && is[i].innerText!=='-') { const w=Number(ws[i].value), mg=(w/1000)*4*1.15, vol=mg/2.5; tMg+=mg; cnt++; lH+=`<li>${is[i].innerText}: ${vol.toFixed(2)}ml</li>`; await db.collection("doseLogs").add({ratId:is[i].innerText, cohort:c, weight:w, doseMg:mg, volMl:vol, date:new Date().toISOString().split('T')[0]}); } } if(cnt) document.getElementById('dose-res').innerHTML=`완료 (총 ${tMg.toFixed(2)}mg)`; }
         
+        // [수정된 saveRec] DBP, Mean도 저장
         async function saveRec() { 
             const id=document.getElementById('re-id').value; 
             const s=await db.collection("rats").where("ratId","==",id).get(); 
