@@ -95,7 +95,6 @@
         .del-btn { background: var(--red); color: white; border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 0.7rem; }
         .add-row-btn { background: var(--navy); color: white; border: none; border-radius: 4px; padding: 5px 15px; margin-top: 5px; cursor: pointer; font-size: 0.8rem; display: inline-flex; align-items: center; }
         
-        /* 코호트 메모 스타일 */
         .co-memo-box { display: inline-flex; align-items: center; margin-left: 10px; font-size: 0.9rem; color: #555; font-weight: normal; }
         .co-memo-input { border: 1px solid #ccc; border-radius: 4px; padding: 4px 5px; width: 160px; font-size: 0.85rem; }
         .edit-icon { font-size: 1.1rem; cursor: pointer; color: var(--blue); margin-left: 8px; vertical-align: middle; padding: 5px; }
@@ -152,7 +151,6 @@
         let currentScores = { act: 0, fur: 0, eye: 0 };
         let allBPData = [];
 
-        // [수정 2] ID 대소문자 무시 (toLowerCase 적용)
         function login() {
             const id = document.getElementById('uid').value;
             const pw = document.getElementById('upw').value;
@@ -163,7 +161,6 @@
             } else alert('로그인 실패');
         }
 
-        // [수정 3] 한국 시간(KST) 구하는 헬퍼 함수
         function getTodayStr() {
             const now = new Date();
             const offset = now.getTimezoneOffset() * 60000;
@@ -252,7 +249,6 @@
             else if(view === 'detail') { main.innerHTML = `<div class="card"><h3>랫드 상세</h3><div style="display:flex; gap:10px;"><input type="number" id="dt-c" placeholder="C" oninput="mkId('dt')"><input type="number" id="dt-r" placeholder="N" oninput="mkId('dt')"><button class="btn btn-blue btn-small" onclick="loadDetailData()">조회</button></div><input type="text" id="dt-id" readonly style="background:#eee; margin-top:10px;"></div><div id="detail-view"></div>`; }
             else if(view === 'daily') {
                 currentScores = { act: 0, fur: 0, eye: 0 };
-                // [수정 3] 날짜 KST 기본 적용
                 main.innerHTML = `<div class="card"><h3>데일리 체크</h3><div style="display:flex; gap:10px; margin-bottom:10px"><input type="number" id="dc-c" placeholder="C" oninput="mkId('dc')"><input type="number" id="dc-r" placeholder="N" oninput="mkId('dc')"></div><input type="text" id="dc-id" readonly style="background:#eee; margin-bottom:15px"><div class="input-group"><label>날짜</label><input type="date" id="dc-date"></div>${['act','fur','eye'].map(k => `<div class="input-group"><label>${k.toUpperCase()}</label><div class="rating-box">${[1,2,3,4,5].map(n => `<button class="rate-btn" onclick="score('${k}', ${n}, this)">${n}</button>`).join('')}</div></div>`).join('')}<div id="score-res" class="status-box">선택 필요</div><textarea id="dc-note" rows="2" placeholder="메모" style="margin-top:10px;"></textarea><div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div><button class="btn btn-green" onclick="saveDaily()" style="margin-top:15px;">저장</button></div>`;
                 document.getElementById('dc-date').value = getTodayStr();
             }
@@ -373,13 +369,12 @@
             }
         }
 
-        // [수정 3] 행 추가 시에도 오늘 날짜(KST) 자동 적용
         function addEditRow(type) {
             const table = document.getElementById(`${type}-table`);
             const tr = document.createElement('tr');
             tr.className = `${type}-row new-row`;
             tr.setAttribute('data-id', 'new');
-            const today = getTodayStr(); // KST 오늘 날짜
+            const today = getTodayStr(); 
 
             if(type === 'daily') {
                 tr.innerHTML = `<td><input type="date" class="ed-date" value="${today}"></td><td><input type="text" class="ed-time" placeholder="시간"></td><td><input type="number" class="ed-act" value="0" style="width:40px"></td><td><input type="number" class="ed-fur" value="0" style="width:40px"></td><td><input type="number" class="ed-eye" value="0" style="width:40px"></td><td><input type="text" class="ed-note"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
@@ -481,7 +476,7 @@
 
                 await Promise.all(promises);
                 alert("저장 완료!");
-                searchForEdit(); // 새로고침
+                searchForEdit(); 
 
             } catch(e) {
                 console.error(e);
@@ -489,7 +484,237 @@
             }
         }
 
-        // [복구] 지난번 누락됐던 랫드 상세 정보 함수 복구
+        function uploadDailyLogs() {
+            const fileInput = document.getElementById('daily-csv');
+            const status = document.getElementById('imp-status');
+            
+            if(fileInput.files.length === 0) { alert("파일을 선택해주세요."); return; }
+            
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            
+            status.innerHTML = '<span class="loader"></span> 업로드 준비 중...';
+
+            reader.onload = async function(e) {
+                const text = e.target.result;
+                const rows = text.trim().split("\n").map(r => r.split(","));
+                
+                if(rows.length > 0) rows.shift(); 
+                
+                let successCnt = 0;
+                let failCnt = 0;
+                
+                status.innerText = `총 ${rows.length}개 데이터 처리 시작... (창을 닫지 마세요)`;
+                
+                for(let i=0; i<rows.length; i++) {
+                    const col = rows[i];
+                    if(col.length < 5) continue; 
+                    
+                    let dDate = col[0].trim();
+                    if(dDate.includes('.')) {
+                        const parts = dDate.split('.');
+                        if(parts.length >= 3) {
+                            const y = parts[0].trim();
+                            const m = parts[1].trim().padStart(2, '0');
+                            const d = parts[2].trim().padStart(2, '0');
+                            dDate = `${y}-${m}-${d}`;
+                        }
+                    }
+
+                    const dId = col[1].trim();
+                    const dAct = Number(col[2]);
+                    const dFur = Number(col[3]);
+                    const dEye = Number(col[4]);
+                    const dNote = (col.length > 6 && col[6]) ? col[6].trim() : "";
+                    
+                    if(!dId || !dDate || isNaN(dAct)) {
+                        failCnt++; continue;
+                    }
+
+                    try {
+                        const total = dAct + dFur + dEye;
+                        
+                        const ratQuery = await db.collection("rats").where("ratId", "==", dId).limit(1).get();
+                        if(ratQuery.empty) {
+                            let cohort = dId.length >= 3 ? dId.substring(1, 3) : "00";
+                            let num = dId.length >= 3 ? dId.substring(3) : "0";
+                            await db.collection("rats").add({
+                                ratId: dId,
+                                cohort: cohort,
+                                num: num,
+                                arrivalDate: dDate, 
+                                status: '생존',
+                                lastScore: total
+                            });
+                        } else {
+                            await ratQuery.docs[0].ref.update({ lastScore: total });
+                        }
+
+                        const logQuery = await db.collection("dailyLogs")
+                            .where("ratId", "==", dId)
+                            .where("date", "==", dDate)
+                            .limit(1)
+                            .get();
+
+                        if(logQuery.empty) {
+                            await db.collection("dailyLogs").add({
+                                ratId: dId,
+                                date: dDate,
+                                scores: { activity: dAct, fur: dFur, eye: dEye },
+                                totalScore: total,
+                                note: dNote,
+                                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                            });
+                        } else {
+                            await logQuery.docs[0].ref.update({
+                                scores: { activity: dAct, fur: dFur, eye: dEye },
+                                totalScore: total,
+                                note: dNote
+                            });
+                        }
+                        
+                        successCnt++;
+                        if(successCnt % 10 === 0) status.innerText = `진행 중... (${successCnt}/${rows.length})`;
+                        
+                    } catch(err) {
+                        console.error(err);
+                        failCnt++;
+                    }
+                }
+                status.innerText = `완료! 처리됨: ${successCnt}건, 무시/실패: ${failCnt}건`;
+                alert("업로드 완료! (누락된 랫드 자동 등록됨)");
+            };
+            
+            reader.readAsText(file, 'euc-kr');
+        }
+
+        async function loadCohortDetail() {
+            const c = document.getElementById('co-num').value;
+            const res = document.getElementById('cohort-res');
+            if(!c) return alert("코호트 선택 필요");
+            res.innerHTML = "<p style='text-align:center'>분석 중...</p>";
+
+            try {
+                const rSnap = await db.collection("rats").where("cohort", "==", c).get();
+                if(rSnap.empty) { res.innerHTML = "데이터 없음"; return; }
+
+                const rats = [];
+                const deadRats = [];
+                rSnap.forEach(d => {
+                    const r = d.data();
+                    rats.push(r);
+                    if(r.status === "사망") deadRats.push(r);
+                });
+                rats.sort((a,b) => a.ratId.localeCompare(b.ratId)); 
+
+                const ratIds = rats.map(r => r.ratId);
+                const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
+                const snapshots = await Promise.all(promises);
+
+                const timepoints = ["D00", "D0", "D2", "W1", "W4", "W12", "W20"];
+                const matrix = {}; 
+                ratIds.forEach(id => { matrix[id] = {}; timepoints.forEach(tp => matrix[id][tp] = { sbp: null, wt: null }); });
+
+                snapshots.forEach((snap, idx) => {
+                    const rid = ratIds[idx];
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        if (d.timepoint && timepoints.includes(d.timepoint)) {
+                            matrix[rid][d.timepoint] = { sbp: d.sbp, wt: d.weight };
+                        }
+                    });
+                });
+
+                const avgs = {}; 
+                timepoints.forEach(tp => avgs[tp] = { sCnt:0, sSum:0, wCnt:0, wSum:0 });
+                ratIds.forEach(id => {
+                    timepoints.forEach(tp => {
+                        const cell = matrix[id][tp];
+                        if(cell.sbp) { avgs[tp].sSum += cell.sbp; avgs[tp].sCnt++; }
+                        if(cell.wt) { avgs[tp].wSum += cell.wt; avgs[tp].wCnt++; }
+                    });
+                });
+
+                let html = '';
+                if(deadRats.length > 0) {
+                    html += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}마리)</h4>
+                    <table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
+                    
+                    const deathByPod = {};
+                    let maxPod = 0;
+
+                    deadRats.forEach(r => {
+                        const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : '?';
+                        html += `<tr><td>${r.ratId}</td><td>${r.deathDate||'-'}</td><td>POD ${pod}</td></tr>`;
+                        if(typeof pod === 'number') {
+                            if(!deathByPod[pod]) deathByPod[pod] = 0;
+                            deathByPod[pod]++;
+                            if(pod > maxPod) maxPod = pod;
+                        }
+                    });
+                    html += `</table><div class="chart-area"><canvas id="survChart"></canvas></div></div>`;
+                    
+                    var survLabels = [];
+                    var survData = [];
+                    let currentAlive = rats.length;
+                    for(let i=0; i<=maxPod; i++) {
+                        if(deathByPod[i]) currentAlive -= deathByPod[i];
+                        survLabels.push(`POD ${i}`);
+                        survData.push((currentAlive / rats.length) * 100);
+                    }
+                }
+
+                html += `<div class="card"><h4>🩸 혈압(SBP) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${timepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+                ratIds.forEach(id => {
+                    html += `<tr><td>${id}</td>`;
+                    timepoints.forEach(tp => { html += `<td>${matrix[id][tp].sbp || '-'}</td>`; });
+                    html += `</tr>`;
+                });
+                html += `<tr style="background:#e3f2fd; font-weight:bold;"><td>AVG</td>`;
+                const avgSbpData = [];
+                timepoints.forEach(tp => {
+                    const avg = avgs[tp].sCnt ? Math.round(avgs[tp].sSum / avgs[tp].sCnt) : null;
+                    avgSbpData.push(avg);
+                    html += `<td>${avg||'-'}</td>`;
+                });
+                html += `</tr></table></div><div class="chart-area"><canvas id="coChartSbp"></canvas></div></div>`;
+
+                html += `<div class="card"><h4>⚖️ 체중(Weight) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${timepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+                ratIds.forEach(id => {
+                    html += `<tr><td>${id}</td>`;
+                    timepoints.forEach(tp => { html += `<td>${matrix[id][tp].wt || '-'}</td>`; });
+                    html += `</tr>`;
+                });
+                html += `<tr style="background:#e8f5e9; font-weight:bold;"><td>AVG</td>`;
+                const avgWtData = [];
+                timepoints.forEach(tp => {
+                    const avg = avgs[tp].wCnt ? (avgs[tp].wSum / avgs[tp].wCnt).toFixed(1) : null;
+                    avgWtData.push(avg);
+                    html += `<td>${avg||'-'}</td>`;
+                });
+                html += `</tr></table></div><div class="chart-area"><canvas id="coChartWt"></canvas></div></div>`;
+
+                res.innerHTML = html;
+
+                if(deadRats.length > 0 && typeof survLabels !== 'undefined') {
+                    new Chart(document.getElementById('survChart'), {
+                        type: 'line',
+                        data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor:'rgba(0,0,0,0.1)', fill: true, stepper: true }] },
+                        options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
+                    });
+                }
+                new Chart(document.getElementById('coChartSbp'), {
+                    type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg SBP', data: avgSbpData, borderColor: '#d32f2f', tension: 0.1 }] },
+                    options: { maintainAspectRatio: false }
+                });
+                new Chart(document.getElementById('coChartWt'), {
+                    type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1 }] },
+                    options: { maintainAspectRatio: false }
+                });
+
+            } catch(e) { console.error(e); res.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
+        }
+
         async function loadDetailData() {
             const id = document.getElementById('dt-id').value;
             const view = document.getElementById('detail-view');
@@ -633,60 +858,45 @@
             t.style.display = t.style.display === 'none' ? 'block' : 'none';
         }
 
-        // [수정 1] 코호트 메모 기능 (UI 및 저장)
-        async function loadDashboard() { 
-            try { 
-                const snap = await db.collection("rats").orderBy("ratId").get(); 
-                if(snap.empty) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } 
-                
-                const memoSnap = await db.collection("cohortNotes").get();
-                const memos = {};
-                memoSnap.forEach(d => memos[d.id] = d.data().memo);
+        async function saveDaily() {
+            const id = document.getElementById('dc-id').value;
+            const dv = document.getElementById('dc-date').value;
+            const snap = await db.collection("rats").where("ratId", "==", id).get();
+            if(snap.empty) { alert("없는 랫드입니다."); return; }
+            
+            if(document.getElementById('is-dead').checked) {
+                currentScores = { act: 0, fur: 0, eye: 0 };
+            }
 
-                const grp = {}; 
-                snap.forEach(doc => { 
-                    const d = doc.data(); 
-                    if(!grp[d.cohort]) grp[d.cohort] = { rats: [], surg: d.surgeryDate || null }; 
-                    grp[d.cohort].rats.push(d); 
-                }); 
-                
-                let html = ''; 
-                Object.keys(grp).sort((a,b) => Number(b) - Number(a)).forEach(c => { 
-                    let podTag = `<span style="font-size:0.8rem; color:#888;">수술전</span>`; 
-                    if(grp[c].surg) { 
-                        const pod = Math.floor((new Date() - new Date(grp[c].surg))/(1000*60*60*24)); 
-                        const w = Math.floor(pod/7), d=pod%7; 
-                        podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`; 
-                    } 
-                    
-                    const currentMemo = memos[c] || "";
-                    const memoHtml = `
-                        <div class="co-memo-box">
-                            <i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i>
-                            <span id="memo-txt-${c}" class="memo-text">${currentMemo || ''}</span>
-                            <div id="memo-edit-area-${c}" style="display:none;">
-                                <input type="text" id="memo-inp-${c}" class="co-memo-input" value="${currentMemo}">
-                                <button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button>
-                            </div>
-                        </div>
-                    `;
+            const total = currentScores.act + currentScores.fur + currentScores.eye;
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('ko-KR');
 
-                    html += `<div class="card"><div class="cohort-header"><div style="display:flex; align-items:center;"><span style="font-weight:bold; font-size:1.1rem; color:var(--navy);">Cohort ${c}</span>${memoHtml}</div>${podTag}</div><div class="rat-grid">`; 
-                    grp[c].rats.forEach(r => { 
-                        let statusClass = 'rat-badge'; 
-                        if(r.status === '사망') statusClass += ' status-dead'; 
-                        else if(r.lastScore) { 
-                            if(r.lastScore >= 13) statusClass += ' status-normal'; 
-                            else if(r.lastScore >= 9) statusClass += ' status-mild'; 
-                            else statusClass += ' status-severe'; 
-                        } 
-                        html += `<div class="${statusClass}" onclick="goToDetail('${r.cohort}', '${r.num}')">${r.num}</div>`; 
-                    }); 
-                    html += `</div></div>`; 
-                }); 
-                document.getElementById('dash-container').innerHTML = html; 
-            } catch(e) { document.getElementById('dash-container').innerHTML = `<p style="color:red">${e.message}</p>`; } 
+            await db.collection("dailyLogs").add({
+                ratId: id, 
+                scores: currentScores, 
+                totalScore: total, 
+                note: document.getElementById('dc-note').value, 
+                date: dv, 
+                timestamp: timeStr, 
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+
+            await db.collection("rats").doc(snap.docs[0].id).update({ lastScore: total });
+            
+            if(document.getElementById('is-dead').checked) {
+                await db.collection("rats").doc(snap.docs[0].id).update({ status: "사망", deathDate: dv }); 
+            }
+            alert("저장 완료"); go('daily');
         }
+
+        async function loadDashboard() { try { const snap = await db.collection("rats").orderBy("ratId").get(); if(snap.empty) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } const grp = {}; snap.forEach(doc => { const d = doc.data(); if(!grp[d.cohort]) grp[d.cohort] = { rats: [], surg: d.surgeryDate || null }; grp[d.cohort].rats.push(d); }); let html = ''; Object.keys(grp).sort().forEach(c => { let podTag = `<span style="font-size:0.8rem; color:#888;">수술전</span>`; if(grp[c].surg) { const pod = Math.floor((new Date() - new Date(grp[c].surg))/(1000*60*60*24)); const w = Math.floor(pod/7), d=pod%7; podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`; } 
+        // 코호트 메모 불러오기
+        html += `<div class="card"><div class="cohort-header"><div style="display:flex; align-items:center;"><span style="font-weight:bold; font-size:1.1rem; color:var(--navy);">Cohort ${c}</span><div class="co-memo-box"><i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i><span id="memo-txt-${c}" class="memo-text"></span><div id="memo-edit-area-${c}" style="display:none;"><input type="text" id="memo-inp-${c}" class="co-memo-input"><button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button></div></div></div>${podTag}</div><div class="rat-grid">`; 
+        grp[c].rats.forEach(r => { let statusClass = 'rat-badge'; if(r.status === '사망') statusClass += ' status-dead'; else if(r.lastScore) { if(r.lastScore >= 13) statusClass += ' status-normal'; else if(r.lastScore >= 9) statusClass += ' status-mild'; else statusClass += ' status-severe'; } html += `<div class="${statusClass}" onclick="goToDetail('${r.cohort}', '${r.num}')">${r.num}</div>`; }); html += `</div></div>`; }); document.getElementById('dash-container').innerHTML = html; 
+        // 메모 값 채우기
+        const memoSnap = await db.collection("cohortNotes").get(); memoSnap.forEach(d => { const el = document.getElementById(`memo-txt-${d.id}`); if(el) { el.innerText = d.data().memo; document.getElementById(`memo-inp-${d.id}`).value = d.data().memo; } });
+        } catch(e) { document.getElementById('dash-container').innerHTML = `<p style="color:red">${e.message}</p>`; } }
 
         function toggleCoMemo(c) {
             const txt = document.getElementById(`memo-txt-${c}`);
