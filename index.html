@@ -489,13 +489,156 @@
             }
         }
 
+        // [복구] 지난번 누락됐던 랫드 상세 정보 함수 복구
+        async function loadDetailData() {
+            const id = document.getElementById('dt-id').value;
+            const view = document.getElementById('detail-view');
+            if(!id) return alert("입력 필요");
+            view.innerHTML = "로딩 중...";
+            try {
+                const rSnap = await db.collection("rats").where("ratId", "==", id).get();
+                if(rSnap.empty) { view.innerHTML = "등록되지 않음"; return; }
+                const rat = rSnap.docs[0].data();
+                const docId = rSnap.docs[0].id;
+                const pod = rat.surgeryDate ? Math.floor((new Date() - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
+                
+                let deathInfo = '';
+                if(rat.status === '사망') {
+                    const dPod = rat.surgeryDate && rat.deathDate ? Math.floor((new Date(rat.deathDate) - new Date(rat.surgeryDate))/(1000*60*60*24)) : '?';
+                    deathInfo = `<div class="info-item" style="color:var(--red); border:1px solid var(--red); background:#ffebee;"><b>사망: ${rat.deathDate||'날짜미상'}</b><br>POD ${dPod}</div>`;
+                }
+
+                view.innerHTML = `
+                    <div class="card"><div style="display:flex; justify-content:space-between;"><h3>${id}</h3><span style="color:${rat.status==='생존'?'green':'red'}">${rat.status}</span></div>
+                    <div class="info-grid">
+                        <div class="info-item"><b>D+${Math.floor((new Date() - new Date(rat.arrivalDate))/(1000*60*60*24))}</b><br>반입 후</div>
+                        <div class="info-item"><b>POD ${pod}</b><br>수술 후</div>
+                        ${deathInfo}
+                    </div>
+                    <div style="text-align:right;"><label style="font-size:0.8rem; margin-right:5px;">수술일자 입력</label><input type="date" id="surg-d" value="${rat.surgeryDate||''}"><button class="btn-small" onclick="upSurg('${docId}')">저장</button></div></div>
+                    <div class="card"><h4>데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div>
+                    <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleDailyLog()">Detail ▼</button></div>
+                    <div id="daily-detail-table" style="display:none; margin-top:10px;"></div></div>
+                    <div class="card"><h4>혈압/체중</h4><div class="chart-area"><canvas id="bpChart"></canvas></div></div>
+                    <div class="card"><h4>투약 이력</h4><div id="dose-logs"></div></div>
+                    <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`;
+
+                const logs = await db.collection("dailyLogs").where("ratId", "==", id).get();
+                
+                let processedLogs = [];
+                logs.forEach(doc => {
+                    let v = doc.data();
+                    let dStr = v.date.trim();
+
+                    if(dStr.includes('.')) {
+                        const parts = dStr.split('.').map(s => s.trim());
+                        if(parts.length >= 3) {
+                            const y = parts[0];
+                            const m = parts[1].padStart(2,'0');
+                            const d = parts[2].padStart(2,'0');
+                            dStr = `${y}-${m}-${d}`;
+                        }
+                    }
+                    v.cleanDate = dStr;
+                    processedLogs.push(v);
+                });
+
+                processedLogs.sort((a, b) => new Date(a.cleanDate) - new Date(b.cleanDate));
+
+                const uniqueMap = {};
+                processedLogs.forEach(log => {
+                    uniqueMap[log.cleanDate] = log;
+                });
+                const finalLogs = Object.values(uniqueMap).sort((a, b) => new Date(a.cleanDate) - new Date(b.cleanDate));
+
+                const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[], pColors=[];
+
+                let tableHtml = `<table><tr><th>날짜</th><th>시간</th><th>Act</th><th>Fur</th><th>Eye</th><th>총점</th><th>메모</th></tr>`;
+                
+                finalLogs.forEach(v => { 
+                    dLab.push(v.cleanDate); 
+                    dVal.push(v.totalScore); 
+                    
+                    if(v.note && v.note.trim()) {
+                        dNotes.push(v.note);
+                        pStyles.push('rectRot');
+                        pSizes.push(8);
+                        pColors.push('#fdd835');
+                    } else {
+                        dNotes.push(null);
+                        pStyles.push('circle');
+                        pSizes.push(3);
+                        pColors.push('#1a237e');
+                    }
+                    
+                    tableHtml += `<tr><td>${v.cleanDate}</td><td>${v.timestamp || '-'}</td><td>${v.scores.activity}</td><td>${v.scores.fur}</td><td>${v.scores.eye}</td><td>${v.totalScore}</td><td style="text-align:left; max-width:200px; white-space:normal;">${v.note || ''}</td></tr>`;
+                });
+                tableHtml += `</table>`;
+                document.getElementById('daily-detail-table').innerHTML = tableHtml;
+                
+                if(dVal.length) new Chart(document.getElementById('dailyChart'), { 
+                    type:'line', 
+                    data:{
+                        labels: dLab, 
+                        datasets:[{
+                            label:'Score', 
+                            data: dVal, 
+                            borderColor:'#1a237e', 
+                            pointStyle: pStyles, 
+                            pointRadius: pSizes,
+                            pointBackgroundColor: pColors, 
+                            pointBorderColor: pColors      
+                        }]
+                    }, 
+                    options:{
+                        maintainAspectRatio:false, 
+                        scales: { 
+                            y: { min: 0, max: 17, ticks: { stepSize: 1 } } 
+                        },
+                        plugins:{
+                            tooltip:{
+                                callbacks:{
+                                    footer: (ti) => {
+                                        const n = dNotes[ti[0].dataIndex];
+                                        if(!n) return '';
+                                        const match = n.match(/.{1,20}/g);
+                                        return ['📝 메모:', ...match];
+                                    }
+                                }
+                            }
+                        }
+                    } 
+                });
+
+                const ms = await db.collection("measurements").where("ratId", "==", id).get();
+                const ds = await db.collection("doseLogs").where("ratId", "==", id).get();
+                let mData = [];
+                ms.forEach(d=>{const v=d.data(); let l=v.date.substr(5); if(v.timepoint&&v.timepoint!=='Manual') l+=` (${v.timepoint})`; mData.push({date:v.date, label:l, sbp:v.sbp, wt:v.weight}); });
+                ds.forEach(d=>{const v=d.data(); mData.push({date:v.date, label:v.date.substr(5), sbp:null, wt:v.weight}); });
+                mData.sort((a,b)=>new Date(a.date)-new Date(b.date));
+                if(mData.length) new Chart(document.getElementById('bpChart'), { type:'line', data:{labels:mData.map(d=>d.label), datasets:[{label:'SBP', data:mData.map(d=>d.sbp), borderColor:'#d32f2f', yAxisID:'y', spanGaps:true}, {label:'WT', data:mData.map(d=>d.wt), borderColor:'#00c853', yAxisID:'y1', spanGaps:true}]}, options:{maintainAspectRatio:false, scales:{y:{position:'left'}, y1:{position:'right'}}} });
+
+                let rHtml='<table><tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT</th></tr>', dHtml='<table><tr><th>날짜</th><th>WT(g)</th><th>Drug(mg)</th><th>Vol(ml)</th></tr>';
+                ms.docs.sort((a,b)=>new Date(b.data().date)-new Date(a.data().date)).slice(0,5).forEach(d=>{const v=d.data(); rHtml+=`<tr><td>${v.date}</td><td>${v.timepoint}</td><td>${v.sbp||'-'}</td><td>${v.weight||'-'}</td></tr>`;});
+                document.getElementById('rec-logs').innerHTML = rHtml+'</table>';
+                const revDs = ds.docs.sort((a,b)=>new Date(b.data().date)-new Date(a.data().date));
+                if(revDs.length) { revDs.slice(0,5).forEach(d=>{const v=d.data(); const mg=v.doseMg?v.doseMg:((v.weight/1000)*4*1.15).toFixed(3); dHtml+=`<tr><td>${v.date}</td><td>${v.weight}</td><td>${Number(mg).toFixed(2)}</td><td>${v.volMl.toFixed(2)}</td></tr>`;}); document.getElementById('dose-logs').innerHTML=dHtml+'</table>'; }
+                else document.getElementById('dose-logs').innerHTML='데이터 없음';
+
+            } catch(e) { console.error(e); }
+        }
+
+        function toggleDailyLog() {
+            const t = document.getElementById('daily-detail-table');
+            t.style.display = t.style.display === 'none' ? 'block' : 'none';
+        }
+
         // [수정 1] 코호트 메모 기능 (UI 및 저장)
         async function loadDashboard() { 
             try { 
                 const snap = await db.collection("rats").orderBy("ratId").get(); 
                 if(snap.empty) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } 
                 
-                // 메모 데이터 가져오기
                 const memoSnap = await db.collection("cohortNotes").get();
                 const memos = {};
                 memoSnap.forEach(d => memos[d.id] = d.data().memo);
@@ -545,7 +688,6 @@
             } catch(e) { document.getElementById('dash-container').innerHTML = `<p style="color:red">${e.message}</p>`; } 
         }
 
-        // 코호트 메모 토글/저장 함수
         function toggleCoMemo(c) {
             const txt = document.getElementById(`memo-txt-${c}`);
             const area = document.getElementById(`memo-edit-area-${c}`);
