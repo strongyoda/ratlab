@@ -23,7 +23,16 @@
         .login-box { background: white; padding: 2rem; border-radius: 12px; width: 90%; max-width: 320px; text-align: center; }
         
         #main-app { display: none; }
-        header { background: white; height: 60px; display: flex; align-items: center; padding: 0 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: fixed; width: 100%; top: 0; z-index: 100; }
+        header { background: white; height: 60px; display: flex; align-items: center; padding: 0 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); position: fixed; width: 100%; top: 0; z-index: 100; box-sizing: border-box; }
+        
+        .menu-btn-box {
+            display: flex; align-items: center; cursor: pointer; 
+            background: #e8eaf6; padding: 8px 12px; border-radius: 8px; 
+            margin-right: 10px; transition: 0.2s;
+        }
+        .menu-btn-box:active { background: #c5cae9; }
+        .menu-btn-text { font-weight: bold; color: var(--navy); font-size: 0.9rem; margin-left: 5px; }
+
         nav { width: 260px; height: 100vh; background: var(--navy); position: fixed; top: 0; left: -260px; transition: 0.3s; z-index: 200; padding-top: 60px; }
         nav.open { left: 0; }
         .nav-item { display: flex; align-items: center; padding: 1rem 1.5rem; color: rgba(255,255,255,0.7); cursor: pointer; text-decoration: none; }
@@ -115,8 +124,11 @@
 
     <div id="main-app">
         <header>
-            <i class="material-icons" onclick="toggleMenu()" style="cursor:pointer; color:var(--navy)">menu</i>
-            <span style="margin-left:15px; font-weight:700; color:var(--navy);">RAT LAB MANAGER</span>
+            <div class="menu-btn-box" onclick="toggleMenu()">
+                <i class="material-icons" style="color:var(--navy)">menu</i>
+                <span class="menu-btn-text">MENU</span>
+            </div>
+            <span style="font-weight:700; color:var(--navy); font-size:1.1rem;">RAT LAB MANAGER</span>
         </header>
         <div id="overlay" onclick="toggleMenu()"></div>
 
@@ -381,7 +393,6 @@
             if(type === 'daily') {
                 tr.innerHTML = `<td><input type="date" class="ed-date" value="${today}"></td><td><input type="text" class="ed-time" placeholder="시간"></td><td><input type="number" class="ed-act" value="0" style="width:40px"></td><td><input type="number" class="ed-fur" value="0" style="width:40px"></td><td><input type="number" class="ed-eye" value="0" style="width:40px"></td><td><input type="text" class="ed-note"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             } else if(type === 'meas') {
-                // [수정] DBP, Mean 컬럼 추가
                 tr.innerHTML = `<td><input type="date" class="em-date" value="${today}"></td><td><input type="text" class="em-tp"></td><td><input type="number" class="em-sbp"></td><td><input type="number" class="em-dbp"></td><td><input type="number" class="em-mean"></td><td><input type="number" class="em-wt"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             } else if(type === 'dose') {
                 tr.innerHTML = `<td><input type="date" class="edo-date" value="${today}"></td><td><input type="number" class="edo-wt"></td><td><input type="number" class="edo-mg"></td><td><input type="number" class="edo-vol"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
@@ -609,7 +620,6 @@
                     options: { maintainAspectRatio: false }
                 });
                 new Chart(document.getElementById('coChartWt'), {
-                    // spanGaps: true 추가됨
                     type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1, spanGaps: true }] },
                     options: { maintainAspectRatio: false }
                 });
@@ -739,7 +749,11 @@
         const memoSnap = await db.collection("cohortNotes").get();
         const memos = {};
         memoSnap.forEach(d => memos[d.id] = d.data().memo);
-        const grp = {}; snap.forEach(doc => { const d = doc.data(); if(!grp[d.cohort]) grp[d.cohort] = { rats: [], surg: d.surgeryDate || null }; grp[d.cohort].rats.push(d); }); let html = ''; Object.keys(grp).sort((a,b)=>Number(b)-Number(a)).forEach(c => { let podTag = `<span style="font-size:0.8rem; color:#888;">수술전</span>`; if(grp[c].surg) { const pod = Math.floor((new Date() - new Date(grp[c].surg))/(1000*60*60*24)); const w = Math.floor(pod/7), d=pod%7; podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`; } 
+        const grp = {}; snap.forEach(doc => { const d = doc.data(); if(!grp[d.cohort]) grp[d.cohort] = { rats: [], surg: d.surgeryDate || null }; grp[d.cohort].rats.push(d); }); 
+        
+        let html = '<div style="width:100%; text-align:right; color:#666; font-size:0.85rem; margin-bottom:10px;"><i class="material-icons" style="font-size:1rem; vertical-align:text-bottom;">touch_app</i> 진행중인 코호트-rat번호를 누르시면 상세보기로 넘어갑니다.</div>'; 
+        
+        Object.keys(grp).sort((a,b)=>Number(b)-Number(a)).forEach(c => { let podTag = `<span style="font-size:0.8rem; color:#888;">수술전</span>`; if(grp[c].surg) { const pod = Math.floor((new Date() - new Date(grp[c].surg))/(1000*60*60*24)); const w = Math.floor(pod/7), d=pod%7; podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`; } 
         const currentMemo = memos[c] || "";
         const memoHtml = `<div class="co-memo-box"><i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i><span id="memo-txt-${c}" class="memo-text">${currentMemo || ''}</span><div id="memo-edit-area-${c}" style="display:none;"><input type="text" id="memo-inp-${c}" class="co-memo-input" value="${currentMemo}"><button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button></div></div>`;
         html += `<div class="card"><div class="cohort-header"><div style="display:flex; align-items:center;"><span style="font-weight:bold; font-size:1.1rem; color:var(--navy);">Cohort ${c}</span>${memoHtml}</div>${podTag}</div><div class="rat-grid">`; grp[c].rats.forEach(r => { let statusClass = 'rat-badge'; if(r.status === '사망') statusClass += ' status-dead'; else if(r.lastScore) { if(r.lastScore >= 13) statusClass += ' status-normal'; else if(r.lastScore >= 9) statusClass += ' status-mild'; else statusClass += ' status-severe'; } html += `<div class="${statusClass}" onclick="goToDetail('${r.cohort}', '${r.num}')">${r.num}</div>`; }); html += `</div></div>`; }); document.getElementById('dash-container').innerHTML = html; } catch(e) { document.getElementById('dash-container').innerHTML = `<p style="color:red">${e.message}</p>`; } }
@@ -772,9 +786,99 @@
         function calM() { const s=Number(document.getElementById('re-s').value), d=Number(document.getElementById('re-d').value); if(s&&d) document.getElementById('re-m').value = Math.round(d+(s-d)/3); }
         async function saveBulk() { const c=document.getElementById('add-c').value, s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; for(let i=s; i<=e; i++) { await db.collection("rats").add({ratId:`C${c.padStart(2,'0')}${String(i).padStart(2,'0')}`, cohort:c, num:String(i), arrivalDate:d, status:'생존'}); } alert("완료"); }
         function upDose() { const ns=document.getElementsByClassName('dn'), c=document.getElementById('ds-c').value; for(let i=0; i<ns.length; i++) document.getElementsByClassName('di')[i].innerText = (c&&ns[i].value)?`C${c.padStart(2,'0')}${ns[i].value.padStart(2,'0')}`:'-'; }
-        async function saveDose() { const c=document.getElementById('ds-c').value, ws=document.getElementsByClassName('dw'), is=document.getElementsByClassName('di'); let cnt=0, lH='<ul>', tMg=0; for(let i=0; i<ws.length; i++) { if(ws[i].value && is[i].innerText!=='-') { const w=Number(ws[i].value), mg=(w/1000)*4*1.15, vol=mg/2.5; tMg+=mg; cnt++; lH+=`<li>${is[i].innerText}: ${vol.toFixed(2)}ml</li>`; await db.collection("doseLogs").add({ratId:is[i].innerText, cohort:c, weight:w, doseMg:mg, volMl:vol, date:new Date().toISOString().split('T')[0]}); } } if(cnt) document.getElementById('dose-res').innerHTML=`완료 (총 ${tMg.toFixed(2)}mg)`; }
         
-        // [수정된 saveRec] DBP, Mean도 저장
+        // [수정: saveDaily 함수 추가]
+        async function saveDaily() {
+            const id = document.getElementById('dc-id').value;
+            const date = document.getElementById('dc-date').value;
+            if(!id || !date) return alert("ID와 날짜를 확인하세요");
+            
+            const note = document.getElementById('dc-note').value;
+            const dead = document.getElementById('is-dead').checked;
+            const total = currentScores.act + currentScores.fur + currentScores.eye;
+
+            if(currentScores.act === 0 && currentScores.fur === 0 && currentScores.eye === 0 && !dead) {
+                 if(!confirm("점수가 모두 0점입니다. 저장하시겠습니까?")) return;
+            }
+
+            try {
+                // 1. 로그 저장
+                await db.collection("dailyLogs").add({
+                    ratId: id,
+                    date: date,
+                    timestamp: new Date().toLocaleTimeString(),
+                    scores: { ...currentScores },
+                    totalScore: total,
+                    note: note,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // 2. 랫드 상태 업데이트 (사망 또는 점수 갱신)
+                const rSnap = await db.collection("rats").where("ratId", "==", id).get();
+                if(!rSnap.empty) {
+                    if(dead) {
+                        await rSnap.docs[0].ref.update({ status: '사망', deathDate: date });
+                    } else {
+                        await rSnap.docs[0].ref.update({ lastScore: total });
+                    }
+                }
+
+                alert("저장되었습니다.");
+                // 입력값 초기화
+                document.getElementById('dc-note').value = '';
+                document.getElementById('is-dead').checked = false;
+                // 점수 초기화는 UI 반영을 위해 유지하거나 리셋 가능 (여기서는 유지)
+            } catch(e) {
+                console.error(e);
+                alert("에러: " + e.message);
+            }
+        }
+
+        // [수정: 투약 계산기 결과 표시 수정]
+        async function saveDose() { 
+            const c=document.getElementById('ds-c').value;
+            const ws=document.getElementsByClassName('dw');
+            const is=document.getElementsByClassName('di'); 
+            let cnt=0, lH='<ul id="dose-list">', tMg=0; 
+            
+            try {
+                for(let i=0; i<ws.length; i++) { 
+                    if(ws[i].value && is[i].innerText!=='-') { 
+                        const w=Number(ws[i].value);
+                        const mg=(w/1000)*4*1.15; // 계산식
+                        const vol=mg/2.5;         // 계산식
+                        tMg+=mg; 
+                        cnt++; 
+                        // 리스트에 추가 (UI 표시용)
+                        lH+=`<li><span>${is[i].innerText} (${w}g)</span> <span style="color:var(--navy);"><b>${mg.toFixed(2)}mg</b> / ${vol.toFixed(2)}ml</span></li>`; 
+                        
+                        // DB 저장
+                        await db.collection("doseLogs").add({
+                            ratId:is[i].innerText, 
+                            cohort:c, 
+                            weight:w, 
+                            doseMg:mg, 
+                            volMl:vol, 
+                            date:new Date().toISOString().split('T')[0]
+                        }); 
+                    } 
+                }
+                lH += '</ul>';
+                
+                if(cnt) {
+                    const resBox = document.getElementById('dose-res');
+                    resBox.style.display = 'block'; // 숨김 해제
+                    resBox.innerHTML = `<h4>✅ 저장 및 계산 완료</h4>${lH}<div style="margin-top:10px; font-weight:bold; border-top:1px solid #ccc; padding-top:10px; text-align:right;">총 투약량: ${tMg.toFixed(2)}mg</div>`; 
+                    alert("저장되었습니다.");
+                } else {
+                    alert("입력된 체중 데이터가 없습니다.");
+                }
+            } catch(e) {
+                console.error(e);
+                alert("저장 중 오류 발생: " + e.message);
+            }
+        }
+        
         async function saveRec() { 
             const id=document.getElementById('re-id').value; 
             const s=await db.collection("rats").where("ratId","==",id).get(); 
