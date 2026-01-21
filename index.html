@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>Rat Lab Manager YDW</title>
+    <title>Rat Lab Manager Pro</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -77,6 +77,7 @@
         .chart-area { position: relative; height: 250px; width: 100%; margin-top: 20px; }
         .section-title { font-size: 1.1rem; font-weight: bold; color: var(--navy); margin-bottom: 15px; border-left: 4px solid var(--green); padding-left: 10px; }
 
+        /* General Table Styles */
         table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px; white-space: nowrap; }
         th, td { border: 1px solid #eee; padding: 8px; text-align: center; }
         th { background: #f8f9fa; }
@@ -91,10 +92,6 @@
         .edit-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
         .edit-row span { flex: 1; }
 
-        .rat-box { border-left: 6px solid var(--blue); padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-radius: 8px; background: white; }
-        .toggle-btn { background: var(--blue); color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
-        .log-table { width: 100%; font-size: 0.8rem; background: #f9f9f9; margin-top: 10px; }
-        
         .loader { border: 4px solid #f3f3f3; border-radius: 50%; border-top: 4px solid var(--navy); width: 20px; height: 20px; -webkit-animation: spin 2s linear infinite; animation: spin 2s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
@@ -113,6 +110,28 @@
         .mr-check-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: 20px; font-size: 0.8rem; background: #f1f3f5; padding: 4px 8px; border-radius: 6px; }
         .mr-check-group label { display: flex; align-items: center; cursor: pointer; margin-bottom: 0; color: #495057; font-weight: normal; }
         .mr-check-group input[type="checkbox"] { width: auto; margin: 0 3px 0 0; padding: 0; transform: scale(0.9); }
+
+        /* BP Calculator Specific CSS (From bp-calc.html) */
+        .bp-rat-box {
+            background: white; border: none; border-radius: 12px; padding: 20px;
+            margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-left: 6px solid #3498db;
+        }
+        .bp-rat-title {
+            font-size: 18px; color: #3498db; border-bottom: 1px solid #eee;
+            padding-bottom: 10px; margin-bottom: 15px; font-weight: bold;
+        }
+        .bp-toggle-btn {
+            background: #3498db; color: white; border: none; padding: 5px 12px;
+            border-radius: 4px; font-size: 12px; cursor: pointer; transition: background 0.2s;
+        }
+        .bp-toggle-btn:hover { background: #2980b9; }
+        .bp-log-table {
+            margin: 10px 0; font-size: 13px; background: #f9fafb !important;
+            border: 1px solid #e2e8f0; width: 100%;
+        }
+        .bp-log-table th { background: #edf2f7; color: #4a5568; }
+        .bp-controls label { font-weight: bold; margin-right: 15px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -312,7 +331,25 @@
                 main.innerHTML = `<div class="card"><h3>혈압/체중 기록</h3><div style="display:flex; gap:10px;"><input type="number" id="re-c" placeholder="C" oninput="mkId('re')"><input type="number" id="re-r" placeholder="N" oninput="mkId('re')"></div><input type="text" id="re-id" readonly style="background:#eee; margin:10px 0;"><select id="re-tp"><option>Manual</option><option>D00</option><option>D0</option><option>D2</option><option>W1</option><option>W4</option><option>W8</option><option>W12</option><option>W20</option></select><input type="date" id="re-date" style="margin-top:10px;"><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;"><input type="number" id="re-s" placeholder="SBP" oninput="calM()"><input type="number" id="re-d" placeholder="DBP" oninput="calM()"></div><input type="number" id="re-m" placeholder="Mean" readonly style="background:#eee; margin-top:10px;"><input type="number" id="re-w" placeholder="WT(g)" step="0.1" style="margin-top:10px;"><button class="btn btn-green" onclick="saveRec()" style="margin-top:15px;">저장</button></div>`; 
                 document.getElementById('re-date').value = getTodayStr(); 
             }
-            else if(view === 'bp') { main.innerHTML = `<div class="card"><h3>BP 계산기</h3><div style="margin-bottom:15px;"><label><input type="radio" name="bp-mode" value="control" checked> Control</label><label style="margin-left:20px;"><input type="radio" name="bp-mode" value="induction"> Induction</label></div><input type="file" id="csv" multiple accept=".csv"> <div id="bp-out" style="margin-top:15px;"></div></div>`; document.getElementById('csv').addEventListener('change', loadBP); }
+            else if(view === 'bp') { 
+                // BP Calculator Logic from bp-calc.html
+                main.innerHTML = `
+                <div class="card">
+                    <h3>BP Analyzer (PC Ver.)</h3>
+                    <div class="bp-controls" style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #eee;">
+                        <label>
+                            <input type="radio" name="bp-mode" value="control" checked> Control
+                        </label>
+                        <label style="margin-left:20px;">
+                            <input type="radio" name="bp-mode" value="induction"> Induction
+                        </label>
+                        <br>
+                        <input type="file" id="bp-file-input" accept=".csv" multiple style="margin-top:15px; width:100%; border:2px dashed #cbd5e0; padding:10px; box-sizing:border-box;">
+                    </div>
+                    <div id="bp-output" style="margin-top:20px;"></div>
+                </div>`; 
+                document.getElementById('bp-file-input').addEventListener('change', loadBPFiles); 
+            }
         }
 
         function admTab(t) { 
@@ -1242,9 +1279,146 @@
             alert("저장되었습니다."); 
         }
 
-        function loadBP(e) { allBPData=[]; Array.from(e.target.files).forEach(f=>{ const r=new FileReader(); r.onload=()=>{ parseCSV(r.result, f.name); if(allBPData.length) analyzeBP(document.querySelector('input[name="bp-mode"]:checked').value); }; r.readAsText(f); }); }
-        function parseCSV(t,f) { const r=t.trim().split("\n").map(l=>l.split(",")), h=r.shift(), idx=n=>h.indexOf(n); r.forEach(l=>{ if(l.length>5) allBPData.push({file:f, time:l[idx("Time")], specimen:l[idx("Specimen Name")], sbp:Number(l[idx("Systolic")]), dbp:Number(l[idx("Diastolic")]), mean:Number(l[idx("Mean")]), accepted:l[idx("Accepted")]==="True", regular:l[idx("Regular Cycle")]==="True", vol:Number(l[12])}); }); }
-        function analyzeBP(m) { const out=document.getElementById('bp-out'); out.innerHTML=""; const grp={}; allBPData.forEach(d=>{ const id=d.specimen.match(/\(([^)]+)\)/)?.[1].trim()||d.specimen.trim(); if(!grp[id]) grp[id]={}; if(!grp[id][d.file]) grp[id][d.file]=[]; grp[id][d.file].push(d); }); Object.keys(grp).sort().forEach(id=>{ const box=document.createElement('div'); box.className='rat-box'; box.innerHTML=`<b>ID: ${id}</b>`; const t=document.createElement('table'); t.innerHTML=`<tr><th>File</th><th>n</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Log</th></tr>`; Object.entries(grp[id]).forEach(([f,rows],ix)=>{ const v=rows.filter(r=>r.accepted&&r.regular), sbps=v.map(r=>r.sbp), max=Math.max(...sbps), min=Math.min(...sbps); const pass=v.filter(r=>{if(r.sbp===max||r.sbp===min)return false; const d=r.sbp-r.dbp; if(m==="control"&&(d<20||d>60))return false; if(m==="induction"&&(d<25||d>80))return false; return true;}); const avg=k=>Math.floor(pass.reduce((a,b)=>a+b[k],0)/pass.length); const lid=`l_${id}_${ix}`; t.innerHTML+=`<tr><td>${f}</td><td>${pass.length}</td><td>${avg('sbp')}</td><td>${avg('dbp')}</td><td>${avg('mean')}</td><td><button class="toggle-btn" onclick="document.getElementById('${lid}').style.display=document.getElementById('${lid}').style.display==='none'?'table-row':'none'">보기</button></td></tr><tr id="${lid}" style="display:none;"><td colspan="6"><div style="font-size:0.8rem; background:#eee; padding:5px;">(상세 로그 생략)</div></td></tr>`; }); box.appendChild(t); out.appendChild(box); }); }
+        // ========================================================
+        // UPDATED BP CALCULATOR LOGIC (Exactly matching bp-calc.html)
+        // ========================================================
+        let bpAllData = [];
+
+        function loadBPFiles(e) {
+            bpAllData = [];
+            const files = Array.from(e.target.files);
+            const mode = document.querySelector('input[name="bp-mode"]:checked').value;
+            let loaded = 0;
+
+            files.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    parseBPCSV(reader.result, file.name);
+                    loaded++;
+                    if (loaded === files.length) analyzeBP(mode);
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        function parseBPCSV(text, filename) {
+            const rows = text.trim().split("\n").map(r => r.split(","));
+            const header = rows.shift();
+            const idx = n => header.indexOf(n);
+
+            rows.forEach(r => {
+                if (r.length < 5) return; // 빈 줄 방지
+                bpAllData.push({
+                    file: filename,
+                    time: r[idx("Time")],
+                    specimen: r[idx("Specimen Name")],
+                    regular: r[idx("Regular Cycle")] === "True",
+                    accepted: r[idx("Accepted")] === "True",
+                    sbp: Number(r[idx("Systolic")]),
+                    dbp: Number(r[idx("Diastolic")]),
+                    mean: Number(r[idx("Mean")]),
+                    volume: Number(r[12]) // M열 Volume
+                });
+            });
+        }
+
+        function analyzeBP(mode) {
+            const output = document.getElementById("bp-output");
+            output.innerHTML = "";
+
+            /* specimen에서 ID만 추출하여 그룹화 (bp-calc.html 로직 적용) */
+            const grouped = {};
+            bpAllData.forEach(r => {
+                // 괄호 () 안의 문자열만 추출 (예: "2023-Rat(01)" -> "01")
+                const match = r.specimen.match(/\(([^)]+)\)/);
+                const ratId = match ? match[1].trim() : r.specimen.trim();
+
+                if (!grouped[ratId]) grouped[ratId] = {};
+                if (!grouped[ratId][r.file]) grouped[ratId][r.file] = [];
+                grouped[ratId][r.file].push(r);
+            });
+
+            Object.keys(grouped).sort().forEach(ratId => {
+                const box = document.createElement("div");
+                box.className = "bp-rat-box";
+                box.innerHTML = `<div class="bp-rat-title">🐀 개체 ID: ${ratId}</div>`;
+
+                const table = document.createElement("table");
+                table.innerHTML = `
+                    <tr>
+                        <th>File</th><th>n</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>검증</th>
+                    </tr>`;
+
+                Object.entries(grouped[ratId]).forEach(([file, rows], idx) => {
+                    const valid = rows.filter(r => r.regular && r.accepted);
+                    if (valid.length === 0) return;
+
+                    const sbps = valid.map(r => r.sbp);
+                    const maxSBP = Math.max(...sbps);
+                    const minSBP = Math.min(...sbps);
+
+                    const judged = rows.map(r => {
+                        let reason = "✅ Accepted";
+                        if (!r.regular || !r.accepted) {
+                            reason = "❌ Regular/Accepted";
+                        } else if (r.sbp === maxSBP) {
+                            reason = "❌ SBP = MAX (set)";
+                        } else if (r.sbp === minSBP) {
+                            reason = "❌ SBP = MIN (set)";
+                        } else {
+                            const diff = r.sbp - r.dbp;
+                            if (mode === "control" && (diff < 20 || diff > 60)) reason = "❌ Pulse diff";
+                            if (mode === "induction" && (diff < 25 || diff > 80)) reason = "❌ Pulse diff";
+                        }
+                        return { ...r, reason };
+                    });
+
+                    const passed = judged.filter(r => r.reason === "✅ Accepted");
+                    if (passed.length === 0) return;
+
+                    const avgFloor = key => Math.floor(passed.reduce((s, r) => s + r[key], 0) / passed.length);
+                    const logId = `bp_log_${ratId.replace(/[^a-z0-9]/gi, '_')}_${idx}`;
+
+                    table.innerHTML += `
+                        <tr>
+                            <td style="color:#e67e22; font-weight:500;">${file}</td>
+                            <td>${passed.length}</td>
+                            <td>${avgFloor("sbp")}</td>
+                            <td>${avgFloor("dbp")}</td>
+                            <td>${avgFloor("mean")}</td>
+                            <td>${avgFloor("volume")}</td>
+                            <td>
+                                <button class="bp-toggle-btn" onclick="toggleBPLog('${logId}')">사이클 로그</button>
+                            </td>
+                        </tr>
+                        <tr id="${logId}" style="display:none;">
+                            <td colspan="7">
+                                <table class="bp-log-table">
+                                    <tr><th>Time</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>판정</th></tr>
+                                    ${judged.map(r => `
+                                        <tr>
+                                            <td>${r.time}</td>
+                                            <td>${r.sbp}</td>
+                                            <td>${r.dbp}</td>
+                                            <td>${r.mean}</td>
+                                            <td>${r.volume}</td>
+                                            <td>${r.reason}</td>
+                                        </tr>
+                                    `).join("")}
+                                </table>
+                            </td>
+                        </tr>`;
+                });
+
+                box.appendChild(table);
+                output.appendChild(box);
+            });
+        }
+
+        function toggleBPLog(id) {
+            const el = document.getElementById(id);
+            el.style.display = el.style.display === "none" ? "table-row" : "none";
+        }
     </script>
 </body>
 </html>
