@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>Rat Lab Manager Pro</title>
+    <title>Rat Lab Manager YDW</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
@@ -166,6 +166,8 @@
 
         let currentScores = { act: 0, fur: 0, eye: 0 };
         let allBPData = [];
+        let bpChartInstance = null; 
+        let globalBpData = [];
 
         function login() {
             const id = document.getElementById('uid').value;
@@ -174,21 +176,22 @@
                 document.getElementById('login-screen').style.display = 'none';
                 document.getElementById('main-app').style.display = 'block';
                 
-                if (window.history && window.history.pushState) {
-                    window.history.pushState('forward', null, './#forward');
-                    window.onpopstate = function() {
-                        if (confirm('앱을 종료하시겠습니까?')) {
-                            window.onpopstate = null;
-                            window.history.back(); 
-                        } else {
-                            if (window.history && window.history.pushState) {
-                                window.history.pushState('forward', null, './#forward');
+                try {
+                    if (window.history && window.history.pushState) {
+                        window.history.pushState('forward', null, null);
+                        window.onpopstate = function() {
+                            if (confirm('앱을 종료하시겠습니까?')) {
+                                window.onpopstate = null;
+                                window.history.back(); 
+                            } else {
+                                if (window.history && window.history.pushState) {
+                                    window.history.pushState('forward', null, null);
+                                }
                             }
-                        }
-                    };
-                }
+                        };
+                    }
+                } catch(e) { console.log("History API 제한됨"); }
 
-                // [수정] 렌더링 딜레이를 고려하여 setTimeout 사용 -> 로그인 후 바로 대시보드 진입
                 setTimeout(() => go('dash'), 50);
             } else alert('로그인 실패');
         }
@@ -527,7 +530,7 @@
                 });
 
                 await Promise.all(promises);
-                alert("저장 완료!");
+                alert("저장되었습니다.");
                 searchForEdit(); 
 
             } catch(e) {
@@ -737,7 +740,6 @@
             } catch(e) { console.error(e); res.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
         }
 
-        // [수정: 상세화면 로드 - 사망시 날짜 멈춤 적용]
         async function loadDetailData() {
             const id = document.getElementById('dt-id').value;
             const view = document.getElementById('detail-view');
@@ -749,19 +751,16 @@
                 const rat = rSnap.docs[0].data();
                 const docId = rSnap.docs[0].id;
                 
-                // [수정: 기준일 설정 (사망 시 사망일, 생존 시 오늘)]
                 let baseDate = new Date();
                 if(rat.status === '사망' && rat.deathDate) {
                     baseDate = new Date(rat.deathDate);
                 }
 
-                // D+, POD, DoseDay 계산 시 baseDate 사용
                 const dPlus = rat.arrivalDate ? Math.floor((baseDate - new Date(rat.arrivalDate))/(1000*60*60*24)) : '-';
                 const pod = rat.surgeryDate ? Math.floor((baseDate - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
                 
                 let deathInfo = '';
                 if(rat.status === '사망') {
-                    // 사망일 정보 표시 (POD는 이미 baseDate로 계산됨)
                     deathInfo = `<div class="info-item" style="color:var(--red); border:1px solid var(--red); background:#ffebee;"><b>사망: ${rat.deathDate||'날짜미상'}</b><br>POD ${pod}</div>`;
                 }
 
@@ -792,9 +791,22 @@
                     <div class="card"><h4>데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div>
                     <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleDailyLog()">Detail ▼</button></div>
                     <div id="daily-detail-table" style="display:none; margin-top:10px;"></div></div>
-                    <div class="card"><h4>혈압/체중</h4><div class="chart-area"><canvas id="bpChart"></canvas></div>
-                    <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleBpLog()">Detail ▼</button></div>
-                    <div id="bp-detail-table" style="display:none; margin-top:10px;"></div></div>
+                    
+                    <div class="card">
+                        <h4>혈압/체중</h4>
+                        <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:10px; background:#f8f9fa; padding:8px; border-radius:8px;">
+                            <label style="cursor:pointer; display:flex; align-items:center; font-weight:bold; color:var(--red);">
+                                <input type="checkbox" id="chk-sbp" checked onchange="renderBpChart()" style="margin-right:5px; width:auto; transform:scale(1.2);"> SBP
+                            </label>
+                            <label style="cursor:pointer; display:flex; align-items:center; font-weight:bold; color:var(--green);">
+                                <input type="checkbox" id="chk-wt" checked onchange="renderBpChart()" style="margin-right:5px; width:auto; transform:scale(1.2);"> Weight
+                            </label>
+                        </div>
+                        <div class="chart-area"><canvas id="bpChart"></canvas></div>
+                        <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleBpLog()">Detail ▼</button></div>
+                        <div id="bp-detail-table" style="display:none; margin-top:10px;"></div>
+                    </div>
+
                     <div class="card"><h4>투약 이력</h4><div id="dose-logs"></div></div>
                     <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`;
 
@@ -811,13 +823,12 @@
                     processedLogs.push(v);
                 });
                 processedLogs.sort((a, b) => new Date(a.cleanDate) - new Date(b.cleanDate));
+                
                 const uniqueMap = {};
                 processedLogs.forEach(log => { uniqueMap[log.cleanDate] = log; });
                 const finalLogs = Object.values(uniqueMap).sort((a, b) => new Date(a.cleanDate) - new Date(b.cleanDate));
-
                 const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[], pColors=[];
                 let tableHtml = `<table><tr><th>날짜</th><th>시간</th><th>Act</th><th>Fur</th><th>Eye</th><th>총점</th><th>메모</th></tr>`;
-                
                 finalLogs.forEach(v => { 
                     dLab.push(v.cleanDate); 
                     dVal.push(v.totalScore); 
@@ -827,7 +838,6 @@
                 });
                 tableHtml += `</table>`;
                 document.getElementById('daily-detail-table').innerHTML = tableHtml;
-                
                 if(dVal.length) new Chart(document.getElementById('dailyChart'), { 
                     type:'line', 
                     data:{ labels: dLab, datasets:[{ label:'Score', data: dVal, borderColor:'#1a237e', pointStyle: pStyles, pointRadius: pSizes, pointBackgroundColor: pColors, pointBorderColor: pColors }] }, 
@@ -836,24 +846,36 @@
 
                 const ms = await db.collection("measurements").where("ratId", "==", id).get();
                 const ds = await db.collection("doseLogs").where("ratId", "==", id).get();
-                let mData = [];
-                ms.forEach(d=>{
-                    const v=d.data(); 
-                    let l=v.date.substr(5); 
-                    if(v.timepoint&&v.timepoint!=='Manual') l+=` (${v.timepoint})`; 
-                    mData.push({date:v.date, label:l, sbp:v.sbp?v.sbp:null, wt:v.weight?v.weight:null}); 
+                
+                const dataMap = {};
+
+                ms.forEach(doc => {
+                    const v = doc.data();
+                    const date = v.date;
+                    if (!dataMap[date]) dataMap[date] = { date: date, label: v.timepoint || date, sbp: null, dbp: null, mean: null, wt: null };
+                    
+                    if (v.sbp) dataMap[date].sbp = v.sbp;
+                    if (v.dbp) dataMap[date].dbp = v.dbp;
+                    if (v.mean) dataMap[date].mean = v.mean;
+                    if (v.weight) dataMap[date].wt = v.weight;
+                    if (v.timepoint && !dataMap[date].label.includes('W') && v.timepoint.includes('W')) dataMap[date].label = v.timepoint; 
                 });
-                ds.forEach(d=>{
-                    const v=d.data(); 
-                    mData.push({date:v.date, label:v.date.substr(5), sbp:null, wt:v.weight?v.weight:null}); 
+
+                ds.forEach(doc => {
+                    const v = doc.data();
+                    const date = v.date;
+                    if (!dataMap[date]) dataMap[date] = { date: date, label: date, sbp: null, dbp: null, mean: null, wt: null };
+                    
+                    if (v.weight) dataMap[date].wt = v.weight;
                 });
-                mData.sort((a,b)=>new Date(a.date)-new Date(b.date));
-                if(mData.length) new Chart(document.getElementById('bpChart'), { type:'line', data:{labels:mData.map(d=>d.label), datasets:[{label:'SBP', data:mData.map(d=>d.sbp), borderColor:'#d32f2f', yAxisID:'y', spanGaps:true}, {label:'WT', data:mData.map(d=>d.wt), borderColor:'#00c853', yAxisID:'y1', spanGaps:true}]}, options:{maintainAspectRatio:false, scales:{y:{position:'left'}, y1:{position:'right'}}} });
+
+                globalBpData = Object.values(dataMap).sort((a,b) => new Date(a.date) - new Date(b.date));
+                renderBpChart(); 
 
                 let bpTable = '<table><tr><th>날짜</th><th>시점</th><th>SBP</th><th>DBP</th><th>Mean</th><th>WT</th></tr>';
-                const sortedMs = ms.docs.map(d=>d.data()).sort((a,b)=>new Date(b.date)-new Date(a.date));
-                sortedMs.forEach(v => {
-                    bpTable += `<tr><td>${v.date}</td><td>${v.timepoint||'-'}</td><td>${v.sbp||'-'}</td><td>${v.dbp||'-'}</td><td>${v.mean||'-'}</td><td>${v.weight||'-'}</td></tr>`;
+                const reversedData = [...globalBpData].reverse();
+                reversedData.forEach(v => {
+                    bpTable += `<tr><td>${v.date}</td><td>${v.label}</td><td>${v.sbp||'-'}</td><td>${v.dbp||'-'}</td><td>${v.mean||'-'}</td><td>${v.wt||'-'}</td></tr>`;
                 });
                 bpTable += '</table>';
                 document.getElementById('bp-detail-table').innerHTML = bpTable;
@@ -863,18 +885,103 @@
                 if(revDs.length) { revDs.slice(0,5).forEach(d=>{const v=d.data(); const mg=v.doseMg?v.doseMg:((v.weight/1000)*4*1.15).toFixed(3); dHtml+=`<tr><td>${v.date}</td><td>${v.weight}</td><td>${Number(mg).toFixed(2)}</td><td>${v.volMl.toFixed(2)}</td></tr>`;}); document.getElementById('dose-logs').innerHTML=dHtml+'</table>'; }
                 else document.getElementById('dose-logs').innerHTML='데이터 없음';
 
-                // 기록 로그 (최근 5건)
                 let rHtml='<table><tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT</th></tr>';
+                const sortedMs = ms.docs.map(d=>d.data()).sort((a,b)=>new Date(b.date)-new Date(a.date));
                 sortedMs.slice(0,5).forEach(v=>{rHtml+=`<tr><td>${v.date}</td><td>${v.timepoint||'-'}</td><td>${v.sbp||'-'}</td><td>${v.weight||'-'}</td></tr>`;});
                 document.getElementById('rec-logs').innerHTML = rHtml+'</table>';
 
             } catch(e) { console.error(e); }
         }
 
+        function renderBpChart() {
+            if (bpChartInstance) bpChartInstance.destroy();
+            
+            const showSbp = document.getElementById('chk-sbp').checked;
+            const showWt = document.getElementById('chk-wt').checked;
+            const ctx = document.getElementById('bpChart');
+
+            const datasets = [];
+            if (showSbp) {
+                datasets.push({
+                    label: 'SBP',
+                    data: globalBpData.map(d => d.sbp),
+                    borderColor: '#d32f2f',
+                    yAxisID: 'y',
+                    spanGaps: true
+                });
+            }
+            if (showWt) {
+                datasets.push({
+                    label: 'WT',
+                    data: globalBpData.map(d => d.wt),
+                    borderColor: '#00c853',
+                    yAxisID: 'y1',
+                    spanGaps: true
+                });
+            }
+
+            bpChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: globalBpData.map(d => {
+                        return (d.label && d.label !== d.date) ? `${d.date} (${d.label})` : d.date;
+                    }), 
+                    datasets: datasets
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { position: 'left', display: showSbp }, 
+                        y1: { position: 'right', display: showWt, grid: { drawOnChartArea: false } } 
+                    }
+                }
+            });
+        }
+
+        // [추가: 랫드 상태 체크 함수]
+        async function checkRatValid(id) {
+            try {
+                const s = await db.collection("rats").where("ratId", "==", id).get();
+                if (s.empty) {
+                    alert(`[${id}] 등록되지 않은 랫드입니다.`);
+                    return null;
+                }
+                const data = s.docs[0].data();
+                if (data.status === '사망') {
+                    alert(`[${id}] 이미 사망한 개체입니다. 데이터를 추가/수정할 수 없습니다.`);
+                    return null;
+                }
+                return s.docs[0];
+            } catch(e) {
+                console.error(e);
+                alert("데이터 확인 중 오류 발생");
+                return null;
+            }
+        }
+
         async function upDoseStart(did) {
+            const doc = await db.collection("rats").doc(did).get();
+            if(doc.exists) {
+                const ratId = doc.data().ratId;
+                if(!(await checkRatValid(ratId))) return; 
+            }
+            
             await db.collection("rats").doc(did).update({ doseStartDate: document.getElementById('dose-start-d').value });
-            alert("저장됨");
+            alert("저장되었습니다.");
             loadDetailData();
+        }
+        
+        async function upSurg(did) { 
+            const doc = await db.collection("rats").doc(did).get();
+            if(doc.exists) {
+                const ratId = doc.data().ratId;
+                if(!(await checkRatValid(ratId))) return;
+            }
+
+            await db.collection("rats").doc(did).update({ surgeryDate: document.getElementById('surg-d').value }); 
+            alert("저장되었습니다."); 
+            loadDetailData(); 
         }
 
         function toggleDailyLog() {
@@ -989,7 +1096,6 @@
         async function deleteRat() { const id=document.getElementById('del-id').value; if(!id||!confirm("삭제?"))return; (await db.collection("rats").where("ratId","==",id).get()).forEach(d=>d.ref.delete()); ["dailyLogs","doseLogs","measurements"].forEach(async c=>(await db.collection(c).where("ratId","==",id).get()).forEach(d=>d.ref.delete())); alert("삭제됨"); }
         async function deleteCohort() { const c=document.getElementById('del-cohort').value; if(!c||!confirm("전체삭제?"))return; (await db.collection("rats").where("cohort","==",c).get()).forEach(d=>d.ref.delete()); alert("삭제됨(로그제외)"); } 
         function goToDetail(c, r) { go('detail'); setTimeout(() => { document.getElementById('dt-c').value = c; document.getElementById('dt-r').value = r; mkId('dt'); loadDetailData(); }, 100); }
-        async function upSurg(did) { await db.collection("rats").doc(did).update({ surgeryDate: document.getElementById('surg-d').value }); alert("저장됨"); loadDetailData(); }
         function score(k, n, btn) { btn.parentElement.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentScores[k] = n; const t = currentScores.act+currentScores.fur+currentScores.eye; document.getElementById('score-res').innerText=`총점: ${t}점`; }
         function mkId(p) { const c=document.getElementById(`${p}-c`).value, r=document.getElementById(`${p}-r`).value; if(c&&r) document.getElementById(`${p}-id`).value = `C${c.padStart(2,'0')}${r.padStart(2,'0')}`; }
         function calM() { const s=Number(document.getElementById('re-s').value), d=Number(document.getElementById('re-d').value); if(s&&d) document.getElementById('re-m').value = Math.round(d+(s-d)/3); }
@@ -1001,6 +1107,8 @@
             const date = document.getElementById('dc-date').value;
             if(!id || !date) return alert("ID와 날짜를 확인하세요");
             
+            if(!(await checkRatValid(id))) return;
+
             const note = document.getElementById('dc-note').value;
             const dead = document.getElementById('is-dead').checked;
             const total = currentScores.act + currentScores.fur + currentScores.eye;
@@ -1051,6 +1159,9 @@
             try {
                 for(let i=0; i<ws.length; i++) { 
                     if(ws[i].value && is[i].innerText!=='-') { 
+                        const ratId = is[i].innerText;
+                        if(!(await checkRatValid(ratId))) continue; 
+
                         const w = Number(ws[i].value);
                         const mg = (w/1000)*4*1.15; 
                         const vol = mg/2.5;        
@@ -1060,12 +1171,12 @@
                         cnt++;
                         
                         indivList += `<div style="padding:4px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;">
-                            <span>${is[i].innerText}</span>
+                            <span>${ratId}</span>
                             <span style="font-weight:bold;">${vol.toFixed(2)} ml</span>
                         </div>`;
                         
                         await db.collection("doseLogs").add({
-                            ratId:is[i].innerText, 
+                            ratId:ratId, 
                             cohort:c, 
                             weight:w, 
                             doseMg:mg, 
@@ -1101,7 +1212,7 @@
                     `;
                     alert("저장되었습니다.");
                 } else {
-                    alert("입력된 체중 데이터가 없습니다.");
+                    alert("유효한 입력 데이터가 없습니다.");
                 }
             } catch(e) {
                 console.error(e);
@@ -1111,12 +1222,14 @@
         
         async function saveRec() { 
             const id=document.getElementById('re-id').value; 
-            const s=await db.collection("rats").where("ratId","==",id).get(); 
-            if(s.empty) return alert("없는 랫드"); 
+            
+            if(!(await checkRatValid(id))) return;
+
             const sbp = Number(document.getElementById('re-s').value);
             const dbp = Number(document.getElementById('re-d').value);
             const mean = Number(document.getElementById('re-m').value);
             const wt = Number(document.getElementById('re-w').value);
+            
             await db.collection("measurements").add({
                 ratId:id, 
                 sbp: sbp, 
@@ -1126,7 +1239,7 @@
                 date:document.getElementById('re-date').value, 
                 timepoint:document.getElementById('re-tp').value
             }); 
-            alert("저장됨"); 
+            alert("저장되었습니다."); 
         }
 
         function loadBP(e) { allBPData=[]; Array.from(e.target.files).forEach(f=>{ const r=new FileReader(); r.onload=()=>{ parseCSV(r.result, f.name); if(allBPData.length) analyzeBP(document.querySelector('input[name="bp-mode"]:checked').value); }; r.readAsText(f); }); }
