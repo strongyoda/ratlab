@@ -110,7 +110,6 @@
         .edit-icon:hover { color: var(--navy); background: #eee; border-radius: 50%; }
         .memo-text { font-style: italic; color: #666; margin-left: 5px; font-size: 0.85rem; }
         
-        /* MR Checkbox Style */
         .mr-check-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: 20px; font-size: 0.8rem; background: #f1f3f5; padding: 4px 8px; border-radius: 6px; }
         .mr-check-group label { display: flex; align-items: center; cursor: pointer; margin-bottom: 0; color: #495057; font-weight: normal; }
         .mr-check-group input[type="checkbox"] { width: auto; margin: 0 3px 0 0; padding: 0; transform: scale(0.9); }
@@ -122,7 +121,7 @@
         <div class="login-box">
             <h2 style="color:var(--navy)">LAB MANAGER</h2>
             <input type="text" id="uid" placeholder="ID" style="margin-bottom:10px">
-            <input type="password" id="upw" placeholder="PW" style="margin-bottom:20px">
+            <input type="password" id="upw" placeholder="PW" style="margin-bottom:20px" onkeypress="if(event.key==='Enter') login()">
             <button class="btn btn-green" onclick="login()">LOGIN</button>
         </div>
     </div>
@@ -174,7 +173,23 @@
             if(id.toLowerCase() === 'nidd' && pw === '1234') {
                 document.getElementById('login-screen').style.display = 'none';
                 document.getElementById('main-app').style.display = 'block';
-                go('dash');
+                
+                if (window.history && window.history.pushState) {
+                    window.history.pushState('forward', null, './#forward');
+                    window.onpopstate = function() {
+                        if (confirm('앱을 종료하시겠습니까?')) {
+                            window.onpopstate = null;
+                            window.history.back(); 
+                        } else {
+                            if (window.history && window.history.pushState) {
+                                window.history.pushState('forward', null, './#forward');
+                            }
+                        }
+                    };
+                }
+
+                // [수정] 렌더링 딜레이를 고려하여 setTimeout 사용 -> 로그인 후 바로 대시보드 진입
+                setTimeout(() => go('dash'), 50);
             } else alert('로그인 실패');
         }
 
@@ -252,6 +267,9 @@
                     <div id="co-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">
                         로딩 중...
                     </div>
+                    <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
+                        <input type="checkbox" id="show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기 (Manual 날짜 표시 + POD 순 정렬)
+                    </label>
                     <button class="btn btn-blue" onclick="loadCohortDetail()">분석 시작</button>
                 </div>
                 <div id="cohort-res"></div>`;
@@ -523,49 +541,119 @@
             if(checkboxes.length === 0) return alert("분석할 코호트를 하나 이상 선택하세요.");
             
             const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
-            
+            const showAll = document.getElementById('show-all-tp')?.checked; 
+
             const res = document.getElementById('cohort-res');
             res.innerHTML = "<p style='text-align:center'>데이터 불러오는 중...</p>";
 
             try {
+                // 1. 랫드 데이터 로드
                 const ratPromises = selectedCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
                 const ratSnaps = await Promise.all(ratPromises);
-
                 let rats = [];
+                const ratInfoMap = {}; 
+
                 ratSnaps.forEach(snap => {
-                    snap.forEach(d => rats.push(d.data()));
+                    snap.forEach(d => {
+                        const r = d.data();
+                        rats.push(r);
+                        ratInfoMap[r.ratId] = r;
+                    });
                 });
 
                 if(rats.length === 0) { res.innerHTML = "데이터 없음"; return; }
 
                 const deadRats = rats.filter(r => r.status === "사망");
                 rats.sort((a,b) => a.ratId.localeCompare(b.ratId)); 
-
                 const ratIds = rats.map(r => r.ratId);
+
+                // 2. 측정 데이터 로드
                 const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
                 const snapshots = await Promise.all(promises);
 
-                const timepoints = ["D00", "D0", "D2", "W1", "W4", "W8", "W12", "W20"];
+                // 3. 타임포인트 결정 로직
+                // D00=-999, D0=-500, D2=-300 (W1=7 보다 작게 하여 앞쪽에 정렬)
+                const stdPodMap = { "D00": -999, "D0": -500, "D2": -300, "W1": 7, "W4": 28, "W8": 56, "W12": 84, "W20": 140 };
+                
+                let columns = []; 
+                const seenLabels = new Set();
+
+                // 기본 표준 시점은 무조건 포함
+                Object.keys(stdPodMap).forEach(key => {
+                    columns.push({ label: key, sortVal: stdPodMap[key] });
+                    seenLabels.add(key);
+                });
+
+                if (showAll) {
+                    snapshots.forEach((snap, idx) => {
+                        const rid = ratIds[idx];
+                        const rInfo = ratInfoMap[rid];
+                        
+                        snap.forEach(doc => {
+                            const d = doc.data();
+                            let pod = null;
+
+                            // 표준 시점이면 패스
+                            if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) return;
+
+                            // Manual or Date Only -> 수술일 기준 POD 계산
+                            if (d.date && rInfo.surgeryDate) {
+                                const diff = new Date(d.date) - new Date(rInfo.surgeryDate);
+                                pod = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                const label = d.date; // 라벨은 날짜로 표시
+
+                                if (!seenLabels.has(label)) {
+                                    columns.push({ label: label, sortVal: pod });
+                                    seenLabels.add(label);
+                                }
+                            }
+                        });
+                    });
+                }
+
+                // 정렬 (sortVal = POD 기준)
+                columns.sort((a,b) => a.sortVal - b.sortVal);
+                const targetTimepoints = columns.map(c => c.label);
+
+                // 4. 데이터 매핑
                 const matrix = {}; 
-                ratIds.forEach(id => { matrix[id] = {}; timepoints.forEach(tp => matrix[id][tp] = { sbp: null, wt: null }); });
+                ratIds.forEach(id => { 
+                    matrix[id] = {}; 
+                    targetTimepoints.forEach(tp => matrix[id][tp] = { sbp: null, wt: null }); 
+                });
 
                 snapshots.forEach((snap, idx) => {
                     const rid = ratIds[idx];
+                    
                     snap.forEach(doc => {
                         const d = doc.data();
-                        if (d.timepoint && timepoints.includes(d.timepoint)) {
-                            matrix[rid][d.timepoint] = { sbp: d.sbp, wt: d.weight };
+                        let label = null;
+
+                        // 표준 시점
+                        if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) {
+                            label = d.timepoint;
+                        } 
+                        // Manual 시점 (전체보기일 때만)
+                        else if (showAll && d.date) {
+                            label = d.date;
+                        }
+
+                        if (label && matrix[rid][label] !== undefined) {
+                            matrix[rid][label] = { sbp: d.sbp, wt: d.weight };
                         }
                     });
                 });
 
+                // 5. 평균 계산
                 const avgs = {}; 
-                timepoints.forEach(tp => avgs[tp] = { sCnt:0, sSum:0, wCnt:0, wSum:0 });
+                targetTimepoints.forEach(tp => avgs[tp] = { sCnt:0, sSum:0, wCnt:0, wSum:0 });
                 ratIds.forEach(id => {
-                    timepoints.forEach(tp => {
+                    targetTimepoints.forEach(tp => {
                         const cell = matrix[id][tp];
-                        if(cell.sbp) { avgs[tp].sSum += cell.sbp; avgs[tp].sCnt++; }
-                        if(cell.wt) { avgs[tp].wSum += cell.wt; avgs[tp].wCnt++; }
+                        if (cell) {
+                            if(cell.sbp) { avgs[tp].sSum += cell.sbp; avgs[tp].sCnt++; }
+                            if(cell.wt) { avgs[tp].wSum += cell.wt; avgs[tp].wCnt++; }
+                        }
                     });
                 });
 
@@ -598,30 +686,30 @@
                     }
                 }
 
-                html += `<div class="card"><h4>🩸 혈압(SBP) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${timepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+                html += `<div class="card"><h4>🩸 혈압(SBP) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => {
                     html += `<tr><td>${id}</td>`;
-                    timepoints.forEach(tp => { html += `<td>${matrix[id][tp].sbp || '-'}</td>`; });
+                    targetTimepoints.forEach(tp => { html += `<td>${matrix[id][tp]?.sbp || '-'}</td>`; });
                     html += `</tr>`;
                 });
                 html += `<tr style="background:#e3f2fd; font-weight:bold;"><td>AVG</td>`;
                 const avgSbpData = [];
-                timepoints.forEach(tp => {
+                targetTimepoints.forEach(tp => {
                     const avg = avgs[tp].sCnt ? Math.round(avgs[tp].sSum / avgs[tp].sCnt) : null;
                     avgSbpData.push(avg);
                     html += `<td>${avg||'-'}</td>`;
                 });
                 html += `</tr></table></div><div class="chart-area"><canvas id="coChartSbp"></canvas></div></div>`;
 
-                html += `<div class="card"><h4>⚖️ 체중(Weight) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${timepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+                html += `<div class="card"><h4>⚖️ 체중(Weight) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => {
                     html += `<tr><td>${id}</td>`;
-                    timepoints.forEach(tp => { html += `<td>${matrix[id][tp].wt || '-'}</td>`; });
+                    targetTimepoints.forEach(tp => { html += `<td>${matrix[id][tp]?.wt || '-'}</td>`; });
                     html += `</tr>`;
                 });
                 html += `<tr style="background:#e8f5e9; font-weight:bold;"><td>AVG</td>`;
                 const avgWtData = [];
-                timepoints.forEach(tp => {
+                targetTimepoints.forEach(tp => {
                     const avg = avgs[tp].wCnt ? (avgs[tp].wSum / avgs[tp].wCnt).toFixed(1) : null;
                     avgWtData.push(avg);
                     html += `<td>${avg||'-'}</td>`;
@@ -638,17 +726,18 @@
                     });
                 }
                 new Chart(document.getElementById('coChartSbp'), {
-                    type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg SBP', data: avgSbpData, borderColor: '#d32f2f', tension: 0.1 }] },
+                    type: 'line', data: { labels: targetTimepoints, datasets: [{ label: 'Avg SBP', data: avgSbpData, borderColor: '#d32f2f', tension: 0.1, spanGaps: true }] },
                     options: { maintainAspectRatio: false }
                 });
                 new Chart(document.getElementById('coChartWt'), {
-                    type: 'line', data: { labels: timepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1, spanGaps: true }] },
+                    type: 'line', data: { labels: targetTimepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1, spanGaps: true }] },
                     options: { maintainAspectRatio: false }
                 });
 
             } catch(e) { console.error(e); res.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
         }
 
+        // [수정: 상세화면 로드 - 사망시 날짜 멈춤 적용]
         async function loadDetailData() {
             const id = document.getElementById('dt-id').value;
             const view = document.getElementById('detail-view');
@@ -659,22 +748,47 @@
                 if(rSnap.empty) { view.innerHTML = "등록되지 않음"; return; }
                 const rat = rSnap.docs[0].data();
                 const docId = rSnap.docs[0].id;
-                const pod = rat.surgeryDate ? Math.floor((new Date() - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
+                
+                // [수정: 기준일 설정 (사망 시 사망일, 생존 시 오늘)]
+                let baseDate = new Date();
+                if(rat.status === '사망' && rat.deathDate) {
+                    baseDate = new Date(rat.deathDate);
+                }
+
+                // D+, POD, DoseDay 계산 시 baseDate 사용
+                const dPlus = rat.arrivalDate ? Math.floor((baseDate - new Date(rat.arrivalDate))/(1000*60*60*24)) : '-';
+                const pod = rat.surgeryDate ? Math.floor((baseDate - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
                 
                 let deathInfo = '';
                 if(rat.status === '사망') {
-                    const dPod = rat.surgeryDate && rat.deathDate ? Math.floor((new Date(rat.deathDate) - new Date(rat.surgeryDate))/(1000*60*60*24)) : '?';
-                    deathInfo = `<div class="info-item" style="color:var(--red); border:1px solid var(--red); background:#ffebee;"><b>사망: ${rat.deathDate||'날짜미상'}</b><br>POD ${dPod}</div>`;
+                    // 사망일 정보 표시 (POD는 이미 baseDate로 계산됨)
+                    deathInfo = `<div class="info-item" style="color:var(--red); border:1px solid var(--red); background:#ffebee;"><b>사망: ${rat.deathDate||'날짜미상'}</b><br>POD ${pod}</div>`;
+                }
+
+                let doseInfo = '';
+                if(rat.doseStartDate) {
+                    const doseDay = Math.floor((baseDate - new Date(rat.doseStartDate))/(1000*60*60*24));
+                    doseInfo = `<div class="info-item"><b>Day ${doseDay}</b><br>투약 시작(${rat.doseStartDate})</div>`;
+                } else {
+                    doseInfo = `<div class="info-item" style="color:#ccc;">-</div>`;
                 }
 
                 view.innerHTML = `
                     <div class="card"><div style="display:flex; justify-content:space-between;"><h3>${id}</h3><span style="color:${rat.status==='생존'?'green':'red'}">${rat.status}</span></div>
                     <div class="info-grid">
-                        <div class="info-item"><b>D+${Math.floor((new Date() - new Date(rat.arrivalDate))/(1000*60*60*24))}</b><br>반입 후</div>
+                        <div class="info-item"><b>D+${dPlus}</b><br>반입 후</div>
                         <div class="info-item"><b>POD ${pod}</b><br>수술 후</div>
                         ${deathInfo}
+                        ${doseInfo}
                     </div>
-                    <div style="text-align:right;"><label style="font-size:0.8rem; margin-right:5px;">수술일자 입력</label><input type="date" id="surg-d" value="${rat.surgeryDate||''}"><button class="btn-small" onclick="upSurg('${docId}')">저장</button></div></div>
+                    <div style="text-align:right;">
+                        <div style="margin-bottom:5px;">
+                            <label style="font-size:0.8rem; margin-right:5px;">수술일자</label><input type="date" id="surg-d" value="${rat.surgeryDate||''}"><button class="btn-small" onclick="upSurg('${docId}')">저장</button>
+                        </div>
+                        <div>
+                            <label style="font-size:0.8rem; margin-right:5px;">투약시작</label><input type="date" id="dose-start-d" value="${rat.doseStartDate||''}"><button class="btn-small" onclick="upDoseStart('${docId}')">저장</button>
+                        </div>
+                    </div></div>
                     <div class="card"><h4>데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div>
                     <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleDailyLog()">Detail ▼</button></div>
                     <div id="daily-detail-table" style="display:none; margin-top:10px;"></div></div>
@@ -757,6 +871,12 @@
             } catch(e) { console.error(e); }
         }
 
+        async function upDoseStart(did) {
+            await db.collection("rats").doc(did).update({ doseStartDate: document.getElementById('dose-start-d').value });
+            alert("저장됨");
+            loadDetailData();
+        }
+
         function toggleDailyLog() {
             const t = document.getElementById('daily-detail-table');
             t.style.display = t.style.display === 'none' ? 'block' : 'none';
@@ -767,13 +887,11 @@
             t.style.display = t.style.display === 'none' ? 'block' : 'none';
         }
 
-        // [수정: 대시보드 로드 함수] MR 체크박스 생성 로직 추가
         async function loadDashboard() { 
             try { 
                 const snap = await db.collection("rats").orderBy("ratId").get(); 
                 if(snap.empty) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } 
                 
-                // [수정] cohortNotes의 전체 데이터를 가져옴 (memo + mrChecks)
                 const memoSnap = await db.collection("cohortNotes").get();
                 const noteData = {};
                 memoSnap.forEach(d => noteData[d.id] = d.data());
@@ -797,12 +915,10 @@
                     
                     const cData = noteData[c] || {};
                     const currentMemo = cData.memo || "";
-                    const mrChecks = cData.mrChecks || {}; // MR 체크 상태 가져오기
+                    const mrChecks = cData.mrChecks || {}; 
                     
-                    // 메모 박스
                     const memoHtml = `<div class="co-memo-box"><i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i><span id="memo-txt-${c}" class="memo-text">${currentMemo || ''}</span><div id="memo-edit-area-${c}" style="display:none;"><input type="text" id="memo-inp-${c}" class="co-memo-input" value="${currentMemo}"><button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button></div></div>`;
                     
-                    // [수정: MR 체크박스 생성]
                     const timepoints = ['D0','D2','W1','W4','W8','W12','W20'];
                     let mrHtml = `<div class="mr-check-group"><span style="font-weight:bold; color:var(--navy); margin-right:4px;">MR:</span>`;
                     timepoints.forEach(tp => {
@@ -811,7 +927,6 @@
                     });
                     mrHtml += `</div>`;
 
-                    // 헤더 구성: [제목 + 메모 + MR] ..... [POD]
                     html += `<div class="card"><div class="cohort-header"><div style="display:flex; align-items:center; flex-wrap:wrap; gap:5px;"><span style="font-weight:bold; font-size:1.1rem; color:var(--navy);">Cohort ${c}</span>${memoHtml}${mrHtml}</div>${podTag}</div><div class="rat-grid">`; 
                     
                     grp[c].rats.forEach(r => { 
@@ -833,26 +948,22 @@
             } 
         }
 
-        // [추가: MR 체크박스 토글 함수 (확인창 포함)]
         async function toggleMr(e, c, tp) {
-            e.stopPropagation(); // 클릭 이벤트 전파 방지
-            
-            // 확인창
+            e.stopPropagation(); 
             if(!confirm(`[Cohort ${c}] ${tp} 시점의 MR 촬영 여부를 변경하시겠습니까?`)) {
-                e.preventDefault(); // 취소 시 체크 상태 원복
+                e.preventDefault(); 
                 return;
             }
             
-            // 데이터 저장
             const val = e.target.checked;
             try {
                 await db.collection("cohortNotes").doc(c).set({
                     mrChecks: { [tp]: val }
-                }, { merge: true }); // 기존 메모나 다른 체크값 유지하며 병합
+                }, { merge: true }); 
             } catch(err) {
                 console.error(err);
                 alert("저장 실패");
-                e.preventDefault(); // 에러 시 상태 원복
+                e.preventDefault(); 
             }
         }
 
@@ -870,7 +981,7 @@
 
         async function saveCoMemo(c) {
             const val = document.getElementById(`memo-inp-${c}`).value;
-            await db.collection("cohortNotes").doc(c).set({ memo: val }, { merge: true }); // merge true 추가하여 mrChecks 보호
+            await db.collection("cohortNotes").doc(c).set({ memo: val }, { merge: true }); 
             document.getElementById(`memo-txt-${c}`).innerText = val;
             toggleCoMemo(c);
         }
