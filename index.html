@@ -39,7 +39,7 @@
         .nav-item i { margin-right: 10px; }
         #overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 150; }
 
-        main { padding: 80px 1rem 2rem; max-width: 1000px; margin: 0 auto; }
+        main { padding: 80px 1rem 2rem; max-width: 1000px; margin: 0 auto; transition: max-width 0.3s; }
         .card { background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 1rem; }
         
         .input-group { margin-bottom: 1rem; }
@@ -111,7 +111,7 @@
         .mr-check-group label { display: flex; align-items: center; cursor: pointer; margin-bottom: 0; color: #495057; font-weight: normal; }
         .mr-check-group input[type="checkbox"] { width: auto; margin: 0 3px 0 0; padding: 0; transform: scale(0.9); }
 
-        /* BP Calculator Specific CSS (From bp-calc.html) */
+        /* BP Calculator Specific CSS */
         .bp-rat-box {
             background: white; border: none; border-radius: 12px; padding: 20px;
             margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
@@ -132,6 +132,10 @@
         }
         .bp-log-table th { background: #edf2f7; color: #4a5568; }
         .bp-controls label { font-weight: bold; margin-right: 15px; cursor: pointer; }
+
+        /* Comparison View Grid */
+        .comp-grid { display: flex; gap: 10px; width: 100%; }
+        .comp-col { flex: 1; min-width: 0; border: 1px solid #ddd; padding: 10px; border-radius: 8px; background: #fdfdfd; }
     </style>
 </head>
 <body>
@@ -159,6 +163,7 @@
             <div class="nav-item" onclick="go('dash')"><i class="material-icons">dashboard</i>대시보드</div>
             <div class="nav-item" onclick="go('detail')"><i class="material-icons">search</i>랫드 상세보기</div>
             <div class="nav-item" onclick="go('cohort')"><i class="material-icons">bar_chart</i>코호트 분석</div>
+            <div class="nav-item" onclick="go('compare')"><i class="material-icons">compare_arrows</i>코호트 비교</div>
             <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>데일리 체크</div>
             <div class="nav-item" onclick="go('add')"><i class="material-icons">add_circle</i>신규 등록</div>
             <div class="nav-item" onclick="go('dose')"><i class="material-icons">science</i>투약 계산기</div>
@@ -187,6 +192,9 @@
         let allBPData = [];
         let bpChartInstance = null; 
         let globalBpData = [];
+        
+        // Cache for detail view dropdown
+        let allRatsForDetail = [];
 
         function login() {
             const id = document.getElementById('uid').value;
@@ -229,9 +237,16 @@
             ol.style.display = nav.classList.contains('open') ? 'block' : 'none';
         }
 
-        async function go(view) {
+        async function go(view, targetId = null) {
             const main = document.getElementById('content');
             if(document.getElementById('sidebar').classList.contains('open')) toggleMenu();
+
+            // Layout Control: Compare View uses full width
+            if (view === 'compare') {
+                main.style.maxWidth = '95%';
+            } else {
+                main.style.maxWidth = '1000px';
+            }
 
             if(view === 'admin') {
                 const pw = prompt("관리자 비밀번호를 입력하세요");
@@ -285,38 +300,66 @@
             if(view === 'cohort') {
                 main.innerHTML = `
                 <div class="card">
-                    <h3>📊 코호트 분석 (다중 선택 가능)</h3>
+                    <h3>📊 코호트 분석 (통합 보기)</h3>
                     <div id="co-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">
                         로딩 중...
                     </div>
                     <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
-                        <input type="checkbox" id="show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기 (Manual 날짜 표시 + POD 순 정렬)
+                        <input type="checkbox" id="show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
                     </label>
                     <button class="btn btn-blue" onclick="loadCohortDetail()">분석 시작</button>
                 </div>
                 <div id="cohort-res"></div>`;
-
-                const snap = await db.collection("rats").get();
-                const cohorts = new Set();
-                snap.forEach(d => cohorts.add(d.data().cohort));
-                const sorted = Array.from(cohorts).sort((a,b)=>Number(b)-Number(a));
                 
-                const container = document.getElementById('co-check-list');
-                container.innerHTML = '';
-                if(sorted.length === 0) {
-                    container.innerHTML = '데이터 없음';
-                } else {
-                    sorted.forEach(c => {
-                        const wrapper = document.createElement('div');
-                        wrapper.innerHTML = `<label style="cursor:pointer; font-weight:bold; color:var(--navy); display:flex; align-items:center;"><input type="checkbox" class="co-checkbox" value="${c}" style="width:auto; margin-right:8px; transform:scale(1.2);">Cohort ${c}</label>`;
-                        container.appendChild(wrapper);
-                    });
-                }
+                await renderCohortCheckboxes('co-check-list');
+                return;
+            }
+            
+            // [NEW] Cohort Comparison View
+            if (view === 'compare') {
+                main.innerHTML = `
+                <div class="card">
+                    <h3>🔄 코호트 비교 (최대 3개 분할)</h3>
+                    <div id="comp-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">
+                        로딩 중...
+                    </div>
+                    <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
+                        <input type="checkbox" id="comp-show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
+                    </label>
+                    <button class="btn btn-blue" onclick="loadCohortComparison()">비교 시작</button>
+                </div>
+                <div id="comp-res-area" class="comp-grid"></div>`;
+                
+                await renderCohortCheckboxes('comp-check-list');
                 return;
             }
 
             if(view === 'dash') { main.innerHTML = `<div id="dash-container">로딩 중...</div>`; loadDashboard(); }
-            else if(view === 'detail') { main.innerHTML = `<div class="card"><h3>랫드 상세</h3><div style="display:flex; gap:10px;"><input type="number" id="dt-c" placeholder="C" oninput="mkId('dt')"><input type="number" id="dt-r" placeholder="N" oninput="mkId('dt')"><button class="btn btn-blue btn-small" onclick="loadDetailData()">조회</button></div><input type="text" id="dt-id" readonly style="background:#eee; margin-top:10px;"></div><div id="detail-view"></div>`; }
+            
+            // [MODIFIED] Detail View: Two-step selection (Cohort -> Rat)
+            else if(view === 'detail') { 
+                main.innerHTML = `
+                <div class="card">
+                    <h3>랫드 상세</h3>
+                    <div style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label style="font-size:0.85rem; font-weight:bold; color:var(--navy);">코호트 선택</label>
+                            <select id="dt-cohort-sel" onchange="updateRatList()" style="width:100%; padding:10px;">
+                                <option value="">로딩 중...</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:0.85rem; font-weight:bold; color:var(--navy);">번호(ID) 선택</label>
+                            <select id="dt-rat-sel" onchange="loadDetailData()" style="width:100%; padding:10px;">
+                                <option value="">-</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div id="detail-view"></div>`; 
+                await initDetailSelectors(targetId);
+            }
+            
             else if(view === 'daily') {
                 currentScores = { act: 0, fur: 0, eye: 0 };
                 main.innerHTML = `<div class="card"><h3>데일리 체크</h3><div style="display:flex; gap:10px; margin-bottom:10px"><input type="number" id="dc-c" placeholder="C" oninput="mkId('dc')"><input type="number" id="dc-r" placeholder="N" oninput="mkId('dc')"></div><input type="text" id="dc-id" readonly style="background:#eee; margin-bottom:15px"><div class="input-group"><label>날짜</label><input type="date" id="dc-date"></div>${['act','fur','eye'].map(k => `<div class="input-group"><label>${k.toUpperCase()}</label><div class="rating-box">${[1,2,3,4,5].map(n => `<button class="rate-btn" onclick="score('${k}', ${n}, this)">${n}</button>`).join('')}</div></div>`).join('')}<div id="score-res" class="status-box">선택 필요</div><textarea id="dc-note" rows="2" placeholder="메모" style="margin-top:10px;"></textarea><div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div><button class="btn btn-green" onclick="saveDaily()" style="margin-top:15px;">저장</button></div>`;
@@ -332,7 +375,6 @@
                 document.getElementById('re-date').value = getTodayStr(); 
             }
             else if(view === 'bp') { 
-                // BP Calculator Logic from bp-calc.html
                 main.innerHTML = `
                 <div class="card">
                     <h3>BP Analyzer (PC Ver.)</h3>
@@ -349,6 +391,70 @@
                     <div id="bp-output" style="margin-top:20px;"></div>
                 </div>`; 
                 document.getElementById('bp-file-input').addEventListener('change', loadBPFiles); 
+            }
+        }
+
+        // Helper: Render Cohort Checkboxes (Reused for Analysis & Comparison)
+        async function renderCohortCheckboxes(containerId) {
+            const snap = await db.collection("rats").get();
+            const cohorts = new Set();
+            snap.forEach(d => cohorts.add(d.data().cohort));
+            const sorted = Array.from(cohorts).sort((a,b)=>Number(b)-Number(a));
+            
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            if(sorted.length === 0) {
+                container.innerHTML = '데이터 없음';
+            } else {
+                sorted.forEach(c => {
+                    const wrapper = document.createElement('div');
+                    wrapper.innerHTML = `<label style="cursor:pointer; font-weight:bold; color:var(--navy); display:flex; align-items:center;"><input type="checkbox" class="co-checkbox" value="${c}" style="width:auto; margin-right:8px; transform:scale(1.2);">Cohort ${c}</label>`;
+                    container.appendChild(wrapper);
+                });
+            }
+        }
+
+        // [MODIFIED] Two-step selector init
+        async function initDetailSelectors(targetId) {
+            try {
+                const snap = await db.collection('rats').orderBy('ratId').get();
+                allRatsForDetail = [];
+                snap.forEach(doc => allRatsForDetail.push(doc.data()));
+
+                const cohorts = new Set(allRatsForDetail.map(r => r.cohort));
+                const sortedCohorts = Array.from(cohorts).sort((a,b) => Number(b) - Number(a));
+
+                const cSel = document.getElementById('dt-cohort-sel');
+                cSel.innerHTML = '<option value="">-- 코호트 선택 --</option>' + sortedCohorts.map(c => `<option value="${c}">Cohort ${c}</option>`).join('');
+
+                if(targetId) {
+                    const targetRat = allRatsForDetail.find(r => r.ratId === targetId);
+                    if(targetRat) {
+                        cSel.value = targetRat.cohort;
+                        updateRatList(targetId);
+                    }
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        function updateRatList(preSelectId = null) {
+            const cVal = document.getElementById('dt-cohort-sel').value;
+            const rSel = document.getElementById('dt-rat-sel');
+            
+            if(!cVal) {
+                rSel.innerHTML = '<option value="">-</option>';
+                return;
+            }
+
+            const filtered = allRatsForDetail.filter(r => r.cohort === cVal).sort((a,b) => a.ratId.localeCompare(b.ratId));
+            rSel.innerHTML = '<option value="">-- 번호 선택 --</option>' + filtered.map(r => {
+                const deadMark = r.status === '사망' ? ' (사망)' : '';
+                return `<option value="${r.ratId}">${r.ratId}${deadMark}</option>`;
+            }).join('');
+
+            if(preSelectId) {
+                rSel.value = preSelectId;
+                loadDetailData();
             }
         }
 
@@ -576,19 +682,15 @@
             }
         }
 
-        async function loadCohortDetail() {
-            const checkboxes = document.querySelectorAll('.co-checkbox:checked');
-            if(checkboxes.length === 0) return alert("분석할 코호트를 하나 이상 선택하세요.");
-            
-            const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
-            const showAll = document.getElementById('show-all-tp')?.checked; 
-
-            const res = document.getElementById('cohort-res');
-            res.innerHTML = "<p style='text-align:center'>데이터 불러오는 중...</p>";
+        // [MODIFIED] Shared Analysis Logic for both Single and Comparison views
+        async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '') {
+            const showAll = document.getElementById('show-all-tp')?.checked || document.getElementById('comp-show-all-tp')?.checked;
+            const resDiv = document.getElementById(targetDivId);
+            resDiv.innerHTML = `<div class="loader"></div> 로딩 중... (${targetCohorts.join(', ')})`;
 
             try {
                 // 1. 랫드 데이터 로드
-                const ratPromises = selectedCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
+                const ratPromises = targetCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
                 const ratSnaps = await Promise.all(ratPromises);
                 let rats = [];
                 const ratInfoMap = {}; 
@@ -601,7 +703,7 @@
                     });
                 });
 
-                if(rats.length === 0) { res.innerHTML = "데이터 없음"; return; }
+                if(rats.length === 0) { resDiv.innerHTML = "데이터 없음"; return; }
 
                 const deadRats = rats.filter(r => r.status === "사망");
                 rats.sort((a,b) => a.ratId.localeCompare(b.ratId)); 
@@ -612,7 +714,6 @@
                 const snapshots = await Promise.all(promises);
 
                 // 3. 타임포인트 결정 로직
-                // D00=-999, D0=-500, D2=-300 (W1=7 보다 작게 하여 앞쪽에 정렬)
                 const stdPodMap = { "D00": -999, "D0": -500, "D2": -300, "W1": 7, "W4": 28, "W8": 56, "W12": 84, "W20": 140 };
                 
                 let columns = []; 
@@ -628,20 +729,13 @@
                     snapshots.forEach((snap, idx) => {
                         const rid = ratIds[idx];
                         const rInfo = ratInfoMap[rid];
-                        
                         snap.forEach(doc => {
                             const d = doc.data();
-                            let pod = null;
-
-                            // 표준 시점이면 패스
                             if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) return;
-
-                            // Manual or Date Only -> 수술일 기준 POD 계산
                             if (d.date && rInfo.surgeryDate) {
                                 const diff = new Date(d.date) - new Date(rInfo.surgeryDate);
-                                pod = Math.floor(diff / (1000 * 60 * 60 * 24));
-                                const label = d.date; // 라벨은 날짜로 표시
-
+                                const pod = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                const label = d.date;
                                 if (!seenLabels.has(label)) {
                                     columns.push({ label: label, sortVal: pod });
                                     seenLabels.add(label);
@@ -651,7 +745,6 @@
                     });
                 }
 
-                // 정렬 (sortVal = POD 기준)
                 columns.sort((a,b) => a.sortVal - b.sortVal);
                 const targetTimepoints = columns.map(c => c.label);
 
@@ -664,19 +757,11 @@
 
                 snapshots.forEach((snap, idx) => {
                     const rid = ratIds[idx];
-                    
                     snap.forEach(doc => {
                         const d = doc.data();
                         let label = null;
-
-                        // 표준 시점
-                        if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) {
-                            label = d.timepoint;
-                        } 
-                        // Manual 시점 (전체보기일 때만)
-                        else if (showAll && d.date) {
-                            label = d.date;
-                        }
+                        if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) label = d.timepoint;
+                        else if (showAll && d.date) label = d.date;
 
                         if (label && matrix[rid][label] !== undefined) {
                             matrix[rid][label] = { sbp: d.sbp, wt: d.weight };
@@ -698,13 +783,17 @@
                 });
 
                 let html = '';
+                // Dynamic IDs for Charts to avoid conflicts in Compare View
+                const sChartId = `survChart${uniqueSuffix}`;
+                const bpChartId = `coChartSbp${uniqueSuffix}`;
+                const wtChartId = `coChartWt${uniqueSuffix}`;
+
                 if(deadRats.length > 0) {
                     html += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}마리)</h4>
                     <table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
                     
                     const deathByPod = {};
                     let maxPod = 0;
-
                     deadRats.forEach(r => {
                         const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : '?';
                         html += `<tr><td>${r.ratId}</td><td>${r.deathDate||'-'}</td><td>POD ${pod}</td></tr>`;
@@ -714,7 +803,7 @@
                             if(pod > maxPod) maxPod = pod;
                         }
                     });
-                    html += `</table><div class="chart-area"><canvas id="survChart"></canvas></div></div>`;
+                    html += `</table><div class="chart-area"><canvas id="${sChartId}"></canvas></div></div>`;
                     
                     var survLabels = [];
                     var survData = [];
@@ -728,7 +817,8 @@
 
                 html += `<div class="card"><h4>🩸 혈압(SBP) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => {
-                    html += `<tr><td>${id}</td>`;
+                    const statusIcon = ratInfoMap[id].status === '사망' ? '💀' : '🟢';
+                    html += `<tr><td>${statusIcon} ${id}</td>`;
                     targetTimepoints.forEach(tp => { html += `<td>${matrix[id][tp]?.sbp || '-'}</td>`; });
                     html += `</tr>`;
                 });
@@ -739,11 +829,12 @@
                     avgSbpData.push(avg);
                     html += `<td>${avg||'-'}</td>`;
                 });
-                html += `</tr></table></div><div class="chart-area"><canvas id="coChartSbp"></canvas></div></div>`;
+                html += `</tr></table></div><div class="chart-area"><canvas id="${bpChartId}"></canvas></div></div>`;
 
                 html += `<div class="card"><h4>⚖️ 체중(Weight) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => {
-                    html += `<tr><td>${id}</td>`;
+                    const statusIcon = ratInfoMap[id].status === '사망' ? '💀' : '🟢';
+                    html += `<tr><td>${statusIcon} ${id}</td>`;
                     targetTimepoints.forEach(tp => { html += `<td>${matrix[id][tp]?.wt || '-'}</td>`; });
                     html += `</tr>`;
                 });
@@ -754,33 +845,69 @@
                     avgWtData.push(avg);
                     html += `<td>${avg||'-'}</td>`;
                 });
-                html += `</tr></table></div><div class="chart-area"><canvas id="coChartWt"></canvas></div></div>`;
+                html += `</tr></table></div><div class="chart-area"><canvas id="${wtChartId}"></canvas></div></div>`;
 
-                res.innerHTML = html;
+                resDiv.innerHTML = html;
 
                 if(deadRats.length > 0 && typeof survLabels !== 'undefined') {
-                    new Chart(document.getElementById('survChart'), {
+                    new Chart(document.getElementById(sChartId), {
                         type: 'line',
                         data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor:'rgba(0,0,0,0.1)', fill: true, stepper: true }] },
                         options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
                     });
                 }
-                new Chart(document.getElementById('coChartSbp'), {
+                new Chart(document.getElementById(bpChartId), {
                     type: 'line', data: { labels: targetTimepoints, datasets: [{ label: 'Avg SBP', data: avgSbpData, borderColor: '#d32f2f', tension: 0.1, spanGaps: true }] },
                     options: { maintainAspectRatio: false }
                 });
-                new Chart(document.getElementById('coChartWt'), {
+                new Chart(document.getElementById(wtChartId), {
                     type: 'line', data: { labels: targetTimepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1, spanGaps: true }] },
                     options: { maintainAspectRatio: false }
                 });
 
-            } catch(e) { console.error(e); res.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
+            } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
         }
 
+        async function loadCohortDetail() {
+            const checkboxes = document.querySelectorAll('#co-check-list .co-checkbox:checked');
+            if(checkboxes.length === 0) return alert("분석할 코호트를 하나 이상 선택하세요.");
+            const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
+            
+            // Call the shared function
+            await runCohortAnalysis(selectedCohorts, 'cohort-res', '_main');
+        }
+
+        // [NEW] Comparison Logic
+        async function loadCohortComparison() {
+            const checkboxes = document.querySelectorAll('#comp-check-list .co-checkbox:checked');
+            const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
+
+            if(selectedCohorts.length < 2 || selectedCohorts.length > 3) {
+                return alert("비교할 코호트를 2개 또는 3개 선택해주세요.");
+            }
+
+            const container = document.getElementById('comp-res-area');
+            container.innerHTML = ''; // Reset
+
+            for(let i=0; i<selectedCohorts.length; i++) {
+                const c = selectedCohorts[i];
+                const colDiv = document.createElement('div');
+                colDiv.className = 'comp-col';
+                colDiv.id = `comp-res-${c}`;
+                colDiv.innerHTML = `<h4>Cohort ${c}</h4><div class="loader"></div>`;
+                container.appendChild(colDiv);
+                
+                // Run analysis for single cohort
+                // We use suffix to avoid Chart ID collision
+                await runCohortAnalysis([c], `comp-res-${c}`, `_comp_${c}`);
+            }
+        }
+
+        // [MODIFIED] loadDetailData now reads from Select Box
         async function loadDetailData() {
-            const id = document.getElementById('dt-id').value;
+            const id = document.getElementById('dt-rat-sel').value;
             const view = document.getElementById('detail-view');
-            if(!id) return alert("입력 필요");
+            if(!id) return; 
             view.innerHTML = "로딩 중...";
             try {
                 const rSnap = await db.collection("rats").where("ratId", "==", id).get();
@@ -1081,7 +1208,7 @@
                             else if(r.lastScore >= 9) statusClass += ' status-mild'; 
                             else statusClass += ' status-severe'; 
                         } 
-                        html += `<div class="${statusClass}" onclick="goToDetail('${r.cohort}', '${r.num}')">${r.num}</div>`; 
+                        html += `<div class="${statusClass}" onclick="goToDetail('${r.ratId}')">${r.num}</div>`; 
                     }); 
                     html += `</div></div>`; 
                 }); 
@@ -1132,7 +1259,7 @@
 
         async function deleteRat() { const id=document.getElementById('del-id').value; if(!id||!confirm("삭제?"))return; (await db.collection("rats").where("ratId","==",id).get()).forEach(d=>d.ref.delete()); ["dailyLogs","doseLogs","measurements"].forEach(async c=>(await db.collection(c).where("ratId","==",id).get()).forEach(d=>d.ref.delete())); alert("삭제됨"); }
         async function deleteCohort() { const c=document.getElementById('del-cohort').value; if(!c||!confirm("전체삭제?"))return; (await db.collection("rats").where("cohort","==",c).get()).forEach(d=>d.ref.delete()); alert("삭제됨(로그제외)"); } 
-        function goToDetail(c, r) { go('detail'); setTimeout(() => { document.getElementById('dt-c').value = c; document.getElementById('dt-r').value = r; mkId('dt'); loadDetailData(); }, 100); }
+        function goToDetail(ratId) { go('detail', ratId); }
         function score(k, n, btn) { btn.parentElement.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentScores[k] = n; const t = currentScores.act+currentScores.fur+currentScores.eye; document.getElementById('score-res').innerText=`총점: ${t}점`; }
         function mkId(p) { const c=document.getElementById(`${p}-c`).value, r=document.getElementById(`${p}-r`).value; if(c&&r) document.getElementById(`${p}-id`).value = `C${c.padStart(2,'0')}${r.padStart(2,'0')}`; }
         function calM() { const s=Number(document.getElementById('re-s').value), d=Number(document.getElementById('re-d').value); if(s&&d) document.getElementById('re-m').value = Math.round(d+(s-d)/3); }
@@ -1279,9 +1406,6 @@
             alert("저장되었습니다."); 
         }
 
-        // ========================================================
-        // UPDATED BP CALCULATOR LOGIC (Exactly matching bp-calc.html)
-        // ========================================================
         let bpAllData = [];
 
         function loadBPFiles(e) {
@@ -1307,7 +1431,7 @@
             const idx = n => header.indexOf(n);
 
             rows.forEach(r => {
-                if (r.length < 5) return; // 빈 줄 방지
+                if (r.length < 5) return; 
                 bpAllData.push({
                     file: filename,
                     time: r[idx("Time")],
@@ -1317,7 +1441,7 @@
                     sbp: Number(r[idx("Systolic")]),
                     dbp: Number(r[idx("Diastolic")]),
                     mean: Number(r[idx("Mean")]),
-                    volume: Number(r[12]) // M열 Volume
+                    volume: Number(r[12]) 
                 });
             });
         }
@@ -1326,10 +1450,8 @@
             const output = document.getElementById("bp-output");
             output.innerHTML = "";
 
-            /* specimen에서 ID만 추출하여 그룹화 (bp-calc.html 로직 적용) */
             const grouped = {};
             bpAllData.forEach(r => {
-                // 괄호 () 안의 문자열만 추출 (예: "2023-Rat(01)" -> "01")
                 const match = r.specimen.match(/\(([^)]+)\)/);
                 const ratId = match ? match[1].trim() : r.specimen.trim();
 
