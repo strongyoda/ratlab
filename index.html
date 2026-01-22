@@ -315,7 +315,6 @@
                 return;
             }
             
-            // [NEW] Cohort Comparison View
             if (view === 'compare') {
                 main.innerHTML = `
                 <div class="card">
@@ -336,7 +335,6 @@
 
             if(view === 'dash') { main.innerHTML = `<div id="dash-container">로딩 중...</div>`; loadDashboard(); }
             
-            // [MODIFIED] Detail View: Two-step selection (Cohort -> Rat)
             else if(view === 'detail') { 
                 main.innerHTML = `
                 <div class="card">
@@ -394,7 +392,6 @@
             }
         }
 
-        // Helper: Render Cohort Checkboxes (Reused for Analysis & Comparison)
         async function renderCohortCheckboxes(containerId) {
             const snap = await db.collection("rats").get();
             const cohorts = new Set();
@@ -414,7 +411,6 @@
             }
         }
 
-        // [MODIFIED] Two-step selector init
         async function initDetailSelectors(targetId) {
             try {
                 const snap = await db.collection('rats').orderBy('ratId').get();
@@ -682,7 +678,6 @@
             }
         }
 
-        // [MODIFIED] Shared Analysis Logic for both Single and Comparison views
         async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '') {
             const showAll = document.getElementById('show-all-tp')?.checked || document.getElementById('comp-show-all-tp')?.checked;
             const resDiv = document.getElementById(targetDivId);
@@ -873,11 +868,9 @@
             if(checkboxes.length === 0) return alert("분석할 코호트를 하나 이상 선택하세요.");
             const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
             
-            // Call the shared function
             await runCohortAnalysis(selectedCohorts, 'cohort-res', '_main');
         }
 
-        // [NEW] Comparison Logic
         async function loadCohortComparison() {
             const checkboxes = document.querySelectorAll('#comp-check-list .co-checkbox:checked');
             const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
@@ -887,7 +880,7 @@
             }
 
             const container = document.getElementById('comp-res-area');
-            container.innerHTML = ''; // Reset
+            container.innerHTML = ''; 
 
             for(let i=0; i<selectedCohorts.length; i++) {
                 const c = selectedCohorts[i];
@@ -897,13 +890,10 @@
                 colDiv.innerHTML = `<h4>Cohort ${c}</h4><div class="loader"></div>`;
                 container.appendChild(colDiv);
                 
-                // Run analysis for single cohort
-                // We use suffix to avoid Chart ID collision
                 await runCohortAnalysis([c], `comp-res-${c}`, `_comp_${c}`);
             }
         }
 
-        // [MODIFIED] loadDetailData now reads from Select Box
         async function loadDetailData() {
             const id = document.getElementById('dt-rat-sel').value;
             const view = document.getElementById('detail-view');
@@ -1103,7 +1093,6 @@
             });
         }
 
-        // [추가: 랫드 상태 체크 함수]
         async function checkRatValid(id) {
             try {
                 const s = await db.collection("rats").where("ratId", "==", id).get();
@@ -1277,8 +1266,10 @@
             const dead = document.getElementById('is-dead').checked;
             const total = currentScores.act + currentScores.fur + currentScores.eye;
 
-            if(currentScores.act === 0 && currentScores.fur === 0 && currentScores.eye === 0 && !dead) {
-                 if(!confirm("점수가 모두 0점입니다. 저장하시겠습니까?")) return;
+            // [FIXED] Prevent saving if any score is 0 (unless dead)
+            if (!dead && (currentScores.act === 0 || currentScores.fur === 0 || currentScores.eye === 0)) {
+                alert("Activity, Fur, Eye 점수를 모두 선택해주세요.");
+                return;
             }
 
             try {
