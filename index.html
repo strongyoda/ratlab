@@ -170,6 +170,57 @@
         .cod-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; margin-bottom: 15px; }
         .cod-option { display: flex; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #eee; cursor: pointer; }
         .cod-option input { width: auto; margin-right: 8px; transform: scale(1.2); }
+
+        /* Legend Style 수정: 폰트 축소 및 줄바꿈 허용 */
+        .cod-legend-table { 
+            width: 100%; 
+            font-size: 0.75rem; /* 글씨 크기 축소 */
+            border-collapse: collapse; 
+            table-layout: fixed; /* 셀 너비 고정으로 줄바꿈 유도 */
+        }
+        .cod-legend-table td { 
+            padding: 3px; 
+            border-bottom: 1px solid #eee; 
+            white-space: normal; /* 줄바꿈 허용 */
+            word-wrap: break-word; /* 긴 단어 줄바꿈 */
+            vertical-align: middle;
+        }
+        /* 컬럼 비율 조정 */
+        .cod-legend-table td:nth-child(1) { width: 30%; }
+        .cod-legend-table td:nth-child(2) { width: 30%; }
+        .cod-legend-table td:nth-child(3) { width: 40%; }
+
+        /* 데이터 토글 버튼 스타일 */
+        .data-toggle-btn {
+            display: block;
+            width: 100%;
+            background: #f1f3f5;
+            color: #495057;
+            border: none;
+            padding: 8px 0;
+            margin-top: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        /* ... 기존 스타일 ... */
+
+        /* 각주 내 색상 박스 스타일 */
+        .color-box {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 5px;
+            border-radius: 3px;
+            vertical-align: middle;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        /* ... 기존 스타일 ... */
+        .data-toggle-btn:hover { background: #e9ecef; }
+        .data-detail-box { display: none; margin-top: 10px; border-top: 1px dashed #ddd; padding-top: 10px; }
     </style>
 </head>
 <body>
@@ -231,6 +282,7 @@
                 <div class="cod-title">Non-Neurological 원인 (2/3)</div>
                 <button class="cod-btn" onclick="selectCodNonNeuroCause('Unknown')">Unknown</button>
                 <button class="cod-btn" onclick="selectCodNonNeuroCause('Surgical Failure')">Surgical Failure</button>
+                <button class="cod-btn" onclick="selectCodNonNeuroCause('Sacrifice')">Sacrifice</button>
                 <button class="cod-btn" style="background:#eee;" onclick="codBack(1)">이전</button>
             </div>
 
@@ -240,6 +292,7 @@
                     <label class="cod-option"><input type="checkbox" name="cod-check" value="SAH"> SAH</label>
                     <label class="cod-option"><input type="checkbox" name="cod-check" value="Infarction"> Infarction</label>
                     <label class="cod-option"><input type="checkbox" name="cod-check" value="Vasospasm"> Vasospasm</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Sacrifice"> Sacrifice</label>
                     <label class="cod-option"><input type="checkbox" name="cod-check" value="Unknown"> Unknown</label>
                 </div>
                 
@@ -317,32 +370,38 @@
                     <div class="tab-container">
                         <div id="adm-del" class="tab active" onclick="admTab('del')">데이터 삭제</div>
                         <div id="adm-edit" class="tab" onclick="admTab('edit')">데이터 수정</div>
-                        <div id="adm-imp" class="tab" onclick="admTab('imp')">일괄 등록</div>
+                        <div id="adm-logs" class="tab" onclick="admTab('logs')">로그 삭제</div>
                     </div>
                     
                     <div id="tab-del">
                         <div class="input-group">
-                            <label>개별 랫드 삭제</label>
+                            <label>개별 랫드 삭제 (ID)</label>
                             <div style="display:flex; gap:10px;"><input type="text" id="del-id" placeholder="C1101"><button class="btn btn-red btn-small" onclick="deleteRat()">삭제</button></div>
                         </div>
                         <hr style="margin:20px 0; border:0; border-top:1px solid #eee;">
                         <div class="input-group">
-                            <label>코호트 전체 삭제</label>
+                            <label>코호트 전체 삭제 (Cohort No)</label>
                             <div style="display:flex; gap:10px;"><input type="number" id="del-cohort" placeholder="11"><button class="btn btn-red btn-small" onclick="deleteCohort()">전체 삭제</button></div>
                         </div>
                     </div>
 
                     <div id="tab-edit" style="display:none;">
                         <div class="input-group">
-                            <label>랫드 ID 검색 (전체 데이터 수정/추가/삭제)</label>
+                            <label>랫드 ID 검색 (전체 데이터 수정)</label>
                             <div style="display:flex; gap:10px;"><input type="text" id="edit-id" placeholder="C1101"><button class="btn btn-blue btn-small" onclick="searchForEdit()">검색</button></div>
                         </div>
                         <div id="edit-result"></div>
                     </div>
 
-                    <div id="tab-imp" style="display:none;">
-                        <input type="file" id="daily-csv" accept=".csv" style="margin-bottom:10px;">
-                        <button class="btn btn-green" onclick="uploadDailyLogs()">데일리 로그 업로드 시작</button>
+                    <div id="tab-logs" style="display:none;">
+                        <div class="input-group">
+                            <label>랫드 ID 검색 (로그 불러오기)</label>
+                            <div style="display:flex; gap:10px;">
+                                <input type="text" id="log-rat-id" placeholder="C1101">
+                                <button class="btn btn-blue btn-small" onclick="searchLogsDel()">로그 조회</button>
+                            </div>
+                        </div>
+                        <div id="log-del-result" style="margin-top:15px;"></div>
                     </div>
                 </div>`;
                 return;
@@ -368,17 +427,47 @@
             if (view === 'compare') {
                 main.innerHTML = `
                 <div class="card">
-                    <h3>🔄 코호트 비교 (최대 3개 분할)</h3>
-                    <div id="comp-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">
-                        로딩 중...
+                    <h3>🔄 코호트 비교</h3>
+                    <div class="tab-container">
+                        <div id="cp-tab-ind" class="tab active" onclick="switchCompTab('ind')">개별 비교</div>
+                        <div id="cp-tab-grp" class="tab" onclick="switchCompTab('grp')">그룹 비교</div>
                     </div>
-                    <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
-                        <input type="checkbox" id="comp-show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
-                    </label>
-                    <button class="btn btn-blue" onclick="loadCohortComparison()">비교 시작</button>
+
+                    <div id="cp-ui-ind">
+                        <div id="comp-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">
+                            로딩 중...
+                        </div>
+                        <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
+                            <input type="checkbox" id="comp-show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
+                        </label>
+                        <button class="btn btn-blue" onclick="loadCohortComparison()">개별 비교 시작</button>
+                    </div>
+
+                    <div id="cp-ui-grp" style="display:none;">
+                        <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                            <div style="flex:1; min-width:200px; border:1px solid #ddd; padding:10px; border-radius:8px; background:#f8f9fa;">
+                                <div style="font-weight:bold; color:var(--navy); border-bottom:1px solid #ddd; margin-bottom:5px; padding-bottom:5px;">Group A</div>
+                                <div id="grp-list-a" style="max-height:150px; overflow-y:auto;"></div>
+                            </div>
+                            <div style="flex:1; min-width:200px; border:1px solid #ddd; padding:10px; border-radius:8px; background:#f8f9fa;">
+                                <div style="font-weight:bold; color:var(--navy); border-bottom:1px solid #ddd; margin-bottom:5px; padding-bottom:5px;">Group B</div>
+                                <div id="grp-list-b" style="max-height:150px; overflow-y:auto;"></div>
+                            </div>
+                            <div style="flex:1; min-width:200px; border:1px solid #ddd; padding:10px; border-radius:8px; background:#f8f9fa;">
+                                <div style="font-weight:bold; color:var(--navy); border-bottom:1px solid #ddd; margin-bottom:5px; padding-bottom:5px;">Group C (Optional)</div>
+                                <div id="grp-list-c" style="max-height:150px; overflow-y:auto;"></div>
+                            </div>
+                        </div>
+                        <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
+                            <input type="checkbox" id="grp-show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
+                        </label>
+                        <button class="btn btn-blue" onclick="loadGroupComparison()">그룹 비교 시작</button>
+                    </div>
                 </div>
                 <div id="comp-res-area" class="comp-grid"></div>`;
-                await renderCohortCheckboxes('comp-check-list');
+                
+                await renderCohortCheckboxes('comp-check-list'); // For Individual
+                await renderGroupSelectors(); // For Groups
                 return;
             }
 
@@ -425,6 +514,146 @@
             }
         }
 
+        // --- Group Comparison Helpers ---
+        function switchCompTab(mode) {
+            document.getElementById('cp-tab-ind').className = mode==='ind' ? 'tab active' : 'tab';
+            document.getElementById('cp-tab-grp').className = mode==='grp' ? 'tab active' : 'tab';
+            document.getElementById('cp-ui-ind').style.display = mode==='ind' ? 'block' : 'none';
+            document.getElementById('cp-ui-grp').style.display = mode==='grp' ? 'block' : 'none';
+        }
+
+        async function renderGroupSelectors() {
+            const snap = await db.collection("rats").get();
+            const cohorts = new Set();
+            snap.forEach(d => cohorts.add(d.data().cohort));
+            const sorted = Array.from(cohorts).sort((a,b)=>Number(b)-Number(a));
+            
+            const createList = (id) => {
+                const con = document.getElementById(id);
+                con.innerHTML = '';
+                sorted.forEach(c => {
+                    const div = document.createElement('div');
+                    div.innerHTML = `<label style="cursor:pointer; display:block; padding:2px 0;"><input type="checkbox" value="${c}" style="width:auto; margin-right:5px;"> Cohort ${c}</label>`;
+                    con.appendChild(div);
+                });
+            };
+            createList('grp-list-a');
+            createList('grp-list-b');
+            createList('grp-list-c');
+        }
+
+        async function loadGroupComparison() {
+            // 1. 선택된 그룹 확인
+            const getSelected = (id) => Array.from(document.querySelectorAll(`#${id} input:checked`)).map(cb => cb.value);
+            const grpA = getSelected('grp-list-a');
+            const grpB = getSelected('grp-list-b');
+            const grpC = getSelected('grp-list-c');
+
+            const activeGroups = [];
+            if(grpA.length > 0) activeGroups.push({ name: 'Group A', cohorts: grpA });
+            if(grpB.length > 0) activeGroups.push({ name: 'Group B', cohorts: grpB });
+            if(grpC.length > 0) activeGroups.push({ name: 'Group C', cohorts: grpC });
+
+            if(activeGroups.length < 2) return alert("비교를 위해 최소 2개 그룹에 코호트를 선택해주세요.");
+
+            const container = document.getElementById('comp-res-area');
+            container.innerHTML = '<div class="loader"></div> 그룹 데이터 범위 계산 중...';
+
+            // 2. 전체 그룹 통합 범위(Scale) 계산
+            let globalLabels = [];
+            let globalMaxSbp = 0;
+            let globalMaxWt = 0;
+            let globalMaxPod = 0;
+
+            try {
+                // 비교에 참여하는 모든 코호트 수집
+                const allCohorts = [];
+                activeGroups.forEach(g => allCohorts.push(...g.cohorts));
+                const uniqueCohorts = [...new Set(allCohorts)];
+
+                // ... (이전과 동일한 Scale 계산 로직 생략, 기존 코드 유지) ...
+                // 랫드 데이터 조회 (POD 계산용)
+                const ratPromises = uniqueCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
+                const ratSnaps = await Promise.all(ratPromises);
+                
+                let allRatIds = [];
+                let surgeryMap = {};
+
+                ratSnaps.forEach(snap => {
+                    snap.forEach(d => {
+                        const r = d.data();
+                        allRatIds.push(r.ratId);
+                        if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
+                        if(r.surgeryDate) {
+                            const endDate = r.deathDate ? new Date(r.deathDate) : new Date();
+                            const pod = Math.floor((endDate - new Date(r.surgeryDate))/(1000*60*60*24));
+                            if(pod > globalMaxPod) globalMaxPod = pod;
+                        }
+                    });
+                });
+
+                // 측정 데이터 조회
+                const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
+                const measSnaps = await Promise.all(measPromises);
+
+                const stdPodMap = { "D00": -999, "D0": -500, "D2": -300, "W1": 7, "W4": 28, "W8": 56, "W12": 84, "W20": 140 };
+                const labelSet = new Set(Object.keys(stdPodMap)); 
+                const tempColumns = [];
+                Object.keys(stdPodMap).forEach(key => { tempColumns.push({ label: key, sortVal: stdPodMap[key] }); });
+                const showAll = document.getElementById('grp-show-all-tp')?.checked;
+
+                measSnaps.forEach((snap, idx) => {
+                    const rid = allRatIds[idx];
+                    const surgDate = surgeryMap[rid];
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
+                        if(d.weight && d.weight > globalMaxWt) globalMaxWt = d.weight;
+                        if (showAll && d.date && surgDate && !stdPodMap[d.timepoint]) {
+                            if (!labelSet.has(d.date)) {
+                                const diff = new Date(d.date) - new Date(surgDate);
+                                const pod = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                labelSet.add(d.date);
+                                tempColumns.push({ label: d.date, sortVal: pod });
+                            }
+                        }
+                    });
+                });
+                tempColumns.sort((a,b) => a.sortVal - b.sortVal);
+                const uniqueCols = [];
+                const seen = new Set();
+                tempColumns.forEach(c => { if(!seen.has(c.label)) { seen.add(c.label); uniqueCols.push(c); } });
+                globalLabels = uniqueCols.map(c => c.label);
+                // ... (Scale 계산 로직 끝) ...
+
+            } catch(e) { console.error("Group Scale Calc Error", e); }
+
+            // 3. 각 그룹별 분석 실행
+            container.innerHTML = ''; 
+
+            for(let i=0; i<activeGroups.length; i++) {
+                const g = activeGroups[i];
+                const colDiv = document.createElement('div');
+                colDiv.className = 'comp-col';
+                colDiv.id = `comp-res-grp-${i}`;
+                // 로딩 시 표시될 임시 텍스트
+                colDiv.innerHTML = `<div class="loader"></div>`;
+                container.appendChild(colDiv);
+                
+                // [수정됨] 제목 생성: Group A : Cohort 9, 10
+                const title = `${g.name} : Cohort ${g.cohorts.join(', ')}`;
+
+                // 여기서 마지막 인자로 title 전달
+                await runCohortAnalysis(g.cohorts, `comp-res-grp-${i}`, `_grp_${i}`, {
+                    labels: globalLabels,
+                    maxSbp: globalMaxSbp,
+                    maxWt: globalMaxWt,
+                    maxPod: globalMaxPod
+                }, title);
+            }
+        }
+
+        // ... [Existing renderCohortCheckboxes, initDetailSelectors, updateRatList ...]
         async function renderCohortCheckboxes(containerId) {
             const snap = await db.collection("rats").get();
             const cohorts = new Set();
@@ -478,10 +707,75 @@
         // =========================================================
         //  COHORT ANALYSIS & CHART GENERATION (Hierarchical Pie)
         // =========================================================
-        async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', fixedOptions = null) {
-            const showAll = document.getElementById('show-all-tp')?.checked || document.getElementById('comp-show-all-tp')?.checked;
+        
+        // Define Custom Color Palette for Clarity
+        const codColors = {
+            "Neurological": "#1565C0",      // Dark Blue
+            "Non-Neurological": "#C62828",  // Dark Red
+            "Unknown": "#424242",           // Dark Gray
+            // Secondary
+            "Aneurysm(O)": "#42A5F5",       // Medium Blue
+            "Aneurysm(X)": "#5C6BC0",       // Indigo
+            "Surgical Failure": "#FF9800",  // Orange
+            "Unknown (Sec)": "#EF5350",     // Light Red (Non-Neuro)
+            "Sacrifice (Sec)": "#FFCA28",   // Amber (Non-Neuro Sacrifice)
+            // Tertiary
+            "SAH": "#90CAF9",               // Light Blue
+            "Infarction": "#80DEEA",        // Cyan
+            "Vasospasm": "#CE93D8",         // Lavender
+            "Sacrifice": "#FFF176",         // Yellow (Neuro Sacrifice)
+            "Unknown (3rd)": "#EEEEEE",     // Light Gray
+            "None": "transparent"
+        };
+
+        // ▼▼▼ [추가] 약어 매핑 정의 ▼▼▼
+        const codAbbrMap = {
+            "Non-Neurological": "Non-Neuro",
+            "Neurological": "Neuro",
+            "Aneurysm": "CA",
+            "Infarction": "Infarc",
+            "Vasospasm": "CVS",
+            "Sacrifice": "Sacrifice",
+            "Procedure related": "Proc. related",
+            "Unknown": "Unknown",
+            "None": "-"
+            // 필요에 따라 추가할 수 있습니다.
+        };
+        // ▲▲▲ [추가 끝] ▲▲▲
+
+        function toggleDetails(detailId, btnId) {
+            const el = document.getElementById(detailId);
+            const btn = document.getElementById(btnId);
+            if(el.style.display === 'none') {
+                el.style.display = 'block';
+                btn.innerText = '▲ 상세 데이터 접기';
+                btn.classList.replace('btn-blue', 'btn-red');
+            } else {
+                el.style.display = 'none';
+                btn.innerText = '▼ 상세 데이터 보기 (Detail)';
+                btn.classList.replace('btn-red', 'btn-blue');
+            }
+        }
+
+        // 간단한 토글 헬퍼 함수 (script 태그 내 아무데나 추가해주세요)
+        function toggleDisplay(id) {
+            const el = document.getElementById(id);
+            if(el.style.display === 'none' || el.style.display === '') {
+                el.style.display = 'block';
+            } else {
+                el.style.display = 'none';
+            }
+        }
+
+        // 수정된 코호트 분석 함수 (전체 교체)
+        // 수정된 코호트 분석 함수 (제목 표시 기능 추가)
+        async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', fixedOptions = null, customTitle = null) {
+            // Check checkboxes (individual or group)
+            const showAll = document.getElementById('show-all-tp')?.checked || document.getElementById('comp-show-all-tp')?.checked || document.getElementById('grp-show-all-tp')?.checked;
+            
             const resDiv = document.getElementById(targetDivId);
-            resDiv.innerHTML = `<div class="loader"></div> 로딩 중... (${targetCohorts.join(', ')})`;
+            // 로딩 메시지에 타이틀이 있으면 같이 표시
+            resDiv.innerHTML = `<div class="loader"></div> 로딩 중... ${customTitle ? '<br>'+customTitle : '('+targetCohorts.join(', ')+')'}`;
 
             try {
                 const ratPromises = targetCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
@@ -560,253 +854,228 @@
                     });
                 });
 
-                let html = '';
-                const sChartId = `survChart${uniqueSuffix}`;
-                const bpChartId = `coChartSbp${uniqueSuffix}`;
-                const wtChartId = `coChartWt${uniqueSuffix}`;
-                const codChartId = `codChart${uniqueSuffix}`;
+                // --- BUILD HTML ---
+                let finalHtml = '';
 
+                // [추가됨] 상단 고정(Sticky) 헤더 타이틀
+                if (customTitle) {
+                    finalHtml += `
+                    <div style="position:sticky; top:60px; z-index:90; background:#e8eaf6; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+                        <span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span>
+                    </div>`;
+                }
+                
+                // IDs
+                const sChartId = `survChart${uniqueSuffix}`;
+                const sTableId = `survTable${uniqueSuffix}`;
+                
+                const codChartId = `codChart${uniqueSuffix}`;
+                const codLegendId = `codLegend${uniqueSuffix}`;
+                
+                const bpChartId = `coChartSbp${uniqueSuffix}`;
+                const bpTableId = `coTableSbp${uniqueSuffix}`;
+                
+                const wtChartId = `coChartWt${uniqueSuffix}`;
+                const wtTableId = `coTableWt${uniqueSuffix}`;
+
+                // 1. Survival Analysis
                 if(deadRats.length > 0) {
-                    html += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}마리)</h4>
-                    <table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
-                    
-                    const deathByPod = {};
-                    let maxPod = 0;
-                    
+                    let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
                     deadRats.forEach(r => {
                         const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : '?';
                         const cause = r.codFull || '미기록';
-                        html += `<tr><td>${r.ratId}</td><td>${r.deathDate||'-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${cause}</span></td></tr>`;
-                        if(typeof pod === 'number') {
-                            if(!deathByPod[pod]) deathByPod[pod] = 0;
-                            deathByPod[pod]++;
-                            if(pod > maxPod) maxPod = pod;
-                        }
+                        survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate||'-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${cause}</span></td></tr>`;
                     });
-                    html += `</table><div class="chart-area"><canvas id="${sChartId}"></canvas></div></div>`;
-                    
-                    // Add COD Nested Chart Area
-                    html += `<div class="card"><h4>💀 사망 원인 계층 구조 (1차>2차>3차)</h4><div class="chart-area" style="height:350px;"><canvas id="${codChartId}"></canvas></div></div>`;
+                    survTable += `</table>`;
 
-                    var survLabels = [];
-                    var survData = [];
-                    let currentAlive = rats.length;
-                    
-                    let loopEnd = maxPod;
-                    if(fixedOptions && typeof fixedOptions.maxPod === 'number') {
-                        loopEnd = fixedOptions.maxPod;
-                    }
+                    finalHtml += `
+                    <div class="card" style="border-left:5px solid var(--red)">
+                        <h4>⚰️ 사망 분석 (${deadRats.length}마리)</h4>
+                        <div class="chart-area"><canvas id="${sChartId}"></canvas></div>
+                        <button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터 보기</button>
+                        <div id="${sTableId}" class="data-detail-box">${survTable}</div>
+                    </div>`;
 
-                    for(let i=0; i<=loopEnd; i++) {
-                        if(deathByPod[i]) currentAlive -= deathByPod[i];
-                        survLabels.push(`POD ${i}`);
-                        survData.push((currentAlive / rats.length) * 100);
-                    }
-
-                    // --- Hierarchical Data Processing for Chart.js (Count-based Aggregation) ---
-                    setTimeout(() => {
-                        if(document.getElementById(codChartId)) {
-                            // 1. Data Structure Aggregation (Count based on 3rd level occurrences)
-                            const hierarchy = {}; // { Type: { Secondary: { Cause: Count } } }
-
-                            deadRats.forEach(r => {
-                                // Parse COD string
-                                const fullStr = r.codFull || "Unknown";
-                                let type = "Unknown";
-                                let secondary = "Unknown";
-                                let causes = [];
-
-                                // Format 1: "Neurological (Aneurysm(O)) - SAH, Infarction"
-                                // Format 2: "Non-Neurological (Unknown)" -> (If Non-Neuro, secondary is in parens)
-                                
-                                if(fullStr.startsWith("Neurological")) {
-                                    // Parse Neuro
-                                    type = "Neurological";
-                                    const parts = fullStr.split('-');
-                                    const prefix = parts[0].trim(); // "Neurological (Aneurysm(O))"
-                                    const suffix = parts.length > 1 ? parts[1].trim() : ""; // "SAH, Infarction"
-
-                                    // Extract Secondary (Aneurysm Status)
-                                    const match = prefix.match(/\(([^)]+)\)/);
-                                    secondary = match ? match[1].trim() : "Unknown";
-
-                                    // Extract Causes
-                                    if(suffix) {
-                                        causes = suffix.split(',').map(c => c.trim()).filter(c=>c);
-                                    } else {
-                                        causes = ["Unknown"];
-                                    }
-
-                                } else if (fullStr.startsWith("Non-Neurological")) {
-                                    // Parse Non-Neuro
-                                    type = "Non-Neurological";
-                                    // Format: "Non-Neurological (Unknown)" or "Non-Neurological (Surgical Failure)"
-                                    const match = fullStr.match(/\(([^)]+)\)/);
-                                    secondary = match ? match[1].trim() : "Unknown";
-                                    causes = ["None"]; // 3차 분류 없음
-
-                                } else {
-                                    // Fallback for custom or old data
-                                    type = "Unknown";
-                                    secondary = "Unknown";
-                                    causes = [fullStr];
-                                }
-
-                                // Accumulate
-                                if (!hierarchy[type]) hierarchy[type] = {};
-                                if (!hierarchy[type][secondary]) hierarchy[type][secondary] = {};
-                                
-                                // **중요**: 3차 원인이 여러 개면, 상위 카테고리도 그만큼 중복 카운트됨 (시각적 정합성을 위해)
-                                causes.forEach(c => {
-                                    if (!hierarchy[type][secondary][c]) hierarchy[type][secondary][c] = 0;
-                                    hierarchy[type][secondary][c]++;
-                                });
-                            });
-
-                            // 2. Flatten for Chart.js (3 Datasets)
-                            const dataL1 = []; // Type
-                            const dataL2 = []; // Secondary
-                            const dataL3 = []; // Cause
-                            const bgL1 = [], bgL2 = [], bgL3 = [];
-                            const labelsL1 = [], labelsL2 = [], labelsL3 = [];
-
-                            // Color Palette
-                            const colors = {
-                                "Neurological": { base: [54, 162, 235] }, // Blue
-                                "Non-Neurological": { base: [255, 99, 132] }, // Red
-                                "Unknown": { base: [201, 203, 207] } // Gray
-                            };
-
-                            Object.keys(hierarchy).forEach(type => {
-                                let typeTotal = 0;
-                                const subTree = hierarchy[type];
-                                const cBase = colors[type] ? colors[type].base : [200,200,200];
-                                
-                                Object.keys(subTree).forEach(sec => {
-                                    let secTotal = 0;
-                                    const causeTree = subTree[sec];
-
-                                    Object.keys(causeTree).forEach(cause => {
-                                        const count = causeTree[cause];
-                                        dataL3.push(count);
-                                        
-                                        // 3차 분류가 'None'인 경우 (Non-Neuro) 라벨을 비움
-                                        labelsL3.push(cause === "None" ? "" : cause);
-                                        secTotal += count;
-                                        
-                                        // Level 3 Colors (Lightest)
-                                        // 만약 'None'이면 투명하게 할 수도 있지만, 
-                                        // 디자인상 2차 분류 색상을 따라가게 하는 것이 깔끔함 (여기선 Lightest)
-                                        bgL3.push(`rgba(${cBase[0]}, ${cBase[1]}, ${cBase[2]}, 0.3)`);
-                                    });
-
-                                    dataL2.push(secTotal);
-                                    labelsL2.push(sec);
-                                    typeTotal += secTotal;
-
-                                    // Level 2 Colors (Medium)
-                                    bgL2.push(`rgba(${cBase[0]}, ${cBase[1]}, ${cBase[2]}, 0.6)`);
-                                });
-
-                                dataL1.push(typeTotal);
-                                labelsL1.push(type);
-
-                                // Level 1 Colors (Darkest)
-                                bgL1.push(`rgba(${cBase[0]}, ${cBase[1]}, ${cBase[2]}, 1.0)`);
-                            });
-
-                            // 3. Render Multi-Dataset Doughnut
-                            new Chart(document.getElementById(codChartId), {
-                                type: 'doughnut',
-                                data: {
-                                    labels: labelsL3, 
-                                    datasets: [
-                                        {
-                                            label: '1차 분류',
-                                            data: dataL1,
-                                            backgroundColor: bgL1,
-                                            weight: 2
-                                        },
-                                        {
-                                            label: '2차 분류',
-                                            data: dataL2,
-                                            backgroundColor: bgL2,
-                                            weight: 1.5
-                                        },
-                                        {
-                                            label: '3차 분류',
-                                            data: dataL3,
-                                            backgroundColor: bgL3,
-                                            weight: 1
-                                        }
-                                    ]
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                        legend: { display: true, position: 'right' },
-                                        tooltip: {
-                                            callbacks: {
-                                                label: function(context) {
-                                                    const dsIndex = context.datasetIndex;
-                                                    let label = '';
-                                                    if(dsIndex === 0) label = labelsL1[context.dataIndex];
-                                                    else if(dsIndex === 1) label = labelsL2[context.dataIndex];
-                                                    else label = labelsL3[context.dataIndex];
-                                                    
-                                                    if(!label) return null; // 빈 라벨 숨김
-                                                    return `${label}: ${context.raw}`;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            });
-                        }
-                    }, 500);
+                    finalHtml += `
+                    <div class="card">
+                        <h4>💀 사망 원인 계층 구조</h4>
+                        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;">
+                            <div style="flex:1; min-width:180px; height:300px; position:relative;">
+                                <canvas id="${codChartId}"></canvas>
+                            </div>
+                            <div id="${codLegendId}" style="flex:1; min-width:200px; max-height:300px; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:5px; background:#fdfdfd;"></div>
+                        </div>
+                    </div>`;
                 }
 
-                html += `<div class="card"><h4>🩸 혈압(SBP) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+                // 2. BP Analysis
+                let bpTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => {
                     const statusIcon = ratInfoMap[id].status === '사망' ? '💀' : '🟢';
-                    html += `<tr><td>${statusIcon} ${id}</td>`;
-                    targetTimepoints.forEach(tp => { html += `<td>${matrix[id][tp]?.sbp || '-'}</td>`; });
-                    html += `</tr>`;
+                    bpTable += `<tr><td>${statusIcon} ${id}</td>`;
+                    targetTimepoints.forEach(tp => { bpTable += `<td>${matrix[id][tp]?.sbp || '-'}</td>`; });
+                    bpTable += `</tr>`;
                 });
-                html += `<tr style="background:#e3f2fd; font-weight:bold;"><td>AVG</td>`;
+                bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>AVG</td>`;
                 const avgSbpData = [];
                 targetTimepoints.forEach(tp => {
                     const avg = avgs[tp].sCnt ? Math.round(avgs[tp].sSum / avgs[tp].sCnt) : null;
                     avgSbpData.push(avg);
-                    html += `<td>${avg||'-'}</td>`;
+                    bpTable += `<td>${avg||'-'}</td>`;
                 });
-                html += `</tr></table></div><div class="chart-area"><canvas id="${bpChartId}"></canvas></div></div>`;
+                bpTable += `</tr></table></div>`;
 
-                html += `<div class="card"><h4>⚖️ 체중(Weight) 타임라인</h4><div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
+                finalHtml += `
+                <div class="card">
+                    <h4>🩸 혈압(SBP) 그래프 & 데이터</h4>
+                    <div class="chart-area"><canvas id="${bpChartId}"></canvas></div>
+                    <button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터 보기</button>
+                    <div id="${bpTableId}" class="data-detail-box">${bpTable}</div>
+                </div>`;
+
+                // 3. Weight Analysis
+                let wtTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => {
                     const statusIcon = ratInfoMap[id].status === '사망' ? '💀' : '🟢';
-                    html += `<tr><td>${statusIcon} ${id}</td>`;
-                    targetTimepoints.forEach(tp => { html += `<td>${matrix[id][tp]?.wt || '-'}</td>`; });
-                    html += `</tr>`;
+                    wtTable += `<tr><td>${statusIcon} ${id}</td>`;
+                    targetTimepoints.forEach(tp => { wtTable += `<td>${matrix[id][tp]?.wt || '-'}</td>`; });
+                    wtTable += `</tr>`;
                 });
-                html += `<tr style="background:#e8f5e9; font-weight:bold;"><td>AVG</td>`;
+                wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>AVG</td>`;
                 const avgWtData = [];
                 targetTimepoints.forEach(tp => {
                     const avg = avgs[tp].wCnt ? (avgs[tp].wSum / avgs[tp].wCnt).toFixed(1) : null;
                     avgWtData.push(avg);
-                    html += `<td>${avg||'-'}</td>`;
+                    wtTable += `<td>${avg||'-'}</td>`;
                 });
-                html += `</tr></table></div><div class="chart-area"><canvas id="${wtChartId}"></canvas></div></div>`;
+                wtTable += `</tr></table></div>`;
 
-                resDiv.innerHTML = html;
+                finalHtml += `
+                <div class="card">
+                    <h4>⚖️ 체중(Weight) 그래프 & 데이터</h4>
+                    <div class="chart-area"><canvas id="${wtChartId}"></canvas></div>
+                    <button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터 보기</button>
+                    <div id="${wtTableId}" class="data-detail-box">${wtTable}</div>
+                </div>`;
 
-                if(deadRats.length > 0 && typeof survLabels !== 'undefined') {
+                resDiv.innerHTML = finalHtml;
+
+                // --- Chart Initialization ---
+                if(deadRats.length > 0) {
+                    let cohortRealMaxPod = 0;
+                    rats.forEach(r => {
+                        if(r.surgeryDate) {
+                            const endDate = r.deathDate ? new Date(r.deathDate) : new Date();
+                            const pod = Math.floor((endDate - new Date(r.surgeryDate)) / (1000*60*60*24));
+                            if(pod > cohortRealMaxPod) cohortRealMaxPod = pod;
+                        }
+                    });
+
+                    const deathByPod = {};
+                    deadRats.forEach(r => {
+                        const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : 0;
+                        if(typeof pod === 'number') {
+                            if(!deathByPod[pod]) deathByPod[pod] = 0;
+                            deathByPod[pod]++;
+                        }
+                    });
+                    
+                    var survLabels = [];
+                    var survData = [];
+                    let currentAlive = rats.length;
+                    
+                    let loopEnd = cohortRealMaxPod;
+                    if(fixedOptions && typeof fixedOptions.maxPod === 'number') loopEnd = fixedOptions.maxPod;
+
+                    for(let i=0; i<=loopEnd; i++) {
+                        if(i > cohortRealMaxPod) {
+                            survLabels.push(`POD ${i}`);
+                            survData.push(null); 
+                        } else {
+                            if(deathByPod[i]) currentAlive -= deathByPod[i];
+                            survLabels.push(`POD ${i}`);
+                            survData.push((currentAlive / rats.length) * 100);
+                        }
+                    }
+
                     new Chart(document.getElementById(sChartId), {
                         type: 'line',
-                        data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor:'rgba(0,0,0,0.1)', fill: true, stepper: true }] },
+                        data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor:'rgba(0,0,0,0.1)', fill: true, stepper: true, spanGaps: false }] }, 
                         options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
                     });
+
+                    // COD Chart Logic
+                    setTimeout(() => {
+                        if(document.getElementById(codChartId)) {
+                            // 약어 매핑 및 차트 그리기 로직 (기존과 동일)
+                            const codAbbrMap = { "Neurological": "Neuro", "Non-Neurological": "Non-Neuro", "Aneurysm(O)": "CA", "Aneurysm(X)": "Non-CA", "Infarction": "Infarc", "Vasospasm": "CVS", "Surgical Failure": "Surg.Fail", "Sacrifice": "Sacrifice", "Unknown": "Unknown", "None": "-" };
+                            const hierarchy = {}; 
+                            deadRats.forEach(r => {
+                                const fullStr = r.codFull || "Unknown";
+                                let type = "Unknown", secondary = "Unknown", causes = [];
+                                if(fullStr.startsWith("Neurological")) {
+                                    type = "Neurological";
+                                    const parts = fullStr.split('-');
+                                    const prefix = parts[0].trim();
+                                    const suffix = parts.length > 1 ? parts[1].trim() : "";
+                                    const match = prefix.match(/\(([^)]+)\)/);
+                                    secondary = match ? match[1].trim() : "Unknown";
+                                    if(suffix) causes = suffix.split(',').map(c => c.trim()).filter(c=>c); else causes = ["Unknown"];
+                                } else if (fullStr.startsWith("Non-Neurological")) {
+                                    type = "Non-Neurological";
+                                    const match = fullStr.match(/\(([^)]+)\)/);
+                                    secondary = match ? match[1].trim() : "Unknown";
+                                    causes = ["None"]; 
+                                } else { type = "Unknown"; secondary = "Unknown"; causes = [fullStr]; }
+                                if (!hierarchy[type]) hierarchy[type] = {};
+                                if (!hierarchy[type][secondary]) hierarchy[type][secondary] = {};
+                                causes.forEach(c => { if (!hierarchy[type][secondary][c]) hierarchy[type][secondary][c] = 0; hierarchy[type][secondary][c]++; });
+                            });
+
+                            const dataL1=[], dataL2=[], dataL3=[], bgL1=[], bgL2=[], bgL3=[], labelsL1=[], labelsL2=[], labelsL3=[];
+                            let legendHtml = `<table class="cod-legend-table" style="margin-top:0;"><thead style="background:#f8f9fa; font-weight:bold; color:#555;"><tr><td>Type</td><td>Cause</td><td>Detail</td></tr></thead><tbody>`;
+
+                            Object.keys(hierarchy).forEach(type => {
+                                let typeTotal = 0;
+                                const subTree = hierarchy[type];
+                                const c1 = codColors[type] || codColors["Unknown"];
+                                const typeLabel = codAbbrMap[type] || type;
+                                Object.keys(subTree).forEach(sec => {
+                                    let secTotal = 0;
+                                    const causeTree = subTree[sec];
+                                    let c2 = codColors[sec];
+                                    if(!c2 && type === 'Non-Neurological') { if(sec === 'Sacrifice') c2 = codColors['Sacrifice (Sec)']; else c2 = codColors["Unknown (Sec)"]; }
+                                    if(!c2) c2 = codColors["Unknown (Sec)"];
+                                    const secLabel = codAbbrMap[sec] || sec;
+                                    Object.keys(causeTree).forEach(cause => {
+                                        const count = causeTree[cause];
+                                        dataL3.push(count);
+                                        const causeLabelFull = cause === "None" ? "" : cause;
+                                        const causeLabelAbbr = codAbbrMap[cause] || causeLabelFull;
+                                        labelsL3.push(causeLabelFull); 
+                                        secTotal += count;
+                                        let c3 = codColors[cause];
+                                        if(!c3 && causeLabelFull) c3 = codColors["Unknown (3rd)"];
+                                        if(causeLabelFull === "") c3 = "transparent";
+                                        bgL3.push(c3);
+                                        legendHtml += `<tr><td><span class="color-box" style="background:${c1}"></span>${typeLabel}</td><td><span class="color-box" style="background:${c2}"></span>${secLabel}</td>`;
+                                        if(causeLabelAbbr) legendHtml += `<td><span class="color-box" style="background:${c3}"></span>${causeLabelAbbr} <span style="color:#888; font-size:0.75em;">(${count})</span></td>`; else legendHtml += `<td style="color:#ccc;">-</td>`;
+                                        legendHtml += `</tr>`;
+                                    });
+                                    dataL2.push(secTotal); labelsL2.push(sec); typeTotal += secTotal; bgL2.push(c2);
+                                });
+                                dataL1.push(typeTotal); labelsL1.push(type); bgL1.push(c1);
+                            });
+                            legendHtml += `</tbody></table>`;
+                            document.getElementById(codLegendId).innerHTML = legendHtml;
+
+                            new Chart(document.getElementById(codChartId), {
+                                type: 'doughnut',
+                                data: { labels: labelsL3, datasets: [{ label: '1차', data: dataL1, backgroundColor: bgL1, weight: 2 }, { label: '2차', data: dataL2, backgroundColor: bgL2, weight: 1.5 }, { label: '3차', data: dataL3, backgroundColor: bgL3, weight: 1 }] },
+                                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                            });
+                        }
+                    }, 500);
                 }
 
                 const sbpChartOpts = { maintainAspectRatio: false };
@@ -857,6 +1126,7 @@
                 let allRatIds = [];
                 let surgeryMap = {}; 
 
+                // ... (기존 Scale 계산 로직 그대로 유지) ...
                 ratSnaps.forEach(snap => {
                     snap.forEach(d => {
                         const r = d.data();
@@ -868,22 +1138,16 @@
                         }
                     });
                 });
-                
                 const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
                 const measSnaps = await Promise.all(measPromises);
-
                 const stdPodMap = { "D00": -999, "D0": -500, "D2": -300, "W1": 7, "W4": 28, "W8": 56, "W12": 84, "W20": 140 };
                 const labelSet = new Set(Object.keys(stdPodMap)); 
                 const tempColumns = [];
-
                 Object.keys(stdPodMap).forEach(key => { tempColumns.push({ label: key, sortVal: stdPodMap[key] }); });
-
                 const showAll = document.getElementById('comp-show-all-tp')?.checked;
-
                 measSnaps.forEach((snap, idx) => {
                     const rid = allRatIds[idx];
                     const surgDate = surgeryMap[rid];
-
                     snap.forEach(doc => {
                         const d = doc.data();
                         if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
@@ -898,12 +1162,12 @@
                         }
                     });
                 });
-
                 tempColumns.sort((a,b) => a.sortVal - b.sortVal);
                 const uniqueCols = [];
                 const seen = new Set();
                 tempColumns.forEach(c => { if(!seen.has(c.label)) { seen.add(c.label); uniqueCols.push(c); } });
                 globalLabels = uniqueCols.map(c => c.label);
+                // ... (Scale 계산 끝) ...
 
             } catch(e) { console.error("Scale calc error", e); }
 
@@ -913,14 +1177,17 @@
                 const colDiv = document.createElement('div');
                 colDiv.className = 'comp-col';
                 colDiv.id = `comp-res-${c}`;
-                colDiv.innerHTML = `<h4>Cohort ${c}</h4><div class="loader"></div>`;
+                colDiv.innerHTML = `<div class="loader"></div>`;
                 container.appendChild(colDiv);
+
+                // [수정됨] 제목 생성 및 전달
+                const title = `Cohort ${c}`;
                 await runCohortAnalysis([c], `comp-res-${c}`, `_comp_${c}`, {
                     labels: globalLabels,
                     maxSbp: globalMaxSbp,
                     maxWt: globalMaxWt,
                     maxPod: globalMaxPod
-                });
+                }, title);
             }
         }
 
@@ -1376,7 +1643,7 @@
                         <button class="btn btn-blue btn-small" style="float:right;" onclick="addTableRow('meas-tbody')">+ 행 추가</button>
                     </div>
                     <table class="full-edit-table">
-                        <thead><tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT(g)</th><th>삭제</th></tr></thead>
+                        <thead><tr><th>날짜</th><th>시점</th><th>SBP</th><th>DBP</th><th>Mean</th><th>WT(g)</th><th>삭제</th></tr></thead>
                         <tbody id="meas-tbody">`;
                 
                 mSnap.forEach(doc => {
@@ -1385,6 +1652,8 @@
                         <td><input type="date" class="row-date" value="${d.date}"></td>
                         <td><input type="text" class="row-tp" value="${d.timepoint||''}"></td>
                         <td><input type="number" class="row-sbp" value="${d.sbp||''}"></td>
+                        <td><input type="number" class="row-dbp" value="${d.dbp||''}"></td>
+                        <td><input type="number" class="row-mean" value="${d.mean||''}"></td>
                         <td><input type="number" class="row-wt" value="${d.weight||''}"></td>
                         <td><button class="del-btn" onclick="markRowDel(this)">삭제</button></td>
                     </tr>`;
@@ -1449,6 +1718,8 @@
                     <td><input type="date" class="row-date" value="${getTodayStr()}"></td>
                     <td><input type="text" class="row-tp" placeholder="W1.."></td>
                     <td><input type="number" class="row-sbp" placeholder="SBP"></td>
+                    <td><input type="number" class="row-dbp" placeholder="DBP"></td>
+                    <td><input type="number" class="row-mean" placeholder="Mean"></td>
                     <td><input type="number" class="row-wt" placeholder="WT"></td>
                     <td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             } else if(tbodyId === 'daily-tbody') {
@@ -1506,12 +1777,16 @@
                         let data = {};
                         if (coll === 'measurements') {
                             const sbp = row.querySelector('.row-sbp').value;
+                            const dbp = row.querySelector('.row-dbp').value;
+                            const mean = row.querySelector('.row-mean').value;
                             const wt = row.querySelector('.row-wt').value;
                             const tp = row.querySelector('.row-tp').value;
                             if(!date) return; // 날짜 없으면 스킵
                             data = {
                                 ratId: ratIdStr, date: date, timepoint: tp,
                                 sbp: sbp ? Number(sbp) : null,
+                                dbp: dbp ? Number(dbp) : null,
+                                mean: mean ? Number(mean) : null,
                                 weight: wt ? Number(wt) : null
                             };
                         } else if (coll === 'dailyLogs') {
@@ -1595,7 +1870,7 @@
 
         // Non-Neuro Path
         function selectCodNonNeuroCause(cause) {
-            // For Non-Neuro, secondary is the cause (Unknown or Surgical Failure)
+            // For Non-Neuro, secondary is the cause (Unknown or Surgical Failure or Sacrifice)
             codTempData.secondary = cause;
             // No Step 3. Save immediately.
             codTempData.causes = []; // Empty causes means no 3rd level
@@ -1648,6 +1923,138 @@
                 }
             }
         }
+    // --- 로그 관리(삭제) 기능 함수들 ---
+
+        function admTab(mode) {
+            document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
+            const btn = document.getElementById('adm-' + mode);
+            if(btn) btn.classList.add('active');
+            
+            // 모든 탭 숨기기
+            ['del', 'edit', 'logs'].forEach(m => {
+                const el = document.getElementById('tab-' + m);
+                if(el) el.style.display = 'none';
+            });
+            // 선택된 탭 보이기
+            const target = document.getElementById('tab-' + mode);
+            if(target) target.style.display = 'block';
+        }
+
+        async function searchLogsDel() {
+            const id = document.getElementById('log-rat-id').value.trim();
+            if(!id) return alert("ID를 입력하세요");
+
+            const resDiv = document.getElementById('log-del-result');
+            resDiv.innerHTML = '<div class="loader"></div> 로그 검색 중...';
+
+            try {
+                // Daily Logs와 Dose Logs를 동시에 조회
+                const [dSnap, dsSnap] = await Promise.all([
+                    db.collection("dailyLogs").where("ratId", "==", id).orderBy("date", "desc").get(),
+                    db.collection("doseLogs").where("ratId", "==", id).orderBy("date", "desc").get()
+                ]);
+
+                if(dSnap.empty && dsSnap.empty) {
+                    resDiv.innerHTML = "<p>해당 ID의 로그 데이터가 없습니다.</p>";
+                    return;
+                }
+
+                let html = `<div style="text-align:right; margin-bottom:10px;">
+                                <button class="btn btn-red btn-small" onclick="deleteSelectedLogs()">선택 항목 삭제하기</button>
+                            </div>`;
+
+                // 1. Daily Logs Table
+                if(!dSnap.empty) {
+                    html += `<h4 style="margin-top:20px; color:var(--navy);">📝 데일리 체크 로그 (${dSnap.size}개)</h4>
+                    <label style="font-size:0.85rem; cursor:pointer; display:block; margin-bottom:5px;">
+                        <input type="checkbox" onchange="toggleAllLogs(this, 'chk-daily')"> 전체 선택
+                    </label>
+                    <div style="max-height:250px; overflow-y:auto; border:1px solid #eee;">
+                        <table style="font-size:0.85rem;">
+                            <thead><tr><th width="30">✔</th><th>날짜</th><th>점수</th><th>메모</th></tr></thead>
+                            <tbody>`;
+                    dSnap.forEach(doc => {
+                        const d = doc.data();
+                        html += `<tr>
+                            <td><input type="checkbox" class="chk-daily" value="${doc.id}" data-coll="dailyLogs"></td>
+                            <td>${d.date}</td>
+                            <td>${d.totalScore}</td>
+                            <td>${d.note || '-'}</td>
+                        </tr>`;
+                    });
+                    html += `</tbody></table></div>`;
+                }
+
+                // 2. Dose Logs Table
+                if(!dsSnap.empty) {
+                    html += `<h4 style="margin-top:20px; color:var(--navy);">💊 투약 기록 로그 (${dsSnap.size}개)</h4>
+                    <label style="font-size:0.85rem; cursor:pointer; display:block; margin-bottom:5px;">
+                        <input type="checkbox" onchange="toggleAllLogs(this, 'chk-dose')"> 전체 선택
+                    </label>
+                    <div style="max-height:250px; overflow-y:auto; border:1px solid #eee;">
+                        <table style="font-size:0.85rem;">
+                            <thead><tr><th width="30">✔</th><th>날짜</th><th>체중</th><th>용량(ml)</th></tr></thead>
+                            <tbody>`;
+                    dsSnap.forEach(doc => {
+                        const d = doc.data();
+                        html += `<tr>
+                            <td><input type="checkbox" class="chk-dose" value="${doc.id}" data-coll="doseLogs"></td>
+                            <td>${d.date}</td>
+                            <td>${d.weight}g</td>
+                            <td>${d.volMl ? d.volMl.toFixed(2) : '-'}ml</td>
+                        </tr>`;
+                    });
+                    html += `</tbody></table></div>`;
+                }
+
+                resDiv.innerHTML = html;
+
+            } catch(e) {
+                console.error(e);
+                resDiv.innerHTML = `<p style="color:red">오류 발생: ${e.message}</p>`;
+            }
+        }
+
+        function toggleAllLogs(source, targetClass) {
+            const checkboxes = document.querySelectorAll('.' + targetClass);
+            checkboxes.forEach(cb => cb.checked = source.checked);
+        }
+
+        async function deleteSelectedLogs() {
+            const dailies = document.querySelectorAll('.chk-daily:checked');
+            const doses = document.querySelectorAll('.chk-dose:checked');
+            const total = dailies.length + doses.length;
+
+            if(total === 0) return alert("삭제할 항목을 선택해주세요.");
+            if(!confirm(`총 ${total}개의 로그를 정말 삭제하시겠습니까?\n(삭제 후 복구 불가)`)) return;
+
+            const batch = db.batch();
+            let count = 0;
+
+            // Firestore Batch Limit is 500. 간단한 처리를 위해 500개 미만 가정.
+            // 만약 500개가 넘으면 나눠서 처리해야 하지만, 일반적인 사용 패턴상 이정도면 충분합니다.
+            
+            dailies.forEach(cb => {
+                const ref = db.collection("dailyLogs").doc(cb.value);
+                batch.delete(ref);
+                count++;
+            });
+
+            doses.forEach(cb => {
+                const ref = db.collection("doseLogs").doc(cb.value);
+                batch.delete(ref);
+                count++;
+            });
+
+            try {
+                await batch.commit();
+                alert(`${count}개의 로그가 삭제되었습니다.`);
+                searchLogsDel(); // 목록 갱신
+            } catch(e) {
+                console.error(e);
+                alert("삭제 중 오류 발생: " + e.message);
+            }
+        }    
     </script>
 </body>
 </html>
