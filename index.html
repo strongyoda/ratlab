@@ -74,7 +74,7 @@
         .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
         .info-item { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }
         .info-val { font-size: 1.2rem; font-weight: bold; color: var(--navy); }
-        .chart-area { position: relative; height: 250px; width: 100%; margin-top: 20px; }
+        .chart-area { position: relative; height: 350px; width: 100%; margin-top: 20px; } /* 차트 영역 높이 증가 */
         .section-title { font-size: 1.1rem; font-weight: bold; color: var(--navy); margin-bottom: 15px; border-left: 4px solid var(--green); padding-left: 10px; }
 
         table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px; white-space: nowrap; }
@@ -220,10 +220,17 @@
                 <button class="cod-btn" style="background:#ffebee; color:var(--red)" onclick="closeCod()">취소</button>
             </div>
 
-            <div id="cod-step-2" class="cod-step-container">
+            <div id="cod-step-2-neuro" class="cod-step-container">
                 <div class="cod-title">Aneurysm 여부 (2/3)</div>
                 <button class="cod-btn" onclick="selectCodAn('Aneurysm(O)')">Aneurysm (O)</button>
                 <button class="cod-btn" onclick="selectCodAn('Aneurysm(X)')">Aneurysm (X)</button>
+                <button class="cod-btn" style="background:#eee;" onclick="codBack(1)">이전</button>
+            </div>
+
+            <div id="cod-step-2-non-neuro" class="cod-step-container">
+                <div class="cod-title">Non-Neurological 원인 (2/3)</div>
+                <button class="cod-btn" onclick="selectCodNonNeuroCause('Unknown')">Unknown</button>
+                <button class="cod-btn" onclick="selectCodNonNeuroCause('Surgical Failure')">Surgical Failure</button>
                 <button class="cod-btn" style="background:#eee;" onclick="codBack(1)">이전</button>
             </div>
 
@@ -237,7 +244,7 @@
                 </div>
                 
                 <button class="cod-btn btn-blue" onclick="saveCodFinal()">최종 저장</button>
-                <button class="cod-btn" style="background:#eee;" onclick="codBack(2)">이전</button>
+                <button class="cod-btn" style="background:#eee;" onclick="codBack('neuro-2')">이전</button>
             </div>
 
         </div>
@@ -264,7 +271,7 @@
         // COD Global States
         let codTargetDocId = null;  // For Detail Page (Direct DB Save)
         let codTargetInputId = null; // For Admin Page (Input Update only)
-        let codTempData = { type: '', aneurysm: '', causes: [] };
+        let codTempData = { type: '', secondary: '', causes: [] };
 
         function login() {
             const id = document.getElementById('uid').value;
@@ -468,6 +475,9 @@
             if(preSelectId) { rSel.value = preSelectId; loadDetailData(); }
         }
 
+        // =========================================================
+        //  COHORT ANALYSIS & CHART GENERATION (Hierarchical Pie)
+        // =========================================================
         async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', fixedOptions = null) {
             const showAll = document.getElementById('show-all-tp')?.checked || document.getElementById('comp-show-all-tp')?.checked;
             const resDiv = document.getElementById(targetDivId);
@@ -563,9 +573,6 @@
                     const deathByPod = {};
                     let maxPod = 0;
                     
-                    // COD Stats
-                    const codStats = {};
-
                     deadRats.forEach(r => {
                         const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : '?';
                         const cause = r.codFull || '미기록';
@@ -575,25 +582,11 @@
                             deathByPod[pod]++;
                             if(pod > maxPod) maxPod = pod;
                         }
-
-                        // Split COD by comma for stats if multiple (Assuming "Type - Cause1, Cause2")
-                        // Extract Causes first
-                        let causesPart = cause;
-                        if(cause.includes('-')) {
-                            causesPart = cause.split('-')[1].trim();
-                        }
-                        const causes = causesPart.split(',').map(c => c.trim());
-                        causes.forEach(c => {
-                            if(c) {
-                                if(!codStats[c]) codStats[c] = 0;
-                                codStats[c]++;
-                            }
-                        });
                     });
                     html += `</table><div class="chart-area"><canvas id="${sChartId}"></canvas></div></div>`;
                     
-                    // Add COD Pie Chart Area
-                    html += `<div class="card"><h4>💀 사망 원인 분포 (세부 원인)</h4><div class="chart-area" style="height:250px;"><canvas id="${codChartId}"></canvas></div></div>`;
+                    // Add COD Nested Chart Area
+                    html += `<div class="card"><h4>💀 사망 원인 계층 구조 (1차>2차>3차)</h4><div class="chart-area" style="height:350px;"><canvas id="${codChartId}"></canvas></div></div>`;
 
                     var survLabels = [];
                     var survData = [];
@@ -610,19 +603,165 @@
                         survData.push((currentAlive / rats.length) * 100);
                     }
 
-                    // Prepare COD Chart Data
+                    // --- Hierarchical Data Processing for Chart.js (Count-based Aggregation) ---
                     setTimeout(() => {
                         if(document.getElementById(codChartId)) {
+                            // 1. Data Structure Aggregation (Count based on 3rd level occurrences)
+                            const hierarchy = {}; // { Type: { Secondary: { Cause: Count } } }
+
+                            deadRats.forEach(r => {
+                                // Parse COD string
+                                const fullStr = r.codFull || "Unknown";
+                                let type = "Unknown";
+                                let secondary = "Unknown";
+                                let causes = [];
+
+                                // Format 1: "Neurological (Aneurysm(O)) - SAH, Infarction"
+                                // Format 2: "Non-Neurological (Unknown)" -> (If Non-Neuro, secondary is in parens)
+                                
+                                if(fullStr.startsWith("Neurological")) {
+                                    // Parse Neuro
+                                    type = "Neurological";
+                                    const parts = fullStr.split('-');
+                                    const prefix = parts[0].trim(); // "Neurological (Aneurysm(O))"
+                                    const suffix = parts.length > 1 ? parts[1].trim() : ""; // "SAH, Infarction"
+
+                                    // Extract Secondary (Aneurysm Status)
+                                    const match = prefix.match(/\(([^)]+)\)/);
+                                    secondary = match ? match[1].trim() : "Unknown";
+
+                                    // Extract Causes
+                                    if(suffix) {
+                                        causes = suffix.split(',').map(c => c.trim()).filter(c=>c);
+                                    } else {
+                                        causes = ["Unknown"];
+                                    }
+
+                                } else if (fullStr.startsWith("Non-Neurological")) {
+                                    // Parse Non-Neuro
+                                    type = "Non-Neurological";
+                                    // Format: "Non-Neurological (Unknown)" or "Non-Neurological (Surgical Failure)"
+                                    const match = fullStr.match(/\(([^)]+)\)/);
+                                    secondary = match ? match[1].trim() : "Unknown";
+                                    causes = ["None"]; // 3차 분류 없음
+
+                                } else {
+                                    // Fallback for custom or old data
+                                    type = "Unknown";
+                                    secondary = "Unknown";
+                                    causes = [fullStr];
+                                }
+
+                                // Accumulate
+                                if (!hierarchy[type]) hierarchy[type] = {};
+                                if (!hierarchy[type][secondary]) hierarchy[type][secondary] = {};
+                                
+                                // **중요**: 3차 원인이 여러 개면, 상위 카테고리도 그만큼 중복 카운트됨 (시각적 정합성을 위해)
+                                causes.forEach(c => {
+                                    if (!hierarchy[type][secondary][c]) hierarchy[type][secondary][c] = 0;
+                                    hierarchy[type][secondary][c]++;
+                                });
+                            });
+
+                            // 2. Flatten for Chart.js (3 Datasets)
+                            const dataL1 = []; // Type
+                            const dataL2 = []; // Secondary
+                            const dataL3 = []; // Cause
+                            const bgL1 = [], bgL2 = [], bgL3 = [];
+                            const labelsL1 = [], labelsL2 = [], labelsL3 = [];
+
+                            // Color Palette
+                            const colors = {
+                                "Neurological": { base: [54, 162, 235] }, // Blue
+                                "Non-Neurological": { base: [255, 99, 132] }, // Red
+                                "Unknown": { base: [201, 203, 207] } // Gray
+                            };
+
+                            Object.keys(hierarchy).forEach(type => {
+                                let typeTotal = 0;
+                                const subTree = hierarchy[type];
+                                const cBase = colors[type] ? colors[type].base : [200,200,200];
+                                
+                                Object.keys(subTree).forEach(sec => {
+                                    let secTotal = 0;
+                                    const causeTree = subTree[sec];
+
+                                    Object.keys(causeTree).forEach(cause => {
+                                        const count = causeTree[cause];
+                                        dataL3.push(count);
+                                        
+                                        // 3차 분류가 'None'인 경우 (Non-Neuro) 라벨을 비움
+                                        labelsL3.push(cause === "None" ? "" : cause);
+                                        secTotal += count;
+                                        
+                                        // Level 3 Colors (Lightest)
+                                        // 만약 'None'이면 투명하게 할 수도 있지만, 
+                                        // 디자인상 2차 분류 색상을 따라가게 하는 것이 깔끔함 (여기선 Lightest)
+                                        bgL3.push(`rgba(${cBase[0]}, ${cBase[1]}, ${cBase[2]}, 0.3)`);
+                                    });
+
+                                    dataL2.push(secTotal);
+                                    labelsL2.push(sec);
+                                    typeTotal += secTotal;
+
+                                    // Level 2 Colors (Medium)
+                                    bgL2.push(`rgba(${cBase[0]}, ${cBase[1]}, ${cBase[2]}, 0.6)`);
+                                });
+
+                                dataL1.push(typeTotal);
+                                labelsL1.push(type);
+
+                                // Level 1 Colors (Darkest)
+                                bgL1.push(`rgba(${cBase[0]}, ${cBase[1]}, ${cBase[2]}, 1.0)`);
+                            });
+
+                            // 3. Render Multi-Dataset Doughnut
                             new Chart(document.getElementById(codChartId), {
-                                type: 'pie',
+                                type: 'doughnut',
                                 data: {
-                                    labels: Object.keys(codStats),
-                                    datasets: [{
-                                        data: Object.values(codStats),
-                                        backgroundColor: ['#ef5350', '#ab47bc', '#5c6bc0', '#26a69a', '#ffa726', '#8d6e63']
-                                    }]
+                                    labels: labelsL3, 
+                                    datasets: [
+                                        {
+                                            label: '1차 분류',
+                                            data: dataL1,
+                                            backgroundColor: bgL1,
+                                            weight: 2
+                                        },
+                                        {
+                                            label: '2차 분류',
+                                            data: dataL2,
+                                            backgroundColor: bgL2,
+                                            weight: 1.5
+                                        },
+                                        {
+                                            label: '3차 분류',
+                                            data: dataL3,
+                                            backgroundColor: bgL3,
+                                            weight: 1
+                                        }
+                                    ]
                                 },
-                                options: { maintainAspectRatio: false }
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: { display: true, position: 'right' },
+                                        tooltip: {
+                                            callbacks: {
+                                                label: function(context) {
+                                                    const dsIndex = context.datasetIndex;
+                                                    let label = '';
+                                                    if(dsIndex === 0) label = labelsL1[context.dataIndex];
+                                                    else if(dsIndex === 1) label = labelsL2[context.dataIndex];
+                                                    else label = labelsL3[context.dataIndex];
+                                                    
+                                                    if(!label) return null; // 빈 라벨 숨김
+                                                    return `${label}: ${context.raw}`;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             });
                         }
                     }, 500);
@@ -1420,7 +1559,7 @@
             // Reset state
             codTargetDocId = docId;
             codTargetInputId = inputId;
-            codTempData = { type: '', aneurysm: '', causes: [] };
+            codTempData = { type: '', secondary: '', causes: [] };
             
             // Clear checks
             document.querySelectorAll('input[name="cod-check"]').forEach(cb => cb.checked = false);
@@ -1435,56 +1574,65 @@
 
         function showCodStep(step) {
             document.querySelectorAll('.cod-step-container').forEach(el => el.classList.remove('active'));
+            // step can be '1', '2-neuro', '2-non-neuro', '3'
             document.getElementById(`cod-step-${step}`).classList.add('active');
         }
 
         function selectCodType(type) {
             codTempData.type = type;
             if(type === 'Neurological') {
-                showCodStep(2);
+                showCodStep('2-neuro');
             } else {
-                // Non-Neuro: Skip Step 2? Or just treat as Aneurysm X?
-                // Request said "Neurological or not... Aneurysm or not... then SAH...".
-                // We will assume Non-Neuro skips Aneurysm check or marks it NA. 
-                // Let's mark it 'NA' and go to causes (Step 3) or save? 
-                // Prompt implies 3rd classification is 'SAH, Infarction...' which are Neuro causes.
-                // But for uniformity, we go to Step 3.
-                codTempData.aneurysm = '-'; 
-                showCodStep(3);
+                showCodStep('2-non-neuro');
             }
         }
 
+        // Neuro Path
         function selectCodAn(anStatus) {
-            codTempData.aneurysm = anStatus;
+            codTempData.secondary = anStatus;
             showCodStep(3);
         }
 
+        // Non-Neuro Path
+        function selectCodNonNeuroCause(cause) {
+            // For Non-Neuro, secondary is the cause (Unknown or Surgical Failure)
+            codTempData.secondary = cause;
+            // No Step 3. Save immediately.
+            codTempData.causes = []; // Empty causes means no 3rd level
+            saveCodFinal();
+        }
+
         function codBack(toStep) {
-            showCodStep(toStep);
+            // toStep: 1, 'neuro-2', etc.
+            if(toStep === 1) showCodStep(1);
+            else if(toStep === 'neuro-2') showCodStep('2-neuro');
         }
 
         async function saveCodFinal() {
-            // Collect Multi-select Data from Step 3
-            const checkedBoxes = document.querySelectorAll('input[name="cod-check"]:checked');
-            if(checkedBoxes.length === 0) return alert("하나 이상의 세부 원인을 선택해주세요.");
-            
-            codTempData.causes = Array.from(checkedBoxes).map(cb => cb.value);
+            // If Neuro path, collect checkboxes
+            if(codTempData.type === 'Neurological') {
+                const checkedBoxes = document.querySelectorAll('input[name="cod-check"]:checked');
+                if(checkedBoxes.length === 0) return alert("하나 이상의 세부 원인을 선택해주세요.");
+                codTempData.causes = Array.from(checkedBoxes).map(cb => cb.value);
+            }
 
             // Construct Final String
-            // Format: "Type (Aneurysm) - Cause1, Cause2"
             let finalStr = `${codTempData.type}`;
-            if(codTempData.aneurysm && codTempData.aneurysm !== '-') {
-                finalStr += ` (${codTempData.aneurysm})`;
+            
+            // Format: Type (Secondary) - Causes...
+            if(codTempData.secondary) {
+                finalStr += ` (${codTempData.secondary})`;
             }
-            finalStr += ' - ' + codTempData.causes.join(', ');
+            
+            if(codTempData.causes.length > 0) {
+                finalStr += ' - ' + codTempData.causes.join(', ');
+            }
 
-            // Scenario 1: Admin Page (Update Input Only)
+            // Save Logic
             if(codTargetInputId) {
                 document.getElementById(codTargetInputId).value = finalStr;
                 closeCod();
-            } 
-            // Scenario 2: Detail Page (Save to DB Immediately)
-            else if(codTargetDocId) {
+            } else if(codTargetDocId) {
                 try {
                     await db.collection("rats").doc(codTargetDocId).update({ 
                         codFull: finalStr,
