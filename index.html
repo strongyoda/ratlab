@@ -678,7 +678,7 @@
             }
         }
 
-        async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '') {
+        async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', fixedOptions = null) {
             const showAll = document.getElementById('show-all-tp')?.checked || document.getElementById('comp-show-all-tp')?.checked;
             const resDiv = document.getElementById(targetDivId);
             resDiv.innerHTML = `<div class="loader"></div> 로딩 중... (${targetCohorts.join(', ')})`;
@@ -709,39 +709,43 @@
                 const snapshots = await Promise.all(promises);
 
                 // 3. 타임포인트 결정 로직
+                let targetTimepoints = [];
                 const stdPodMap = { "D00": -999, "D0": -500, "D2": -300, "W1": 7, "W4": 28, "W8": 56, "W12": 84, "W20": 140 };
-                
-                let columns = []; 
-                const seenLabels = new Set();
 
-                // 기본 표준 시점은 무조건 포함
-                Object.keys(stdPodMap).forEach(key => {
-                    columns.push({ label: key, sortVal: stdPodMap[key] });
-                    seenLabels.add(key);
-                });
+                if (fixedOptions && fixedOptions.labels) {
+                    targetTimepoints = fixedOptions.labels;
+                } else {
+                    let columns = []; 
+                    const seenLabels = new Set();
 
-                if (showAll) {
-                    snapshots.forEach((snap, idx) => {
-                        const rid = ratIds[idx];
-                        const rInfo = ratInfoMap[rid];
-                        snap.forEach(doc => {
-                            const d = doc.data();
-                            if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) return;
-                            if (d.date && rInfo.surgeryDate) {
-                                const diff = new Date(d.date) - new Date(rInfo.surgeryDate);
-                                const pod = Math.floor(diff / (1000 * 60 * 60 * 24));
-                                const label = d.date;
-                                if (!seenLabels.has(label)) {
-                                    columns.push({ label: label, sortVal: pod });
-                                    seenLabels.add(label);
-                                }
-                            }
-                        });
+                    // 기본 표준 시점은 무조건 포함
+                    Object.keys(stdPodMap).forEach(key => {
+                        columns.push({ label: key, sortVal: stdPodMap[key] });
+                        seenLabels.add(key);
                     });
-                }
 
-                columns.sort((a,b) => a.sortVal - b.sortVal);
-                const targetTimepoints = columns.map(c => c.label);
+                    if (showAll) {
+                        snapshots.forEach((snap, idx) => {
+                            const rid = ratIds[idx];
+                            const rInfo = ratInfoMap[rid];
+                            snap.forEach(doc => {
+                                const d = doc.data();
+                                if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) return;
+                                if (d.date && rInfo.surgeryDate) {
+                                    const diff = new Date(d.date) - new Date(rInfo.surgeryDate);
+                                    const pod = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                    const label = d.date;
+                                    if (!seenLabels.has(label)) {
+                                        columns.push({ label: label, sortVal: pod });
+                                        seenLabels.add(label);
+                                    }
+                                }
+                            });
+                        });
+                    }
+                    columns.sort((a,b) => a.sortVal - b.sortVal);
+                    targetTimepoints = columns.map(c => c.label);
+                }
 
                 // 4. 데이터 매핑
                 const matrix = {}; 
@@ -803,7 +807,14 @@
                     var survLabels = [];
                     var survData = [];
                     let currentAlive = rats.length;
-                    for(let i=0; i<=maxPod; i++) {
+                    
+                    // 비교 모드일 때 생존 그래프 X축 통일
+                    let loopEnd = maxPod;
+                    if(fixedOptions && typeof fixedOptions.maxPod === 'number') {
+                        loopEnd = fixedOptions.maxPod;
+                    }
+
+                    for(let i=0; i<=loopEnd; i++) {
                         if(deathByPod[i]) currentAlive -= deathByPod[i];
                         survLabels.push(`POD ${i}`);
                         survData.push((currentAlive / rats.length) * 100);
@@ -851,13 +862,23 @@
                         options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
                     });
                 }
+
+                // 비교 모드일 때 Y축 통일
+                const sbpChartOpts = { maintainAspectRatio: false };
+                const wtChartOpts = { maintainAspectRatio: false };
+
+                if(fixedOptions) {
+                    if(fixedOptions.maxSbp) sbpChartOpts.scales = { y: { min: 0, max: fixedOptions.maxSbp + 20 } }; // 여유분 추가
+                    if(fixedOptions.maxWt) wtChartOpts.scales = { y: { min: 0, max: fixedOptions.maxWt + 50 } };
+                }
+
                 new Chart(document.getElementById(bpChartId), {
                     type: 'line', data: { labels: targetTimepoints, datasets: [{ label: 'Avg SBP', data: avgSbpData, borderColor: '#d32f2f', tension: 0.1, spanGaps: true }] },
-                    options: { maintainAspectRatio: false }
+                    options: sbpChartOpts
                 });
                 new Chart(document.getElementById(wtChartId), {
                     type: 'line', data: { labels: targetTimepoints, datasets: [{ label: 'Avg Weight', data: avgWtData, borderColor: '#00c853', tension: 0.1, spanGaps: true }] },
-                    options: { maintainAspectRatio: false }
+                    options: wtChartOpts
                 });
 
             } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
@@ -880,6 +901,83 @@
             }
 
             const container = document.getElementById('comp-res-area');
+            container.innerHTML = '<div class="loader"></div> 범위 계산 중...'; 
+
+            // --- Pre-calculate Global Ranges ---
+            let globalLabels = [];
+            let globalMaxSbp = 0;
+            let globalMaxWt = 0;
+            let globalMaxPod = 0;
+            
+            try {
+                // Fetch all needed data for range calculation
+                const ratSnaps = await Promise.all(selectedCohorts.map(c => db.collection("rats").where("cohort", "==", c).get()));
+                let allRatIds = [];
+                let surgeryMap = {}; // Need surgery dates for POD calculation
+
+                ratSnaps.forEach(snap => {
+                    snap.forEach(d => {
+                        const r = d.data();
+                        allRatIds.push(r.ratId);
+                        if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
+                        if(r.surgeryDate && r.deathDate) {
+                            const p = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24));
+                            if(p > globalMaxPod) globalMaxPod = p;
+                        }
+                    });
+                });
+                
+                const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
+                const measSnaps = await Promise.all(measPromises);
+
+                const stdPodMap = { "D00": -999, "D0": -500, "D2": -300, "W1": 7, "W4": 28, "W8": 56, "W12": 84, "W20": 140 };
+                const labelSet = new Set(Object.keys(stdPodMap)); 
+                const tempColumns = [];
+
+                Object.keys(stdPodMap).forEach(key => {
+                     tempColumns.push({ label: key, sortVal: stdPodMap[key] });
+                });
+
+                const showAll = document.getElementById('comp-show-all-tp')?.checked;
+
+                measSnaps.forEach((snap, idx) => {
+                    const rid = allRatIds[idx];
+                    const surgDate = surgeryMap[rid];
+
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        // Max Values
+                        if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
+                        if(d.weight && d.weight > globalMaxWt) globalMaxWt = d.weight;
+
+                        // Labels
+                        if (showAll && d.date && surgDate && !stdPodMap[d.timepoint]) {
+                            if (!labelSet.has(d.date)) {
+                                const diff = new Date(d.date) - new Date(surgDate);
+                                const pod = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                labelSet.add(d.date);
+                                tempColumns.push({ label: d.date, sortVal: pod });
+                            }
+                        }
+                    });
+                });
+
+                tempColumns.sort((a,b) => a.sortVal - b.sortVal);
+                const uniqueCols = [];
+                const seen = new Set();
+                tempColumns.forEach(c => {
+                    if(!seen.has(c.label)) {
+                        seen.add(c.label);
+                        uniqueCols.push(c);
+                    }
+                });
+                globalLabels = uniqueCols.map(c => c.label);
+
+            } catch(e) {
+                console.error("Scale calc error", e);
+            }
+            // --- END Pre-calculation ---
+
             container.innerHTML = ''; 
 
             for(let i=0; i<selectedCohorts.length; i++) {
@@ -890,7 +988,13 @@
                 colDiv.innerHTML = `<h4>Cohort ${c}</h4><div class="loader"></div>`;
                 container.appendChild(colDiv);
                 
-                await runCohortAnalysis([c], `comp-res-${c}`, `_comp_${c}`);
+                // Pass fixedOptions
+                await runCohortAnalysis([c], `comp-res-${c}`, `_comp_${c}`, {
+                    labels: globalLabels,
+                    maxSbp: globalMaxSbp,
+                    maxWt: globalMaxWt,
+                    maxPod: globalMaxPod
+                });
             }
         }
 
