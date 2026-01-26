@@ -1069,10 +1069,70 @@
                             legendHtml += `</tbody></table>`;
                             document.getElementById(codLegendId).innerHTML = legendHtml;
 
+                            // ... (이전 데이터 처리 로직은 동일, 아래 Chart 생성 부분만 교체) ...
+
                             new Chart(document.getElementById(codChartId), {
                                 type: 'doughnut',
-                                data: { labels: labelsL3, datasets: [{ label: '1차', data: dataL1, backgroundColor: bgL1, weight: 2 }, { label: '2차', data: dataL2, backgroundColor: bgL2, weight: 1.5 }, { label: '3차', data: dataL3, backgroundColor: bgL3, weight: 1 }] },
-                                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                                data: {
+                                    labels: labelsL3, 
+                                    datasets: [
+                                        { 
+                                            label: '1차', 
+                                            data: dataL1, 
+                                            backgroundColor: bgL1, 
+                                            weight: 2,
+                                            // 툴팁용 라벨 데이터셋에 직접 주입
+                                            customLabels: labelsL1 
+                                        },
+                                        { 
+                                            label: '2차', 
+                                            data: dataL2, 
+                                            backgroundColor: bgL2, 
+                                            weight: 1.5,
+                                            customLabels: labelsL2 
+                                        },
+                                        { 
+                                            label: '3차', 
+                                            data: dataL3, 
+                                            backgroundColor: bgL3, 
+                                            weight: 1,
+                                            customLabels: labelsL3 
+                                        }
+                                    ]
+                                },
+                                options: {
+                                    responsive: true, 
+                                    maintainAspectRatio: false,
+                                    // [핵심 1] 마우스가 정확히 닿은 조각만 인식
+                                    interaction: {
+                                        mode: 'nearest',
+                                        intersect: true
+                                    },
+                                    plugins: {
+                                        legend: { display: false },
+                                        tooltip: {
+                                            // [핵심 2] 툴팁 제목(굵은 글씨) 제거
+                                            callbacks: {
+                                                title: function() {
+                                                    return ''; // 빈 문자열 반환 -> 제목 줄 사라짐
+                                                },
+                                                label: function(context) {
+                                                    const ds = context.dataset;
+                                                    const idx = context.dataIndex;
+                                                    
+                                                    // 데이터셋에 심어둔 customLabels 우선 참조
+                                                    let label = ds.customLabels ? ds.customLabels[idx] : '';
+                                                    
+                                                    // 라벨이 없거나 빈 문자열이면 툴팁 표시 안 함
+                                                    if(!label || label === "") return null;
+                                                    
+                                                    // "내용: 숫자" 형태로만 표시
+                                                    return `${label}: ${context.raw}`;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             });
                         }
                     }, 500);
