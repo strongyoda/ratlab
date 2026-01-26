@@ -140,6 +140,36 @@
         .cod-btn { width:100%; margin-bottom:10px; padding:12px; border-radius:8px; border:1px solid #eee; background:#f8f9fa; font-weight:bold; cursor:pointer; font-size:1rem; }
         .cod-btn:hover { background:#e3f2fd; color:var(--navy); }
         .cod-title { font-weight:bold; font-size:1.1rem; margin-bottom:15px; color:var(--navy); }
+        .cod-step-container { display:none; }
+        .cod-step-container.active { display:block; }
+
+        /* 수정된 통합 편집 테이블 스타일 */
+        .edit-container { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin-top: 15px; }
+        .edit-section-title { font-size: 1rem; font-weight: bold; color: var(--navy); margin: 20px 0 10px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+
+        .full-edit-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 0.9rem; }
+        .full-edit-table th, .full-edit-table td { border: 1px solid #ddd; padding: 4px; text-align: center; }
+        .full-edit-table th { background: #f1f3f5; color: #495057; }
+        .full-edit-table input, .full-edit-table select, .full-edit-table textarea { 
+            width: 100%; border: 1px solid transparent; background: transparent; 
+            text-align: center; font-size: 0.9rem; padding: 5px; box-sizing: border-box; 
+        }
+        .full-edit-table input:focus, .full-edit-table select:focus, .full-edit-table textarea:focus { 
+            border: 1px solid var(--blue); background: #fff; outline: none; 
+        }
+        .row-del { background-color: #ffebee !important; }
+        .row-del input { text-decoration: line-through; color: #aaa; }
+
+        .float-save-btn {
+            position: fixed; bottom: 20px; right: 20px; width: auto; 
+            padding: 15px 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+            z-index: 999; font-size: 1.1rem;
+        }
+
+        /* COD Checkbox Grid */
+        .cod-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; margin-bottom: 15px; }
+        .cod-option { display: flex; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #eee; cursor: pointer; }
+        .cod-option input { width: auto; margin-right: 8px; transform: scale(1.2); }
     </style>
 </head>
 <body>
@@ -182,34 +212,34 @@
 
     <div id="cod-modal">
         <div class="cod-box">
-            <div id="cod-step-1">
+            
+            <div id="cod-step-1" class="cod-step-container">
                 <div class="cod-title">사망 원인 분류 (1/3)</div>
-                <button class="cod-btn" onclick="codStep(2)">Neurological</button>
-                <button class="cod-btn" onclick="codStep(4)">Non-Neurological</button>
+                <button class="cod-btn" onclick="selectCodType('Neurological')">Neurological</button>
+                <button class="cod-btn" onclick="selectCodType('Non-Neurological')">Non-Neurological</button>
                 <button class="cod-btn" style="background:#ffebee; color:var(--red)" onclick="closeCod()">취소</button>
             </div>
 
-            <div id="cod-step-2" style="display:none;">
+            <div id="cod-step-2" class="cod-step-container">
                 <div class="cod-title">Aneurysm 여부 (2/3)</div>
-                <button class="cod-btn" onclick="setNeuroPrefix('Neuro (An-O)'); codStep(3)">Aneurysm (O)</button>
-                <button class="cod-btn" onclick="setNeuroPrefix('Neuro (An-X)'); codStep(3)">Aneurysm (X)</button>
-                <button class="cod-btn" style="background:#eee;" onclick="codStep(1)">이전</button>
+                <button class="cod-btn" onclick="selectCodAn('Aneurysm(O)')">Aneurysm (O)</button>
+                <button class="cod-btn" onclick="selectCodAn('Aneurysm(X)')">Aneurysm (X)</button>
+                <button class="cod-btn" style="background:#eee;" onclick="codBack(1)">이전</button>
             </div>
 
-            <div id="cod-step-3" style="display:none;">
-                <div class="cod-title">세부 원인 (3/3)</div>
-                <button class="cod-btn" onclick="saveCodWithPrefix('SAH')">SAH</button>
-                <button class="cod-btn" onclick="saveCodWithPrefix('Infarction')">Infarction</button>
-                <button class="cod-btn" onclick="saveCodWithPrefix('Unknown')">Unknown</button>
-                <button class="cod-btn" style="background:#eee;" onclick="codStep(2)">이전</button>
+            <div id="cod-step-3" class="cod-step-container">
+                <div class="cod-title">세부 원인 선택 (3/3)<br><span style="font-size:0.8rem; font-weight:normal;">중복 선택 가능</span></div>
+                <div class="cod-grid" style="margin-bottom:20px;">
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="SAH"> SAH</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Infarction"> Infarction</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Vasospasm"> Vasospasm</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Unknown"> Unknown</label>
+                </div>
+                
+                <button class="cod-btn btn-blue" onclick="saveCodFinal()">최종 저장</button>
+                <button class="cod-btn" style="background:#eee;" onclick="codBack(2)">이전</button>
             </div>
 
-            <div id="cod-step-4" style="display:none;">
-                <div class="cod-title">Non-Neurological 세부 (2/2)</div>
-                <button class="cod-btn" onclick="saveCodFinal('Non-Neuro (Surgical Failure)')">Surgical Failure</button>
-                <button class="cod-btn" onclick="saveCodFinal('Non-Neuro (Unknown)')">Unknown</button>
-                <button class="cod-btn" style="background:#eee;" onclick="codStep(1)">이전</button>
-            </div>
         </div>
     </div>
 
@@ -230,8 +260,11 @@
         let bpChartInstance = null; 
         let globalBpData = [];
         let allRatsForDetail = [];
-        let targetCodDocId = null;
-        let codPrefix = ''; // Added for COD flow
+        
+        // COD Global States
+        let codTargetDocId = null;  // For Detail Page (Direct DB Save)
+        let codTargetInputId = null; // For Admin Page (Input Update only)
+        let codTempData = { type: '', aneurysm: '', causes: [] };
 
         function login() {
             const id = document.getElementById('uid').value;
@@ -543,13 +576,24 @@
                             if(pod > maxPod) maxPod = pod;
                         }
 
-                        if(!codStats[cause]) codStats[cause] = 0;
-                        codStats[cause]++;
+                        // Split COD by comma for stats if multiple (Assuming "Type - Cause1, Cause2")
+                        // Extract Causes first
+                        let causesPart = cause;
+                        if(cause.includes('-')) {
+                            causesPart = cause.split('-')[1].trim();
+                        }
+                        const causes = causesPart.split(',').map(c => c.trim());
+                        causes.forEach(c => {
+                            if(c) {
+                                if(!codStats[c]) codStats[c] = 0;
+                                codStats[c]++;
+                            }
+                        });
                     });
                     html += `</table><div class="chart-area"><canvas id="${sChartId}"></canvas></div></div>`;
                     
                     // Add COD Pie Chart Area
-                    html += `<div class="card"><h4>💀 사망 원인 분포</h4><div class="chart-area" style="height:250px;"><canvas id="${codChartId}"></canvas></div></div>`;
+                    html += `<div class="card"><h4>💀 사망 원인 분포 (세부 원인)</h4><div class="chart-area" style="height:250px;"><canvas id="${codChartId}"></canvas></div></div>`;
 
                     var survLabels = [];
                     var survData = [];
@@ -876,46 +920,6 @@
             } catch(e) { console.error(e); }
         }
 
-        /* COD Flow Functions */
-        function openCodFlow(docId) {
-            targetCodDocId = docId;
-            document.getElementById('cod-modal').style.display = 'flex';
-            codStep(1);
-        }
-
-        function closeCod() {
-            document.getElementById('cod-modal').style.display = 'none';
-        }
-
-        function codStep(step) {
-            [1,2,3,4].forEach(i => {
-                const el = document.getElementById(`cod-step-${i}`);
-                if(el) el.style.display = 'none';
-            });
-            document.getElementById(`cod-step-${step}`).style.display = 'block';
-        }
-
-        function setNeuroPrefix(prefix) {
-            codPrefix = prefix;
-        }
-
-        function saveCodWithPrefix(suffix) {
-            saveCodFinal(codPrefix + ' - ' + suffix);
-        }
-
-        async function saveCodFinal(val) {
-            if(!targetCodDocId) return;
-            try {
-                await db.collection("rats").doc(targetCodDocId).update({ codFull: val });
-                alert("저장되었습니다: " + val);
-                closeCod();
-                loadDetailData();
-            } catch(e) {
-                console.error(e);
-                alert("저장 실패");
-            }
-        }
-
         function renderBpChart() {
             if (bpChartInstance) bpChartInstance.destroy();
             const showSbp = document.getElementById('chk-sbp').checked;
@@ -1161,55 +1165,340 @@
         }
         function toggleBPLog(id) { const el = document.getElementById(id); el.style.display = el.style.display === "none" ? "table-row" : "none"; }
 
-        // --- NEW & FIXED FUNCTIONS ---
-
         function admTab(mode) {
-            // 모든 탭 버튼 비활성화
             document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
-            // 선택된 탭 버튼 활성화
             const btn = document.getElementById('adm-' + mode);
             if(btn) btn.classList.add('active');
-            
-            // 모든 탭 컨텐츠 숨김
             ['del', 'edit', 'imp'].forEach(m => {
                 const el = document.getElementById('tab-' + m);
                 if(el) el.style.display = (m === mode) ? 'block' : 'none';
             });
         }
 
-        async function searchForEdit() {
-            const id = document.getElementById('edit-id').value;
-            if(!id) return alert("ID를 입력하세요");
-            
-            try {
-                const s = await db.collection("rats").where("ratId", "==", id).get();
-                if(s.empty) return alert("찾을 수 없음");
-                
-                const doc = s.docs[0]; 
-                const d = doc.data();
-                const html = `<div style="margin-top:10px; background:#f9f9f9; padding:10px; border:1px solid #eee; border-radius:5px;">
-                    <label>Status (생존/사망)</label><input type="text" id="ed-stat" value="${d.status}" style="margin-bottom:5px;">
-                    <label>수술일자</label><input type="date" id="ed-surg" value="${d.surgeryDate||''}" style="margin-bottom:5px;">
-                    <label>반입일자</label><input type="date" id="ed-arr" value="${d.arrivalDate||''}" style="margin-bottom:10px;">
-                    <button class="btn btn-blue" onclick="doEdit('${doc.id}')">수정 내용 저장</button>
-                </div>`;
-                document.getElementById('edit-result').innerHTML = html;
-            } catch(e) { console.error(e); alert("검색 실패"); }
-        }
-
-        async function doEdit(did) {
-            try {
-                await db.collection("rats").doc(did).update({
-                    status: document.getElementById('ed-stat').value,
-                    surgeryDate: document.getElementById('ed-surg').value,
-                    arrivalDate: document.getElementById('ed-arr').value
-                });
-                alert("수정되었습니다.");
-            } catch(e) { console.error(e); alert("저장 실패"); }
-        }
-
         function uploadDailyLogs() {
             alert("CSV 업로드 기능은 현재 준비중입니다.");
+        }
+
+        // ==============================================================
+        //  통합 데이터 수정 기능 (ADMIN - EDIT)
+        // ==============================================================
+        
+        async function searchForEdit() {
+            const id = document.getElementById('edit-id').value.trim();
+            if(!id) return alert("ID를 입력하세요");
+            
+            const resDiv = document.getElementById('edit-result');
+            resDiv.innerHTML = '<div class="loader"></div> 데이터를 불러오는 중...';
+
+            try {
+                // 1. 모든 관련 데이터 병렬 조회
+                const ratQ = db.collection("rats").where("ratId", "==", id).get();
+                const dailyQ = db.collection("dailyLogs").where("ratId", "==", id).orderBy("date").get();
+                const measQ = db.collection("measurements").where("ratId", "==", id).orderBy("date").get();
+                
+                const [rSnap, dSnap, mSnap] = await Promise.all([ratQ, dailyQ, measQ]);
+
+                if(rSnap.empty) { resDiv.innerHTML = "해당 ID의 랫드를 찾을 수 없습니다."; return; }
+                
+                const ratDoc = rSnap.docs[0];
+                const rData = ratDoc.data();
+                
+                // HTML 템플릿 구성
+                let html = `
+                <div class="edit-container">
+                    <h3 style="color:var(--navy); border-bottom:2px solid var(--navy); padding-bottom:10px;">
+                        📝 통합 데이터 수정 (${rData.ratId})
+                    </h3>
+                    
+                    <div class="edit-section-title">기본 정보</div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div class="input-group">
+                            <label>상태 (Status)</label>
+                            <select id="ed-status" style="padding:5px;">
+                                <option value="생존" ${rData.status==='생존'?'selected':''}>생존</option>
+                                <option value="사망" ${rData.status==='사망'?'selected':''}>사망</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>사망 원인 (COD)</label>
+                            <div style="display:flex; gap:5px;">
+                                <input type="text" id="ed-cod-display" value="${rData.codFull || ''}" readonly style="background:#f1f3f5;">
+                                <button class="btn btn-blue btn-small" onclick="openCodFlow(null, 'ed-cod-display')">선택</button>
+                            </div>
+                        </div>
+                        <div class="input-group"><label>반입일</label><input type="date" id="ed-arrival" value="${rData.arrivalDate||''}"></div>
+                        <div class="input-group"><label>수술일</label><input type="date" id="ed-surgery" value="${rData.surgeryDate||''}"></div>
+                        <div class="input-group"><label>투약시작일</label><input type="date" id="ed-dose-start" value="${rData.doseStartDate||''}"></div>
+                        <div class="input-group"><label>사망일</label><input type="date" id="ed-death" value="${rData.deathDate||''}"></div>
+                    </div>
+
+                    <div class="edit-section-title">
+                        혈압 및 체중 기록 (Measurements) 
+                        <button class="btn btn-blue btn-small" style="float:right;" onclick="addTableRow('meas-tbody')">+ 행 추가</button>
+                    </div>
+                    <table class="full-edit-table">
+                        <thead><tr><th>날짜</th><th>시점</th><th>SBP</th><th>WT(g)</th><th>삭제</th></tr></thead>
+                        <tbody id="meas-tbody">`;
+                
+                mSnap.forEach(doc => {
+                    const d = doc.data();
+                    html += `<tr data-id="${doc.id}" data-coll="measurements">
+                        <td><input type="date" class="row-date" value="${d.date}"></td>
+                        <td><input type="text" class="row-tp" value="${d.timepoint||''}"></td>
+                        <td><input type="number" class="row-sbp" value="${d.sbp||''}"></td>
+                        <td><input type="number" class="row-wt" value="${d.weight||''}"></td>
+                        <td><button class="del-btn" onclick="markRowDel(this)">삭제</button></td>
+                    </tr>`;
+                });
+                html += `</tbody></table>
+
+                    <div class="edit-section-title">
+                        데일리 체크 (Daily Logs)
+                        <button class="btn btn-blue btn-small" style="float:right;" onclick="addTableRow('daily-tbody')">+ 행 추가</button>
+                    </div>
+                    <table class="full-edit-table">
+                        <thead><tr><th>날짜</th><th>Act</th><th>Fur</th><th>Eye</th><th>Memo</th><th>삭제</th></tr></thead>
+                        <tbody id="daily-tbody">`;
+                
+                dSnap.forEach(doc => {
+                    const d = doc.data();
+                    html += `<tr data-id="${doc.id}" data-coll="dailyLogs">
+                        <td><input type="date" class="row-date" value="${d.date}"></td>
+                        <td><input type="number" class="row-act" value="${d.scores?.activity||0}" style="width:40px"></td>
+                        <td><input type="number" class="row-fur" value="${d.scores?.fur||0}" style="width:40px"></td>
+                        <td><input type="number" class="row-eye" value="${d.scores?.eye||0}" style="width:40px"></td>
+                        <td><input type="text" class="row-note" value="${d.note||''}"></td>
+                        <td><button class="del-btn" onclick="markRowDel(this)">삭제</button></td>
+                    </tr>`;
+                });
+                html += `</tbody></table>
+                    
+                    <div style="height:60px;"></div> <button class="btn btn-green float-save-btn" onclick="saveTotalEdit('${ratDoc.id}')">💾 전체 저장 (Save All)</button>
+                </div>`;
+
+                resDiv.innerHTML = html;
+
+            } catch(e) {
+                console.error(e);
+                resDiv.innerHTML = `<p style="color:red">데이터 로드 중 오류: ${e.message}</p>`;
+            }
+        }
+
+        // 행 삭제 표시 함수
+        function markRowDel(btn) {
+            const row = btn.closest('tr');
+            if(row.classList.contains('row-del')) {
+                row.classList.remove('row-del');
+                btn.innerText = '삭제';
+                btn.style.background = 'var(--red)';
+            } else {
+                row.classList.add('row-del');
+                btn.innerText = '복구';
+                btn.style.background = 'gray';
+            }
+        }
+
+        // 행 추가 함수
+        function addTableRow(tbodyId) {
+            const tbody = document.getElementById(tbodyId);
+            const tr = document.createElement('tr');
+            tr.dataset.isNew = "true"; // 신규 행 표시
+            
+            if(tbodyId === 'meas-tbody') {
+                tr.dataset.coll = "measurements";
+                tr.innerHTML = `
+                    <td><input type="date" class="row-date" value="${getTodayStr()}"></td>
+                    <td><input type="text" class="row-tp" placeholder="W1.."></td>
+                    <td><input type="number" class="row-sbp" placeholder="SBP"></td>
+                    <td><input type="number" class="row-wt" placeholder="WT"></td>
+                    <td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+            } else if(tbodyId === 'daily-tbody') {
+                tr.dataset.coll = "dailyLogs";
+                tr.innerHTML = `
+                    <td><input type="date" class="row-date" value="${getTodayStr()}"></td>
+                    <td><input type="number" class="row-act" value="0"></td>
+                    <td><input type="number" class="row-fur" value="0"></td>
+                    <td><input type="number" class="row-eye" value="0"></td>
+                    <td><input type="text" class="row-note" placeholder="메모"></td>
+                    <td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+            }
+            tbody.insertBefore(tr, tbody.firstChild);
+        }
+
+        async function saveTotalEdit(ratDocId) {
+            if(!confirm("모든 변경사항을 저장하시겠습니까?")) return;
+            
+            const batch = db.batch();
+            const ratRef = db.collection("rats").doc(ratDocId);
+            
+            // 1. 기본 정보 업데이트
+            const codVal = document.getElementById('ed-cod-display').value;
+
+            batch.update(ratRef, {
+                status: document.getElementById('ed-status').value,
+                codFull: codVal,
+                arrivalDate: document.getElementById('ed-arrival').value,
+                surgeryDate: document.getElementById('ed-surgery').value,
+                doseStartDate: document.getElementById('ed-dose-start').value,
+                deathDate: document.getElementById('ed-death').value
+            });
+
+            // 2. 테이블 데이터 처리 (Measurements & DailyLogs)
+            const tables = ['meas-tbody', 'daily-tbody'];
+            const ratIdStr = document.getElementById('edit-id').value; // 화면 상단 검색창의 ID 사용
+
+            tables.forEach(tbodyId => {
+                const rows = document.querySelectorAll(`#${tbodyId} tr`);
+                rows.forEach(row => {
+                    const coll = row.dataset.coll;
+                    const docId = row.dataset.id;
+                    const isDel = row.classList.contains('row-del');
+                    const isNew = row.dataset.isNew === "true";
+
+                    // 공통 필드
+                    const date = row.querySelector('.row-date').value;
+
+                    if (isDel && !isNew) {
+                        // 기존 데이터 삭제
+                        const ref = db.collection(coll).doc(docId);
+                        batch.delete(ref);
+                    } else if (!isDel) {
+                        // 데이터 구성
+                        let data = {};
+                        if (coll === 'measurements') {
+                            const sbp = row.querySelector('.row-sbp').value;
+                            const wt = row.querySelector('.row-wt').value;
+                            const tp = row.querySelector('.row-tp').value;
+                            if(!date) return; // 날짜 없으면 스킵
+                            data = {
+                                ratId: ratIdStr, date: date, timepoint: tp,
+                                sbp: sbp ? Number(sbp) : null,
+                                weight: wt ? Number(wt) : null
+                            };
+                        } else if (coll === 'dailyLogs') {
+                            const act = Number(row.querySelector('.row-act').value);
+                            const fur = Number(row.querySelector('.row-fur').value);
+                            const eye = Number(row.querySelector('.row-eye').value);
+                            const note = row.querySelector('.row-note').value;
+                            if(!date) return;
+                            data = {
+                                ratId: ratIdStr, date: date,
+                                scores: { activity: act, fur: fur, eye: eye },
+                                totalScore: act + fur + eye,
+                                note: note
+                            };
+                        }
+
+                        if (isNew) {
+                            // 신규 생성
+                            const newRef = db.collection(coll).doc();
+                            batch.set(newRef, data);
+                        } else {
+                            // 기존 업데이트
+                            const ref = db.collection(coll).doc(docId);
+                            batch.update(ref, data);
+                        }
+                    }
+                });
+            });
+
+            try {
+                await batch.commit();
+                alert("성공적으로 저장되었습니다.");
+                searchForEdit(); // 화면 갱신
+            } catch(e) {
+                console.error(e);
+                alert("저장 중 오류 발생: " + e.message);
+            }
+        }
+
+        // ==============================================================
+        //  COD Flow (3-Step Hierarchical Selection)
+        // ==============================================================
+
+        function openCodFlow(docId, inputId = null) {
+            // Reset state
+            codTargetDocId = docId;
+            codTargetInputId = inputId;
+            codTempData = { type: '', aneurysm: '', causes: [] };
+            
+            // Clear checks
+            document.querySelectorAll('input[name="cod-check"]').forEach(cb => cb.checked = false);
+
+            document.getElementById('cod-modal').style.display = 'flex';
+            showCodStep(1);
+        }
+
+        function closeCod() {
+            document.getElementById('cod-modal').style.display = 'none';
+        }
+
+        function showCodStep(step) {
+            document.querySelectorAll('.cod-step-container').forEach(el => el.classList.remove('active'));
+            document.getElementById(`cod-step-${step}`).classList.add('active');
+        }
+
+        function selectCodType(type) {
+            codTempData.type = type;
+            if(type === 'Neurological') {
+                showCodStep(2);
+            } else {
+                // Non-Neuro: Skip Step 2? Or just treat as Aneurysm X?
+                // Request said "Neurological or not... Aneurysm or not... then SAH...".
+                // We will assume Non-Neuro skips Aneurysm check or marks it NA. 
+                // Let's mark it 'NA' and go to causes (Step 3) or save? 
+                // Prompt implies 3rd classification is 'SAH, Infarction...' which are Neuro causes.
+                // But for uniformity, we go to Step 3.
+                codTempData.aneurysm = '-'; 
+                showCodStep(3);
+            }
+        }
+
+        function selectCodAn(anStatus) {
+            codTempData.aneurysm = anStatus;
+            showCodStep(3);
+        }
+
+        function codBack(toStep) {
+            showCodStep(toStep);
+        }
+
+        async function saveCodFinal() {
+            // Collect Multi-select Data from Step 3
+            const checkedBoxes = document.querySelectorAll('input[name="cod-check"]:checked');
+            if(checkedBoxes.length === 0) return alert("하나 이상의 세부 원인을 선택해주세요.");
+            
+            codTempData.causes = Array.from(checkedBoxes).map(cb => cb.value);
+
+            // Construct Final String
+            // Format: "Type (Aneurysm) - Cause1, Cause2"
+            let finalStr = `${codTempData.type}`;
+            if(codTempData.aneurysm && codTempData.aneurysm !== '-') {
+                finalStr += ` (${codTempData.aneurysm})`;
+            }
+            finalStr += ' - ' + codTempData.causes.join(', ');
+
+            // Scenario 1: Admin Page (Update Input Only)
+            if(codTargetInputId) {
+                document.getElementById(codTargetInputId).value = finalStr;
+                closeCod();
+            } 
+            // Scenario 2: Detail Page (Save to DB Immediately)
+            else if(codTargetDocId) {
+                try {
+                    await db.collection("rats").doc(codTargetDocId).update({ 
+                        codFull: finalStr,
+                        status: '사망', 
+                        deathDate: getTodayStr() 
+                    });
+                    alert(`저장됨: ${finalStr}`);
+                    closeCod();
+                    loadDetailData(); 
+                } catch(e) {
+                    console.error(e);
+                    alert("저장 실패");
+                }
+            }
         }
     </script>
 </body>
