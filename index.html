@@ -1525,25 +1525,28 @@
 
         // MR 설정 저장
         async function saveMrConfig(c) {
-            // 체크된 시점들 가져오기
-            const chks = document.querySelectorAll(`.mr-cfg-chk-${c}:checked`);
+        // [수정] 점(.)이 포함된 코호트 번호(예: 7.5) 오류 해결을 위해 
+        // 부모 컨테이너(ID)를 먼저 찾고 그 안의 체크박스를 조회합니다.
+            const container = document.getElementById(`mr-cfg-panel-${c}`);
+            if (!container) return; 
+
+            const chks = container.querySelectorAll('input[type="checkbox"]:checked');
             const selected = Array.from(chks).map(cb => cb.value);
-
-            if(selected.length === 0) {
-                if(!confirm("선택된 시점이 없습니다. 모든 MR 체크박스를 숨기시겠습니까?")) return;
+            
+            if(selected.length === 0) { 
+                if(!confirm("선택된 시점이 없습니다. 모든 MR 체크박스를 숨기시겠습니까?")) return; 
             }
-
-            // 시점 순서대로 정렬 (globalPodMap 기준)
+            
+            // 정렬 로직 (기존과 동일)
             selected.sort((a, b) => (globalPodMap[a] || 0) - (globalPodMap[b] || 0));
-
+            
             try {
-                // DB에 설정 저장 (기존 체크 데이터인 mrChecks는 건드리지 않고, mrConfig만 업데이트)
-                await db.collection("cohortNotes").doc(c).set({ mrConfig: selected }, { merge: true });
+                await db.collection("cohortNotes").doc(String(c)).set({ mrConfig: selected }, { merge: true });
                 alert("설정이 저장되었습니다.");
-                loadDashboard(); // 대시보드 새로고침하여 반영
-            } catch(e) {
-                console.error(e);
-                alert("저장 중 오류가 발생했습니다: " + e.message);
+                loadDashboard();
+            } catch(e) { 
+                console.error(e); 
+                alert("저장 중 오류가 발생했습니다: " + e.message); 
             }
         }
         
@@ -2624,92 +2627,90 @@
 
         // [3단계] 비교 분석용 Scatter 업데이트 함수 추가
         // [3] 비교 분석용 Scatter 업데이트 함수 (Y축 스케일 동기화 및 5단위 적용)
-        function updateCompScatter(filterTp, uniqueSuffix) {
-            // 1. 현재 차트의 필터 상태 업데이트
-            compFilterState[uniqueSuffix] = filterTp;
+        // [수정] 코호트 번호에 점(.)이 있어도 안전하게 작동하도록 
+    // 클래스 대신 'ID' 속성 검색([id^=...])을 사용합니다.
+    function updateCompScatter(filterTp, uniqueSuffix) {
+        // 1. 현재 차트의 필터 상태 업데이트
+        compFilterState[uniqueSuffix] = filterTp;
 
-            // 2. 버튼 스타일 업데이트 (현재 차트만)
-            const btns = document.querySelectorAll(`.comp-filter-btn-${uniqueSuffix}`);
-            btns.forEach(b => {
-                b.classList.remove('btn-blue');
-                b.classList.add('btn-white');
-                b.style.border = '1px solid #ccc';
+        // 2. 버튼 스타일 업데이트 (수정된 부분)
+        // 기존: document.querySelectorAll('.comp-filter-btn-' + uniqueSuffix) -> 점(.) 오류 발생 가능
+        // 변경: id가 'btn-comp-SUFFIX-'로 시작하는 모든 요소를 찾음 -> 안전함
+        const btns = document.querySelectorAll(`[id^="btn-comp-${uniqueSuffix}-"]`);
+        
+        btns.forEach(b => {
+            b.classList.remove('btn-blue');
+            b.classList.add('btn-white');
+            b.style.border = '1px solid #ccc';
+        });
+        
+        const activeBtn = document.getElementById(`btn-comp-${uniqueSuffix}-${filterTp}`);
+        if(activeBtn) {
+            activeBtn.classList.remove('btn-white');
+            activeBtn.classList.add('btn-blue');
+            activeBtn.style.border = 'none';
+        }
+
+        // 3. 데이터 통합 및 스케일 계산 (기존 로직 동일)
+        let combinedData = [];
+        Object.keys(compScatterDataCache).forEach(key => {
+            const cache = compScatterDataCache[key];
+            const currentFilter = compFilterState[key] || 'All'; 
+            const filtered = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
+            combinedData = combinedData.concat(filtered);
+        });
+
+        let maxW = 0;
+        let minW = 9999;
+        if (combinedData.length > 0) {
+            combinedData.forEach(p => { 
+                if (p.y > maxW) maxW = p.y; 
+                if (p.y < minW) minW = p.y; 
             });
-            const activeBtn = document.getElementById(`btn-comp-${uniqueSuffix}-${filterTp}`);
-            if(activeBtn) {
-                activeBtn.classList.remove('btn-white');
-                activeBtn.classList.add('btn-blue');
-                activeBtn.style.border = 'none';
+        } else { maxW = 500; minW = 0; }
+        
+        const yMax = Math.ceil((maxW + 10) / 5) * 5; 
+        const yMin = Math.max(0, Math.floor((minW - 10) / 5) * 5);
+
+        // 4. 차트 업데이트 (기존 로직 동일)
+        Object.keys(compScatterCharts).forEach(key => {
+            const chart = compScatterCharts[key];
+            const cache = compScatterDataCache[key];
+            const currentFilter = compFilterState[key] || 'All';
+
+            if(!chart || !cache) return;
+
+            const filteredData = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
+            chart.data.datasets[0].data = filteredData;
+
+            const labels = chart.customLabels || [];
+            if (currentFilter === 'All') {
+                 chart.data.datasets[1].data = [];
+                 chart.options.scales.x.min = -0.5;
+                 chart.options.scales.x.max = labels.length - 0.5;
+            } else {
+                 if(filteredData.length > 0) {
+                     const sum = filteredData.reduce((acc, cur) => acc + cur.y, 0);
+                     const avg = sum / filteredData.length;
+                     const idx = labels.indexOf(currentFilter);
+                     const minX = idx - 0.5;
+                     const maxX = idx + 0.5;
+                     
+                     chart.data.datasets[1].data = [{ x: minX, y: avg }, { x: maxX, y: avg }];
+                     chart.options.scales.x.min = minX;
+                     chart.options.scales.x.max = maxX;
+                 } else {
+                     chart.data.datasets[1].data = [];
+                 }
             }
 
-            // 3. [핵심] 모든 비교 차트의 현재 데이터를 통합하여 Y축 스케일(Min/Max) 계산
-            let combinedData = [];
-            Object.keys(compScatterDataCache).forEach(key => {
-                const cache = compScatterDataCache[key];
-                const currentFilter = compFilterState[key] || 'All'; // 각 차트별 현재 필터 상태 확인
-                
-                // 해당 차트의 필터링된 데이터 가져오기
-                const filtered = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
-                combinedData = combinedData.concat(filtered);
-            });
+            chart.options.scales.y.max = yMax;
+            chart.options.scales.y.min = yMin;
+            chart.options.scales.y.ticks.stepSize = 5; 
 
-            // 통합 데이터에서 Min/Max 찾기
-            let maxW = 0;
-            let minW = 9999;
-            if (combinedData.length > 0) {
-                combinedData.forEach(p => { 
-                    if (p.y > maxW) maxW = p.y; 
-                    if (p.y < minW) minW = p.y; 
-                });
-            } else { maxW = 500; minW = 0; }
-            
-            // Y축 범위 계산 (여백 추가 및 5단위 보정)
-            // maxW+10 후 5의 배수로 올림, minW-10 후 5의 배수로 내림
-            const yMax = Math.ceil((maxW + 10) / 5) * 5; 
-            const yMin = Math.max(0, Math.floor((minW - 10) / 5) * 5);
-
-            // 4. 모든 차트에 데이터 및 계산된 스케일 적용
-            Object.keys(compScatterCharts).forEach(key => {
-                const chart = compScatterCharts[key];
-                const cache = compScatterDataCache[key];
-                const currentFilter = compFilterState[key] || 'All';
-
-                if(!chart || !cache) return;
-
-                // 해당 차트의 데이터 필터링
-                const filteredData = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
-                chart.data.datasets[0].data = filteredData;
-
-                // 평균선 및 X축 줌(Zoom) 로직
-                const labels = chart.customLabels || [];
-                if (currentFilter === 'All') {
-                     chart.data.datasets[1].data = [];
-                     chart.options.scales.x.min = -0.5;
-                     chart.options.scales.x.max = labels.length - 0.5;
-                } else {
-                     if(filteredData.length > 0) {
-                         const sum = filteredData.reduce((acc, cur) => acc + cur.y, 0);
-                         const avg = sum / filteredData.length;
-                         const idx = labels.indexOf(currentFilter);
-                         const minX = idx - 0.5;
-                         const maxX = idx + 0.5;
-                         
-                         chart.data.datasets[1].data = [{ x: minX, y: avg }, { x: maxX, y: avg }];
-                         chart.options.scales.x.min = minX;
-                         chart.options.scales.x.max = maxX;
-                     } else {
-                         chart.data.datasets[1].data = [];
-                     }
-                }
-
-                // [중요] 계산된 통합 스케일 적용 (동기화)
-                chart.options.scales.y.max = yMax;
-                chart.options.scales.y.min = yMin;
-                chart.options.scales.y.ticks.stepSize = 5; // 5단위 눈금
-
-                chart.update();
-            });
-        }
+            chart.update();
+        });
+    }
         
         // [수정] 개별 필터 업데이트 및 축 동기화
         function updateTrendScatter(filterTp, groupKey) {
