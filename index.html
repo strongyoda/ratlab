@@ -313,7 +313,7 @@
     </div>
 
     <script>
-            const firebaseConfig = {
+        const firebaseConfig = {
             apiKey: "AIzaSyCOrTBAQZ4WgFTT5Qk96k0Z_aTTVjKKQeI",
             authDomain: "nidd-lab.firebaseapp.com",
             projectId: "nidd-lab",
@@ -324,9 +324,6 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
 
-        // ============================================================
-        //  [중요] 전역 변수 선언부 (반드시 최상단에 위치해야 함)
-        // ============================================================
         let currentScores = { act: 0, fur: 0, eye: 0 };
         let allBPData = [];
         let bpChartInstance = null; 
@@ -334,31 +331,9 @@
         let allRatsForDetail = [];
         
         // COD Global States
-        let codTargetDocId = null;  
-        let codTargetInputId = null; 
+        let codTargetDocId = null;  // For Detail Page (Direct DB Save)
+        let codTargetInputId = null; // For Admin Page (Input Update only)
         let codTempData = { type: '', secondary: '', causes: [] };
-
-        // 동향분석 및 비교분석용 차트/데이터 캐시 (오류 방지를 위해 최상단 이동)
-        let trendScatterCharts = { low: null, high: null };
-        let trendScatterDataCache = { low: [], high: [] };
-        let trendTimepointsCache = []; 
-        let trendFilterState = { low: 'All', high: 'All' };
-
-        let compScatterCharts = {};      
-        let compScatterDataCache = {};   
-        let compFilterState = {};        
-
-        // POD 매핑 함수 및 변수
-        function getFullPodMap() {
-            let map = { "D00": -999, "D0": -500, "D2": -300 };
-            for(let i=1; i<=50; i++) { map[`W${i}`] = i * 7; }
-            return map;
-        }
-        const globalPodMap = getFullPodMap();
-
-        // ============================================================
-        //  기본 기능 함수 (로그인, 네비게이션, 공통 유틸)
-        // ============================================================
 
         function login() {
             const id = document.getElementById('uid').value;
@@ -384,37 +359,40 @@
             ol.style.display = nav.classList.contains('open') ? 'block' : 'none';
         }
 
-        function toggleDisplay(id) {
-            const el = document.getElementById(id);
-            el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+        // [수정] 모든 시점(Old & New)을 포함하는 POD 매핑 생성 함수
+        function getFullPodMap() {
+         // 1. 기존 고정 시점들 (Old Data 호환용)
+              let map = { 
+             "D00": -999, // Base
+              "D0": -500,  // Induction
+              "D2": -300   // Old fixed
+              };
+
+    // 2. W1 ~ W50 까지 자동으로 생성 (7일 간격)
+    // 필요한 만큼 50을 100으로 늘려도 됩니다.
+              for(let i=1; i<=50; i++) {
+                map[`W${i}`] = i * 7; 
+               }
+
+              return map;
         }
 
-        // [누락된 탭 전환 함수 추가]
-        function admTab(mode) {
-            // 1. 모든 탭 버튼의 선택 상태(active) 해제
-            document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
-            
-            // 2. 클릭한 탭 버튼 활성화
-            const btn = document.getElementById('adm-' + mode);
-            if(btn) btn.classList.add('active');
+    // 전역 변수로 선언 (이제 stdPodMap 대신 이걸 씁니다)
+        const globalPodMap = getFullPodMap();
 
-            // 3. 해당하는 탭 내용만 보여주고 나머지는 숨김
-            ['del', 'edit', 'logs'].forEach(m => {
-                const el = document.getElementById('tab-' + m);
-                if(el) el.style.display = (m === mode) ? 'block' : 'none';
-            });
-        }
-        
-        // ============================================================
-        //  메인 네비게이션 (go 함수)
-        // ============================================================
+
         async function go(view, targetId = null) {
             const main = document.getElementById('content');
             if(document.getElementById('sidebar').classList.contains('open')) toggleMenu();
 
-            if (view === 'compare' || view === 'trend') main.style.maxWidth = '95%';
-            else main.style.maxWidth = '1000px';
+            // 화면 너비 설정
+            if (view === 'compare' || view === 'trend') {
+                main.style.maxWidth = '95%';
+            } else {
+                main.style.maxWidth = '1000px';
+            }
 
+            // 1. Trend Analysis (동향분석)
             if (view === 'trend') {
                 main.innerHTML = `
                 <div class="card">
@@ -454,6 +432,7 @@
                 return;
             }
 
+            // 2. Admin (데이터 관리)
             if(view === 'admin') {
                 const pw = prompt("관리자 비밀번호를 입력하세요");
                 if(pw !== '1234') { alert("비밀번호 오류"); return; }
@@ -494,6 +473,7 @@
                 return;
             }
 
+            // 3. Cohort Analysis (코호트 분석)
             if(view === 'cohort') {
                 main.innerHTML = `
                 <div class="card">
@@ -509,6 +489,7 @@
                 return;
             }
             
+            // 4. Cohort Compare (코호트 비교)
             if (view === 'compare') {
                 main.innerHTML = `
                 <div class="card">
@@ -551,6 +532,7 @@
                 return;
             }
 
+            // 5. Other Views
             if(view === 'dash') { main.innerHTML = `<div id="dash-container">로딩 중...</div>`; loadDashboard(); }
             else if(view === 'detail') { 
                 main.innerHTML = `
@@ -586,6 +568,7 @@
             else if(view === 'dose') { 
                 main.innerHTML = `<div class="card"><h3>투약 계산기</h3><input type="number" id="ds-c" placeholder="코호트" oninput="upDose()" style="margin-bottom:10px;"><table><thead><tr><th>번</th><th>WT(g)</th><th>ID</th></tr></thead><tbody>${Array.from({length:12},(_,i)=>`<tr><td><input type="number" class="dn" oninput="upDose()"></td><td><input type="number" class="dw"></td><td class="di">-</td></tr>`).join('')}</tbody></table><button class="btn btn-blue" onclick="saveDose()" style="margin-top:15px;">계산 및 저장</button><div id="dose-res" style="display:none;"></div></div>`; 
             }
+            // 6. Record View (시점 업데이트 적용됨)
             else if(view === 'rec') { 
                 let timeOpts = `<option>Manual</option><option>D00</option><option>D0</option><option>D2</option>`;
                 for(let i=1; i<=30; i++) { timeOpts += `<option>W${i}</option>`; }
@@ -616,9 +599,7 @@
             }
         }
 
-        // ============================================================
-        //  Helper Functions
-        // ============================================================
+        // --- Group Comparison Helpers ---
         function switchCompTab(mode) {
             document.getElementById('cp-tab-ind').className = mode==='ind' ? 'tab active' : 'tab';
             document.getElementById('cp-tab-grp').className = mode==='grp' ? 'tab active' : 'tab';
@@ -646,6 +627,114 @@
             createList('grp-list-c');
         }
 
+        // [2] 그룹 비교 로딩 함수 (전역변수 초기화 추가)
+        async function loadGroupComparison() {
+            // 1. 전역 변수 초기화
+            compScatterCharts = {};
+            compScatterDataCache = {};
+            compFilterState = {};
+
+            const getSelected = (id) => Array.from(document.querySelectorAll(`#${id} input:checked`)).map(cb => cb.value);
+            const grpA = getSelected('grp-list-a');
+            const grpB = getSelected('grp-list-b');
+            const grpC = getSelected('grp-list-c');
+
+            const activeGroups = [];
+            if(grpA.length > 0) activeGroups.push({ name: 'Group A', cohorts: grpA });
+            if(grpB.length > 0) activeGroups.push({ name: 'Group B', cohorts: grpB });
+            if(grpC.length > 0) activeGroups.push({ name: 'Group C', cohorts: grpC });
+
+            if(activeGroups.length < 2) return alert("비교를 위해 최소 2개 그룹에 코호트를 선택해주세요.");
+
+            const container = document.getElementById('comp-res-area');
+            container.innerHTML = '<div class="loader"></div> 그룹 데이터 범위 계산 중...';
+
+            let globalLabels = [];
+            let globalMaxSbp = 0;
+            let globalMaxWt = 0;
+            let globalMaxPod = 0;
+
+            try {
+                const allCohorts = [];
+                activeGroups.forEach(g => allCohorts.push(...g.cohorts));
+                const uniqueCohorts = [...new Set(allCohorts)];
+
+                const ratPromises = uniqueCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
+                const ratSnaps = await Promise.all(ratPromises);
+                
+                let allRatIds = [];
+                let surgeryMap = {};
+
+                ratSnaps.forEach(snap => {
+                    snap.forEach(d => {
+                        const r = d.data();
+                        allRatIds.push(r.ratId);
+                        if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
+                        if(r.surgeryDate && r.deathDate) {
+                            const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24));
+                            if(pod > globalMaxPod) globalMaxPod = pod;
+                        }
+                    });
+                });
+
+                const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
+                const measSnaps = await Promise.all(measPromises);
+
+                const stdPodMap = globalPodMap;
+                const tempColumns = [];
+                const labelSet = new Set();
+                const showAll = document.getElementById('grp-show-all-tp')?.checked;
+
+                measSnaps.forEach((snap, idx) => {
+                    const rid = allRatIds[idx];
+                    const surgDate = surgeryMap[rid];
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
+                        if(d.weight && d.weight > globalMaxWt) globalMaxWt = d.weight;
+                        
+                        if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) {
+                            if (!labelSet.has(d.timepoint)) {
+                                labelSet.add(d.timepoint);
+                                tempColumns.push({ label: d.timepoint, sortVal: stdPodMap[d.timepoint] });
+                            }
+                        } else if (showAll && d.date && surgDate) {
+                            if (!labelSet.has(d.date)) {
+                                const diff = new Date(d.date) - new Date(surgDate);
+                                const pod = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                labelSet.add(d.date);
+                                tempColumns.push({ label: d.date, sortVal: pod });
+                            }
+                        }
+                    });
+                });
+
+                tempColumns.sort((a,b) => a.sortVal - b.sortVal);
+                globalLabels = tempColumns.map(c => c.label);
+
+            } catch(e) { console.error("Group Scale Calc Error", e); }
+
+            container.innerHTML = ''; 
+
+            for(let i=0; i<activeGroups.length; i++) {
+                const g = activeGroups[i];
+                const colDiv = document.createElement('div');
+                colDiv.className = 'comp-col';
+                colDiv.id = `comp-res-grp-${i}`;
+                colDiv.innerHTML = `<div class="loader"></div>`;
+                container.appendChild(colDiv);
+                
+                const title = `${g.name} : Cohort ${g.cohorts.join(', ')}`;
+                await runCohortAnalysis(g.cohorts, `comp-res-grp-${i}`, `_grp_${i}`, {
+                    labels: globalLabels,
+                    maxSbp: globalMaxSbp,
+                    maxWt: globalMaxWt,
+                    maxPod: globalMaxPod
+                }, title);
+            }
+        }
+
+        // ... [Existing renderCohortCheckboxes, initDetailSelectors, updateRatList ...]
         async function renderCohortCheckboxes(containerId) {
             const snap = await db.collection("rats").get();
             const cohorts = new Set();
@@ -697,39 +786,96 @@
         }
 
         // =========================================================
-        //  분석 및 비교 로직 (통합 및 최적화됨)
+        //  COHORT ANALYSIS & CHART GENERATION (Hierarchical Pie)
         // =========================================================
         
-        // 색상 팔레트
+        // Define Custom Color Palette for Clarity
+        // [수정됨] 색상 팔레트: 대비 강화 및 Aneurysm O/X 구분 확실화
         const codColors = {
-            "Neurological": "#1565C0", "Non-Neurological": "#D32F2F", "Unknown": "#424242",
-            "Aneurysm(O)": "#C2185B", "Aneurysm (O)": "#C2185B",
-            "Aneurysm(X)": "#00897B", "Aneurysm (X)": "#00897B",
-            "Surgical Failure": "#F57C00", "Unknown (Sec)": "#E57373", "Sacrifice (Sec)": "#FFB300",
-            "SAH": "#64B5F6", "Infarction": "#26C6DA", "Vasospasm": "#AB47BC", "Sacrifice": "#FFF176",
-            "Unknown (3rd)": "#EEEEEE", "None": "transparent"
+            // 1차 분류
+            "Neurological": "#1565C0",      // 진한 파랑 (Neuro Main)
+            "Non-Neurological": "#D32F2F",  // 진한 빨강 (Non-Neuro Main)
+            "Unknown": "#424242",           // 진한 회색
+
+            // 2차 분류 (Aneurysm & Secondary)
+            "Aneurysm(O)": "#C2185B",       // 진한 마젠타/핑크 (확실한 포인트 색상)
+            "Aneurysm (O)": "#C2185B",      // 띄어쓰기 대응
+            
+            "Aneurysm(X)": "#00897B",       // 청록색 (Teal) - Neuro/Pink와 대비됨
+            "Aneurysm (X)": "#00897B",      // 띄어쓰기 대응
+
+            "Surgical Failure": "#F57C00",  // 주황색
+            "Unknown (Sec)": "#E57373",     // 연한 빨강
+            "Sacrifice (Sec)": "#FFB300",   // 호박색 (Amber)
+
+            // 3차 분류 (Causes)
+            "SAH": "#64B5F6",               // 밝은 파랑
+            "Infarction": "#26C6DA",        // 시안 (Cyan)
+            "Vasospasm": "#AB47BC",         // 보라 (Purple)
+            "Sacrifice": "#FFF176",         // 노랑 (Neuro Sacrifice)
+            "Unknown (3rd)": "#EEEEEE",     // 연회색
+            "None": "transparent"
         };
 
+        // 약어 매핑 (기존 유지)
         const codAbbrMap = {
-            "Non-Neurological": "Non-Neuro", "Neurological": "Neuro",
-            "Aneurysm(O)": "Aneurysm(O)", "Aneurysm (O)": "Aneurysm(O)",
-            "Aneurysm(X)": "Aneurysm(X)", "Aneurysm (X)": "Aneurysm(X)",
-            "Infarction": "Infarc", "Vasospasm": "CVS", "Sacrifice": "Sacrifice",
-            "Procedure related": "Proc. related", "Unknown": "Unknown", "None": "-"
+            "Non-Neurological": "Non-Neuro",
+            "Neurological": "Neuro",
+            "Aneurysm(O)": "Aneurysm(O)", // 약어도 그대로 표시하여 혼동 방지
+            "Aneurysm (O)": "Aneurysm(O)",
+            "Aneurysm(X)": "Aneurysm(X)",
+            "Aneurysm (X)": "Aneurysm(X)",
+            "Infarction": "Infarc",
+            "Vasospasm": "CVS",
+            "Sacrifice": "Sacrifice",
+            "Procedure related": "Proc. related",
+            "Unknown": "Unknown",
+            "None": "-"
         };
+        // ▲▲▲ [추가 끝] ▲▲▲
+
+        function toggleDetails(detailId, btnId) {
+            const el = document.getElementById(detailId);
+            const btn = document.getElementById(btnId);
+            if(el.style.display === 'none') {
+                el.style.display = 'block';
+                btn.innerText = '▲ 상세 데이터 접기';
+                btn.classList.replace('btn-blue', 'btn-red');
+            } else {
+                el.style.display = 'none';
+                btn.innerText = '▼ 상세 데이터 보기 (Detail)';
+                btn.classList.replace('btn-red', 'btn-blue');
+            }
+        }
+
+        // 간단한 토글 헬퍼 함수 (script 태그 내 아무데나 추가해주세요)
+        function toggleDisplay(id) {
+            const el = document.getElementById(id);
+            if(el.style.display === 'none' || el.style.display === '') {
+                el.style.display = 'block';
+            } else {
+                el.style.display = 'none';
+            }
+        }
 
         async function loadCohortDetail() {
             const checkboxes = document.querySelectorAll('#co-check-list .co-checkbox:checked');
             if(checkboxes.length === 0) return alert("분석할 코호트를 하나 이상 선택하세요.");
             const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
+            
+            // 코호트 분석 실행 (수정된 함수 호출)
             await runCohortAnalysis(selectedCohorts, 'cohort-res', '_main');
         }
+        
 
-        // [중요] runCohortAnalysis 최종 버전 (Sticky Header + Scatter 적용)
+        // 수정된 코호트 분석 함수 (시점 자동 정렬 적용)
+        // [2단계] runCohortAnalysis 함수 전체 교체
+        // [3] 코호트 분석/비교 실행 함수 (Sticky Header 수정됨)
         async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', fixedOptions = null, customTitle = null) {
             const showAll = document.getElementById('show-all-tp')?.checked || document.getElementById('comp-show-all-tp')?.checked || document.getElementById('grp-show-all-tp')?.checked;
             const resDiv = document.getElementById(targetDivId);
             
+            // [Sticky Header] top:60px로 수정 (메뉴바 고려)
             let headerHtml = '';
             if (customTitle) {
                 headerHtml = `<div style="position:sticky; top:60px; z-index:80; background:#fff; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
@@ -884,7 +1030,7 @@
 
                 resDiv.innerHTML = finalHtml;
 
-                // 차트 그리기
+                // 차트 그리기 (기존 로직 동일)
                 if(deadRats.length > 0) {
                     let maxPod = fixedOptions && fixedOptions.maxPod ? fixedOptions.maxPod : 0;
                     if(maxPod===0) rats.forEach(r=>{if(r.surgeryDate){const p=Math.floor(((r.deathDate?new Date(r.deathDate):new Date())-new Date(r.surgeryDate))/(1000*60*60*24)); if(p>maxPod)maxPod=p;}});
@@ -962,8 +1108,9 @@
             } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
         }
 
-        // 개별 비교 로딩
+        // [1] 개별 비교 로딩 함수 (전역변수 초기화 추가)
         async function loadCohortComparison() {
+            // 1. 전역 변수 초기화 (이전 데이터 삭제)
             compScatterCharts = {};
             compScatterDataCache = {};
             compFilterState = {};
@@ -1048,112 +1195,6 @@
 
                 const title = `Cohort ${c}`;
                 await runCohortAnalysis([c], `comp-res-${c}`, `_comp_${c}`, {
-                    labels: globalLabels,
-                    maxSbp: globalMaxSbp,
-                    maxWt: globalMaxWt,
-                    maxPod: globalMaxPod
-                }, title);
-            }
-        }
-
-        // 그룹 비교 로딩
-        async function loadGroupComparison() {
-            compScatterCharts = {};
-            compScatterDataCache = {};
-            compFilterState = {};
-
-            const getSelected = (id) => Array.from(document.querySelectorAll(`#${id} input:checked`)).map(cb => cb.value);
-            const grpA = getSelected('grp-list-a');
-            const grpB = getSelected('grp-list-b');
-            const grpC = getSelected('grp-list-c');
-
-            const activeGroups = [];
-            if(grpA.length > 0) activeGroups.push({ name: 'Group A', cohorts: grpA });
-            if(grpB.length > 0) activeGroups.push({ name: 'Group B', cohorts: grpB });
-            if(grpC.length > 0) activeGroups.push({ name: 'Group C', cohorts: grpC });
-
-            if(activeGroups.length < 2) return alert("비교를 위해 최소 2개 그룹에 코호트를 선택해주세요.");
-
-            const container = document.getElementById('comp-res-area');
-            container.innerHTML = '<div class="loader"></div> 그룹 데이터 범위 계산 중...';
-
-            let globalLabels = [];
-            let globalMaxSbp = 0;
-            let globalMaxWt = 0;
-            let globalMaxPod = 0;
-
-            try {
-                const allCohorts = [];
-                activeGroups.forEach(g => allCohorts.push(...g.cohorts));
-                const uniqueCohorts = [...new Set(allCohorts)];
-
-                const ratPromises = uniqueCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
-                const ratSnaps = await Promise.all(ratPromises);
-                
-                let allRatIds = [];
-                let surgeryMap = {};
-
-                ratSnaps.forEach(snap => {
-                    snap.forEach(d => {
-                        const r = d.data();
-                        allRatIds.push(r.ratId);
-                        if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
-                        if(r.surgeryDate && r.deathDate) {
-                            const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24));
-                            if(pod > globalMaxPod) globalMaxPod = pod;
-                        }
-                    });
-                });
-
-                const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
-                const measSnaps = await Promise.all(measPromises);
-
-                const stdPodMap = globalPodMap;
-                const tempColumns = [];
-                const labelSet = new Set();
-                const showAll = document.getElementById('grp-show-all-tp')?.checked;
-
-                measSnaps.forEach((snap, idx) => {
-                    const rid = allRatIds[idx];
-                    const surgDate = surgeryMap[rid];
-                    snap.forEach(doc => {
-                        const d = doc.data();
-                        if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
-                        if(d.weight && d.weight > globalMaxWt) globalMaxWt = d.weight;
-                        
-                        if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) {
-                            if (!labelSet.has(d.timepoint)) {
-                                labelSet.add(d.timepoint);
-                                tempColumns.push({ label: d.timepoint, sortVal: stdPodMap[d.timepoint] });
-                            }
-                        } else if (showAll && d.date && surgDate) {
-                            if (!labelSet.has(d.date)) {
-                                const diff = new Date(d.date) - new Date(surgDate);
-                                const pod = Math.floor(diff / (1000 * 60 * 60 * 24));
-                                labelSet.add(d.date);
-                                tempColumns.push({ label: d.date, sortVal: pod });
-                            }
-                        }
-                    });
-                });
-
-                tempColumns.sort((a,b) => a.sortVal - b.sortVal);
-                globalLabels = tempColumns.map(c => c.label);
-
-            } catch(e) { console.error("Group Scale Calc Error", e); }
-
-            container.innerHTML = ''; 
-
-            for(let i=0; i<activeGroups.length; i++) {
-                const g = activeGroups[i];
-                const colDiv = document.createElement('div');
-                colDiv.className = 'comp-col';
-                colDiv.id = `comp-res-grp-${i}`;
-                colDiv.innerHTML = `<div class="loader"></div>`;
-                container.appendChild(colDiv);
-                
-                const title = `${g.name} : Cohort ${g.cohorts.join(', ')}`;
-                await runCohortAnalysis(g.cohorts, `comp-res-grp-${i}`, `_grp_${i}`, {
                     labels: globalLabels,
                     maxSbp: globalMaxSbp,
                     maxWt: globalMaxWt,
@@ -1248,7 +1289,11 @@
                     dLab.push(v.cleanDate); dVal.push(v.totalScore); 
                     if(v.note && v.note.trim()) { dNotes.push(v.note); pStyles.push('rectRot'); pSizes.push(8); pColors.push('#fdd835'); } 
                     else { dNotes.push(null); pStyles.push('circle'); pSizes.push(3); pColors.push('#1a237e'); }
-                    tableHtml += `<tr><td>${v.cleanDate}</td><td>${v.timestamp || '-'}</td><td>${v.scores.activity}</td><td>${v.scores.fur}</td><td>${v.scores.eye}</td><td>${v.totalScore}</td><td style="text-align:left; max-width:200px; white-space:normal;">${v.note || ''}</td></tr>`;
+                    
+                    // [수정] 상세보기에서도 act와 activity를 모두 체크하여 표시
+                    const actScore = (v.scores.activity !== undefined) ? v.scores.activity : (v.scores.act || 0);
+                    
+                    tableHtml += `<tr><td>${v.cleanDate}</td><td>${v.timestamp || '-'}</td><td>${actScore}</td><td>${v.scores.fur}</td><td>${v.scores.eye}</td><td>${v.totalScore}</td><td style="text-align:left; max-width:200px; white-space:normal;">${v.note || ''}</td></tr>`;
                 });
                 tableHtml += `</table>`;
                 document.getElementById('daily-detail-table').innerHTML = tableHtml;
@@ -1358,6 +1403,7 @@
                 
                 let html = '<div style="width:100%; text-align:right; color:#666; font-size:0.85rem; margin-bottom:10px;"><i class="material-icons" style="font-size:1rem; vertical-align:text-bottom;">touch_app</i> 진행중인 코호트-rat번호를 누르시면 상세보기로 넘어갑니다.</div>'; 
                 
+                // 코호트 정렬 (내림차순)
                 const sortedCohorts = Object.keys(grp).sort((a,b)=>Number(b)-Number(a));
                 const allTimepoints = Object.keys(globalPodMap).sort((a,b) => globalPodMap[a] - globalPodMap[b]);
 
@@ -1373,17 +1419,24 @@
                     const currentMemo = cData.memo || "";
                     const mrChecks = cData.mrChecks || {}; 
                     
+                    // 1. 메모 영역
                     const memoHtml = `<div class="co-memo-box"><i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i><span id="memo-txt-${c}" class="memo-text">${currentMemo || ''}</span><div id="memo-edit-area-${c}" style="display:none;"><input type="text" id="memo-inp-${c}" class="co-memo-input" value="${currentMemo}"><button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button></div></div>`;
                     
+                    // 2. MR 체크 영역
                     const config = cData.mrConfig || ['D0','D2','W1','W4','W8','W12','W20'];
+                    
+                    // [수정] 줄바꿈을 위해 margin-left 제거 및 스타일 조정
                     let mrHtml = `<div class="mr-check-group" style="margin-left:0; margin-top:5px;"><span style="font-weight:bold; color:var(--navy); margin-right:4px;">MR:</span>`;
+                    
                     mrHtml += `<i class="material-icons" style="font-size:1.1rem; cursor:pointer; color:#7f8c8d; vertical-align:middle; margin-right:5px;" onclick="toggleMrConfig('${c}')" title="MR 체크리스트 설정">settings</i>`;
+                    
                     config.forEach(tp => {
                         const isChecked = mrChecks[tp] ? 'checked' : '';
                         mrHtml += `<label><input type="checkbox" onclick="toggleMr(event, '${c}', '${tp}')" ${isChecked}>${tp}</label>`;
                     });
                     mrHtml += `</div>`;
 
+                    // 3. 설정 패널
                     const configPanel = `
                     <div id="mr-cfg-panel-${c}" style="display:none; width:100%; background:#fff; border:1px solid #ddd; padding:10px; margin-bottom:10px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
                         <div style="font-weight:bold; color:var(--navy); font-size:0.9rem; margin-bottom:8px; border-bottom:1px solid #eee; padding-bottom:5px;">
@@ -1403,6 +1456,7 @@
                         </div>
                     </div>`;
 
+                    // [수정] HTML 구조 변경: flex-direction을 사용하지 않고 블록 요소로 분리
                     html += `<div class="card">
                         <div class="cohort-header" style="display:block;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1412,6 +1466,7 @@
                                 </div>
                                 ${podTag}
                             </div>
+                            
                             <div style="width:100%;">
                                 ${mrHtml}
                             </div>
@@ -1451,21 +1506,38 @@
             toggleCoMemo(c);
         }
 
+        // MR 설정창 열기/닫기
         function toggleMrConfig(c) {
             const el = document.getElementById(`mr-cfg-panel-${c}`);
-            el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+            if(el.style.display === 'none') {
+                el.style.display = 'block';
+            } else {
+                el.style.display = 'none';
+            }
         }
 
+        // MR 설정 저장
         async function saveMrConfig(c) {
+            // 체크된 시점들 가져오기
             const chks = document.querySelectorAll(`.mr-cfg-chk-${c}:checked`);
             const selected = Array.from(chks).map(cb => cb.value);
-            if(selected.length === 0) { if(!confirm("선택된 시점이 없습니다. 모든 MR 체크박스를 숨기시겠습니까?")) return; }
+
+            if(selected.length === 0) {
+                if(!confirm("선택된 시점이 없습니다. 모든 MR 체크박스를 숨기시겠습니까?")) return;
+            }
+
+            // 시점 순서대로 정렬 (globalPodMap 기준)
             selected.sort((a, b) => (globalPodMap[a] || 0) - (globalPodMap[b] || 0));
+
             try {
+                // DB에 설정 저장 (기존 체크 데이터인 mrChecks는 건드리지 않고, mrConfig만 업데이트)
                 await db.collection("cohortNotes").doc(c).set({ mrConfig: selected }, { merge: true });
                 alert("설정이 저장되었습니다.");
-                loadDashboard();
-            } catch(e) { console.error(e); alert("저장 중 오류가 발생했습니다: " + e.message); }
+                loadDashboard(); // 대시보드 새로고침하여 반영
+            } catch(e) {
+                console.error(e);
+                alert("저장 중 오류가 발생했습니다: " + e.message);
+            }
         }
         
         async function deleteRat() { const id=document.getElementById('del-id').value; if(!id||!confirm("삭제?"))return; (await db.collection("rats").where("ratId","==",id).get()).forEach(d=>d.ref.delete()); ["dailyLogs","doseLogs","measurements"].forEach(async c=>(await db.collection(c).where("ratId","==",id).get()).forEach(d=>d.ref.delete())); alert("삭제됨"); }
@@ -1482,15 +1554,38 @@
             const date = document.getElementById('dc-date').value;
             if(!id || !date) return alert("ID와 날짜를 확인하세요");
             if(!(await checkRatValid(id))) return;
+            
             const note = document.getElementById('dc-note').value;
             const dead = document.getElementById('is-dead').checked;
             const total = currentScores.act + currentScores.fur + currentScores.eye;
 
-            if (!dead && (currentScores.act === 0 || currentScores.fur === 0 || currentScores.eye === 0)) { alert("Activity, Fur, Eye 점수를 모두 선택해주세요."); return; }
+            if (!dead && (currentScores.act === 0 || currentScores.fur === 0 || currentScores.eye === 0)) { 
+                alert("Activity, Fur, Eye 점수를 모두 선택해주세요."); 
+                return; 
+            }
+            
             try {
-                await db.collection("dailyLogs").add({ ratId: id, date: date, timestamp: new Date().toLocaleTimeString(), scores: { ...currentScores }, totalScore: total, note: note, createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+                // [수정] scores 저장 시 'act'를 'activity'로 명확하게 저장
+                await db.collection("dailyLogs").add({ 
+                    ratId: id, 
+                    date: date, 
+                    timestamp: new Date().toLocaleTimeString(), 
+                    scores: { 
+                        activity: currentScores.act, // 여기서 변환
+                        fur: currentScores.fur, 
+                        eye: currentScores.eye 
+                    }, 
+                    totalScore: total, 
+                    note: note, 
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp() 
+                });
+                
                 const rSnap = await db.collection("rats").where("ratId", "==", id).get();
-                if(!rSnap.empty) { if(dead) { await rSnap.docs[0].ref.update({ status: '사망', deathDate: date }); } else { await rSnap.docs[0].ref.update({ lastScore: total }); } }
+                if(!rSnap.empty) { 
+                    if(dead) { await rSnap.docs[0].ref.update({ status: '사망', deathDate: date }); } 
+                    else { await rSnap.docs[0].ref.update({ lastScore: total }); } 
+                }
+                
                 alert("저장되었습니다.");
                 document.getElementById('dc-note').value = '';
                 document.getElementById('is-dead').checked = false;
@@ -1501,6 +1596,7 @@
             const c = document.getElementById('ds-c').value;
             const ws = document.getElementsByClassName('dw');
             const is = document.getElementsByClassName('di');
+            
             let cnt = 0; let indivList = ''; let tMg = 0; let tVol = 0;
             try {
                 for(let i=0; i<ws.length; i++) { 
@@ -1530,6 +1626,7 @@
             alert("저장되었습니다."); 
         }
 
+        let bpAllData = [];
         function loadBPFiles(e) {
             bpAllData = [];
             const files = Array.from(e.target.files);
@@ -1541,10 +1638,23 @@
         function parseBPCSV(text, filename) {
             const rows = text.trim().split("\n").map(r => r.split(","));
             const header = rows.shift();
-            const idx = n => header.indexOf(n);
+            // 헤더 공백 제거 후 인덱스 찾기 (더 안전함)
+            const idx = n => header.findIndex(h => h && h.trim() === n);
+
             rows.forEach(r => {
                 if (r.length < 5) return; 
-                bpAllData.push({ file: filename, time: r[idx("Time")], specimen: r[idx("Specimen Name")], regular: r[idx("Regular Cycle")] === "True", accepted: r[idx("Accepted")] === "True", sbp: Number(r[idx("Systolic")]), dbp: Number(r[idx("Diastolic")]), mean: Number(r[idx("Mean")]), volume: Number(r[12]) });
+                // 값의 앞뒤 공백을 제거하고 비교 (핵심 수정)
+                bpAllData.push({ 
+                    file: filename, 
+                    time: r[idx("Time")], 
+                    specimen: r[idx("Specimen Name")], 
+                    regular: r[idx("Regular Cycle")]?.trim() === "True", 
+                    accepted: r[idx("Accepted")]?.trim() === "True", 
+                    sbp: Number(r[idx("Systolic")]), 
+                    dbp: Number(r[idx("Diastolic")]), 
+                    mean: Number(r[idx("Mean")]), 
+                    volume: Number(r[12] || r[idx("Volume")]) // Volume 인덱스 안전 처리
+                });
             });
         }
 
@@ -1552,6 +1662,8 @@
             const output = document.getElementById("bp-output");
             output.innerHTML = "";
             const grouped = {};
+            
+            // 데이터 그룹화
             bpAllData.forEach(r => {
                 const match = r.specimen.match(/\(([^)]+)\)/);
                 const ratId = match ? match[1].trim() : r.specimen.trim();
@@ -1560,6 +1672,7 @@
                 grouped[ratId][r.file].push(r);
             });
 
+            // 결과 출력
             Object.keys(grouped).sort().forEach(ratId => {
                 const box = document.createElement("div");
                 box.className = "bp-rat-box";
@@ -1568,16 +1681,20 @@
                 table.innerHTML = `<tr><th>File</th><th>n</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>검증</th></tr>`;
 
                 Object.entries(grouped[ratId]).forEach(([file, rows], idx) => {
+                    // 1. Regular & Accepted 체크
                     const valid = rows.filter(r => r.regular && r.accepted);
-                    if (valid.length === 0) return;
-                    const sbps = valid.map(r => r.sbp);
-                    const maxSBP = Math.max(...sbps);
-                    const minSBP = Math.min(...sbps);
+                    
+                    // 2. 최대/최소 SBP 계산 (valid 데이터가 있을 때만)
+                    let sbps = valid.map(r => r.sbp);
+                    let maxSBP = sbps.length ? Math.max(...sbps) : 0;
+                    let minSBP = sbps.length ? Math.min(...sbps) : 0;
+
+                    // 3. 필터링 판정 로직
                     const judged = rows.map(r => {
                         let reason = "✅ Accepted";
                         if (!r.regular || !r.accepted) { reason = "❌ Regular/Accepted"; } 
-                        else if (r.sbp === maxSBP) { reason = "❌ SBP = MAX (set)"; } 
-                        else if (r.sbp === minSBP) { reason = "❌ SBP = MIN (set)"; } 
+                        else if (sbps.length > 0 && r.sbp === maxSBP) { reason = "❌ SBP = MAX (set)"; } 
+                        else if (sbps.length > 0 && r.sbp === minSBP) { reason = "❌ SBP = MIN (set)"; } 
                         else {
                             const diff = r.sbp - r.dbp;
                             if (mode === "control" && (diff < 20 || diff > 60)) reason = "❌ Pulse diff";
@@ -1585,20 +1702,58 @@
                         }
                         return { ...r, reason };
                     });
+
                     const passed = judged.filter(r => r.reason === "✅ Accepted");
-                    if (passed.length === 0) return;
                     const avgFloor = key => Math.floor(passed.reduce((s, r) => s + r[key], 0) / passed.length);
+                    
+                    // 4. 결과 행 생성 (데이터가 없어도 생성)
                     const logId = `bp_log_${ratId.replace(/[^a-z0-9]/gi, '_')}_${idx}`;
-                    table.innerHTML += `<tr><td style="color:#e67e22; font-weight:500;">${file}</td><td>${passed.length}</td><td>${avgFloor("sbp")}</td><td>${avgFloor("dbp")}</td><td>${avgFloor("mean")}</td><td>${avgFloor("volume")}</td><td><button class="bp-toggle-btn" onclick="toggleBPLog('${logId}')">사이클 로그</button></td></tr><tr id="${logId}" style="display:none;"><td colspan="7"><table class="bp-log-table"><tr><th>Time</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>판정</th></tr>${judged.map(r => `<tr><td>${r.time}</td><td>${r.sbp}</td><td>${r.dbp}</td><td>${r.mean}</td><td>${r.volume}</td><td>${r.reason}</td></tr>`).join("")}</table></td></tr>`;
+                    const nDisplay = passed.length > 0 ? passed.length : `<span style="color:red">0</span>`;
+                    const sbpDisplay = passed.length > 0 ? avgFloor("sbp") : '-';
+                    
+                    table.innerHTML += `
+                        <tr>
+                            <td style="color:#e67e22; font-weight:500;">${file}</td>
+                            <td>${nDisplay}</td>
+                            <td>${sbpDisplay}</td>
+                            <td>${passed.length ? avgFloor("dbp") : '-'}</td>
+                            <td>${passed.length ? avgFloor("mean") : '-'}</td>
+                            <td>${passed.length ? avgFloor("volume") : '-'}</td>
+                            <td><button class="bp-toggle-btn" onclick="toggleBPLog('${logId}')">로그 확인</button></td>
+                        </tr>
+                        <tr id="${logId}" style="display:none;">
+                            <td colspan="7">
+                                <table class="bp-log-table">
+                                    <tr><th>Time</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>판정 Reason</th></tr>
+                                    ${judged.map(r => `<tr style="${r.reason!=='✅ Accepted'?'color:#aaa':''}"><td>${r.time}</td><td>${r.sbp}</td><td>${r.dbp}</td><td>${r.mean}</td><td>${r.volume}</td><td>${r.reason}</td></tr>`).join("")}
+                                </table>
+                            </td>
+                        </tr>`;
                 });
                 box.appendChild(table);
                 output.appendChild(box);
             });
         }
+
+        
         function toggleBPLog(id) { const el = document.getElementById(id); el.style.display = el.style.display === "none" ? "table-row" : "none"; }
 
+        function admTab(mode) {
+            document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
+            const btn = document.getElementById('adm-' + mode);
+            if(btn) btn.classList.add('active');
+            ['del', 'edit', 'imp'].forEach(m => {
+                const el = document.getElementById('tab-' + m);
+                if(el) el.style.display = (m === mode) ? 'block' : 'none';
+            });
+        }
+
+        function uploadDailyLogs() {
+            alert("CSV 업로드 기능은 현재 준비중입니다.");
+        }
+
         // ==============================================================
-        //  통합 데이터 수정 기능 (ADMIN)
+        //  통합 데이터 수정 기능 (ADMIN - EDIT)
         // ==============================================================
         
         async function searchForEdit() {
@@ -1637,145 +1792,370 @@
                 html += `</tbody></table><div class="edit-section-title">데일리 체크 <button class="btn btn-blue btn-small" style="float:right;" onclick="addTableRow('daily-tbody')">+ 추가</button></div><table class="full-edit-table"><thead><tr><th>날짜</th><th>Act</th><th>Fur</th><th>Eye</th><th>Memo</th><th>삭제</th></tr></thead><tbody id="daily-tbody">`;
                 dSnap.forEach(doc => {
                     const d = doc.data();
-                    html += `<tr data-id="${doc.id}" data-coll="dailyLogs"><td><input type="date" class="row-date" value="${d.date}"></td><td><input type="number" class="row-act" value="${d.scores?.activity||0}" style="width:40px"></td><td><input type="number" class="row-fur" value="${d.scores?.fur||0}" style="width:40px"></td><td><input type="number" class="row-eye" value="${d.scores?.eye||0}" style="width:40px"></td><td><input type="text" class="row-note" value="${d.note||''}"></td><td><button class="del-btn" onclick="markRowDel(this)">삭제</button></td></tr>`;
+                    // [수정] activity(신규)와 act(구형) 둘 다 체크하여 값 표시
+                    const actVal = (d.scores?.activity !== undefined) ? d.scores.activity : (d.scores?.act || 0);
+                    html += `<tr data-id="${doc.id}" data-coll="dailyLogs"><td><input type="date" class="row-date" value="${d.date}"></td><td><input type="number" class="row-act" value="${actVal}" style="width:40px"></td><td><input type="number" class="row-fur" value="${d.scores?.fur||0}" style="width:40px"></td><td><input type="number" class="row-eye" value="${d.scores?.eye||0}" style="width:40px"></td><td><input type="text" class="row-note" value="${d.note||''}"></td><td><button class="del-btn" onclick="markRowDel(this)">삭제</button></td></tr>`;
                 });
                 html += `</tbody></table><div style="height:60px;"></div> <button class="btn btn-green float-save-btn" onclick="saveTotalEdit('${ratDoc.id}')">💾 전체 저장</button></div>`;
                 resDiv.innerHTML = html;
             } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
         }
 
+        // 행 삭제 표시 함수
         function markRowDel(btn) {
             const row = btn.closest('tr');
-            if(row.classList.contains('row-del')) { row.classList.remove('row-del'); btn.innerText = '삭제'; btn.style.background = 'var(--red)'; } 
-            else { row.classList.add('row-del'); btn.innerText = '복구'; btn.style.background = 'gray'; }
+            if(row.classList.contains('row-del')) {
+                row.classList.remove('row-del');
+                btn.innerText = '삭제';
+                btn.style.background = 'var(--red)';
+            } else {
+                row.classList.add('row-del');
+                btn.innerText = '복구';
+                btn.style.background = 'gray';
+            }
         }
 
+        // 행 추가 함수
         function addTableRow(tbodyId) {
             const tbody = document.getElementById(tbodyId);
             const tr = document.createElement('tr');
-            tr.dataset.isNew = "true";
+            tr.dataset.isNew = "true"; // 신규 행 표시
+            
             if(tbodyId === 'meas-tbody') {
                 tr.dataset.coll = "measurements";
-                tr.innerHTML = `<td><input type="date" class="row-date" value="${getTodayStr()}"></td><td><input type="text" class="row-tp" placeholder="W1.."></td><td><input type="number" class="row-sbp" placeholder="SBP"></td><td><input type="number" class="row-dbp" placeholder="DBP"></td><td><input type="number" class="row-mean" placeholder="Mean"></td><td><input type="number" class="row-wt" placeholder="WT"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+                tr.innerHTML = `
+                    <td><input type="date" class="row-date" value="${getTodayStr()}"></td>
+                    <td><input type="text" class="row-tp" placeholder="W1.."></td>
+                    <td><input type="number" class="row-sbp" placeholder="SBP"></td>
+                    <td><input type="number" class="row-dbp" placeholder="DBP"></td>
+                    <td><input type="number" class="row-mean" placeholder="Mean"></td>
+                    <td><input type="number" class="row-wt" placeholder="WT"></td>
+                    <td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             } else if(tbodyId === 'daily-tbody') {
                 tr.dataset.coll = "dailyLogs";
-                tr.innerHTML = `<td><input type="date" class="row-date" value="${getTodayStr()}"></td><td><input type="number" class="row-act" value="0"></td><td><input type="number" class="row-fur" value="0"></td><td><input type="number" class="row-eye" value="0"></td><td><input type="text" class="row-note" placeholder="메모"></td><td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
+                tr.innerHTML = `
+                    <td><input type="date" class="row-date" value="${getTodayStr()}"></td>
+                    <td><input type="number" class="row-act" value="0"></td>
+                    <td><input type="number" class="row-fur" value="0"></td>
+                    <td><input type="number" class="row-eye" value="0"></td>
+                    <td><input type="text" class="row-note" placeholder="메모"></td>
+                    <td><button class="del-btn" onclick="this.closest('tr').remove()">취소</button></td>`;
             }
             tbody.insertBefore(tr, tbody.firstChild);
         }
 
         async function saveTotalEdit(ratDocId) {
             if(!confirm("모든 변경사항을 저장하시겠습니까?")) return;
+            
             const batch = db.batch();
             const ratRef = db.collection("rats").doc(ratDocId);
             
+            // 1. 기본 정보 업데이트
+            const codVal = document.getElementById('ed-cod-display').value;
+
             batch.update(ratRef, {
                 status: document.getElementById('ed-status').value,
-                codFull: document.getElementById('ed-cod-display').value,
+                codFull: codVal,
                 arrivalDate: document.getElementById('ed-arrival').value,
                 surgeryDate: document.getElementById('ed-surgery').value,
                 doseStartDate: document.getElementById('ed-dose-start').value,
                 deathDate: document.getElementById('ed-death').value
             });
 
+            // 2. 테이블 데이터 처리 (Measurements & DailyLogs)
             const tables = ['meas-tbody', 'daily-tbody'];
-            const ratIdStr = document.getElementById('edit-id').value;
+            const ratIdStr = document.getElementById('edit-id').value; // 화면 상단 검색창의 ID 사용
 
             tables.forEach(tbodyId => {
-                document.querySelectorAll(`#${tbodyId} tr`).forEach(row => {
-                    const coll = row.dataset.coll, docId = row.dataset.id, isDel = row.classList.contains('row-del'), isNew = row.dataset.isNew === "true";
+                const rows = document.querySelectorAll(`#${tbodyId} tr`);
+                rows.forEach(row => {
+                    const coll = row.dataset.coll;
+                    const docId = row.dataset.id;
+                    const isDel = row.classList.contains('row-del');
+                    const isNew = row.dataset.isNew === "true";
+
+                    // 공통 필드
                     const date = row.querySelector('.row-date').value;
-                    if (isDel && !isNew) batch.delete(db.collection(coll).doc(docId));
-                    else if (!isDel) {
+
+                    if (isDel && !isNew) {
+                        // 기존 데이터 삭제
+                        const ref = db.collection(coll).doc(docId);
+                        batch.delete(ref);
+                    } else if (!isDel) {
+                        // 데이터 구성
                         let data = {};
                         if (coll === 'measurements') {
-                            const sbp=row.querySelector('.row-sbp').value, dbp=row.querySelector('.row-dbp').value, mean=row.querySelector('.row-mean').value, wt=row.querySelector('.row-wt').value, tp=row.querySelector('.row-tp').value;
-                            if(!date) return;
-                            data = { ratId: ratIdStr, date: date, timepoint: tp, sbp: sbp?Number(sbp):null, dbp: dbp?Number(dbp):null, mean: mean?Number(mean):null, weight: wt?Number(wt):null };
+                            const sbp = row.querySelector('.row-sbp').value;
+                            const dbp = row.querySelector('.row-dbp').value;
+                            const mean = row.querySelector('.row-mean').value;
+                            const wt = row.querySelector('.row-wt').value;
+                            const tp = row.querySelector('.row-tp').value;
+                            if(!date) return; // 날짜 없으면 스킵
+                            data = {
+                                ratId: ratIdStr, date: date, timepoint: tp,
+                                sbp: sbp ? Number(sbp) : null,
+                                dbp: dbp ? Number(dbp) : null,
+                                mean: mean ? Number(mean) : null,
+                                weight: wt ? Number(wt) : null
+                            };
                         } else if (coll === 'dailyLogs') {
-                            const act=Number(row.querySelector('.row-act').value), fur=Number(row.querySelector('.row-fur').value), eye=Number(row.querySelector('.row-eye').value), note=row.querySelector('.row-note').value;
+                            const act = Number(row.querySelector('.row-act').value);
+                            const fur = Number(row.querySelector('.row-fur').value);
+                            const eye = Number(row.querySelector('.row-eye').value);
+                            const note = row.querySelector('.row-note').value;
                             if(!date) return;
-                            data = { ratId: ratIdStr, date: date, scores: { activity: act, fur: fur, eye: eye }, totalScore: act + fur + eye, note: note };
+                            data = {
+                                ratId: ratIdStr, date: date,
+                                scores: { activity: act, fur: fur, eye: eye },
+                                totalScore: act + fur + eye,
+                                note: note
+                            };
                         }
-                        if (isNew) batch.set(db.collection(coll).doc(), data); else batch.update(db.collection(coll).doc(docId), data);
+
+                        if (isNew) {
+                            // 신규 생성
+                            const newRef = db.collection(coll).doc();
+                            batch.set(newRef, data);
+                        } else {
+                            // 기존 업데이트
+                            const ref = db.collection(coll).doc(docId);
+                            batch.update(ref, data);
+                        }
                     }
                 });
             });
-            try { await batch.commit(); alert("성공적으로 저장되었습니다."); searchForEdit(); } catch(e) { console.error(e); alert("오류: " + e.message); }
+
+            try {
+                await batch.commit();
+                alert("성공적으로 저장되었습니다.");
+                searchForEdit(); // 화면 갱신
+            } catch(e) {
+                console.error(e);
+                alert("저장 중 오류 발생: " + e.message);
+            }
         }
 
         // ==============================================================
-        //  COD Flow (3-Step)
+        //  COD Flow (3-Step Hierarchical Selection)
         // ==============================================================
 
         function openCodFlow(docId, inputId = null) {
-            codTargetDocId = docId; codTargetInputId = inputId; codTempData = { type: '', secondary: '', causes: [] };
+            // Reset state
+            codTargetDocId = docId;
+            codTargetInputId = inputId;
+            codTempData = { type: '', secondary: '', causes: [] };
+            
+            // Clear checks
             document.querySelectorAll('input[name="cod-check"]').forEach(cb => cb.checked = false);
+
             document.getElementById('cod-modal').style.display = 'flex';
             showCodStep(1);
         }
-        function closeCod() { document.getElementById('cod-modal').style.display = 'none'; }
-        function showCodStep(step) { document.querySelectorAll('.cod-step-container').forEach(el => el.classList.remove('active')); document.getElementById(`cod-step-${step}`).classList.add('active'); }
-        function selectCodType(type) { codTempData.type = type; showCodStep(type === 'Neurological' ? '2-neuro' : '2-non-neuro'); }
-        function selectCodAn(anStatus) { codTempData.secondary = anStatus; showCodStep(3); }
-        function selectCodNonNeuroCause(cause) { codTempData.secondary = cause; codTempData.causes = []; saveCodFinal(); }
-        function codBack(toStep) { if(toStep === 1) showCodStep(1); else if(toStep === 'neuro-2') showCodStep('2-neuro'); }
 
-        async function saveCodFinal() {
-            if(codTempData.type === 'Neurological') {
-                const checkedBoxes = document.querySelectorAll('input[name="cod-check"]:checked');
-                if(checkedBoxes.length === 0) return alert("세부 원인을 선택해주세요.");
-                codTempData.causes = Array.from(checkedBoxes).map(cb => cb.value);
-            }
-            let finalStr = `${codTempData.type}`;
-            if(codTempData.secondary) finalStr += ` (${codTempData.secondary})`;
-            if(codTempData.causes.length > 0) finalStr += ' - ' + codTempData.causes.join(', ');
-            if(codTargetInputId) { document.getElementById(codTargetInputId).value = finalStr; closeCod(); } 
-            else if(codTargetDocId) {
-                try { await db.collection("rats").doc(codTargetDocId).update({ codFull: finalStr, status: '사망', deathDate: getTodayStr() }); alert(`저장됨: ${finalStr}`); closeCod(); loadDetailData(); } 
-                catch(e) { console.error(e); alert("저장 실패"); }
+        function closeCod() {
+            document.getElementById('cod-modal').style.display = 'none';
+        }
+
+        function showCodStep(step) {
+            document.querySelectorAll('.cod-step-container').forEach(el => el.classList.remove('active'));
+            // step can be '1', '2-neuro', '2-non-neuro', '3'
+            document.getElementById(`cod-step-${step}`).classList.add('active');
+        }
+
+        function selectCodType(type) {
+            codTempData.type = type;
+            if(type === 'Neurological') {
+                showCodStep('2-neuro');
+            } else {
+                showCodStep('2-non-neuro');
             }
         }
 
-        // 로그 관리 기능
+        // Neuro Path
+        function selectCodAn(anStatus) {
+            codTempData.secondary = anStatus;
+            showCodStep(3);
+        }
+
+        // Non-Neuro Path
+        function selectCodNonNeuroCause(cause) {
+            // For Non-Neuro, secondary is the cause (Unknown or Surgical Failure or Sacrifice)
+            codTempData.secondary = cause;
+            // No Step 3. Save immediately.
+            codTempData.causes = []; // Empty causes means no 3rd level
+            saveCodFinal();
+        }
+
+        function codBack(toStep) {
+            // toStep: 1, 'neuro-2', etc.
+            if(toStep === 1) showCodStep(1);
+            else if(toStep === 'neuro-2') showCodStep('2-neuro');
+        }
+
+        async function saveCodFinal() {
+            // If Neuro path, collect checkboxes
+            if(codTempData.type === 'Neurological') {
+                const checkedBoxes = document.querySelectorAll('input[name="cod-check"]:checked');
+                if(checkedBoxes.length === 0) return alert("하나 이상의 세부 원인을 선택해주세요.");
+                codTempData.causes = Array.from(checkedBoxes).map(cb => cb.value);
+            }
+
+            // Construct Final String
+            let finalStr = `${codTempData.type}`;
+            
+            // Format: Type (Secondary) - Causes...
+            if(codTempData.secondary) {
+                finalStr += ` (${codTempData.secondary})`;
+            }
+            
+            if(codTempData.causes.length > 0) {
+                finalStr += ' - ' + codTempData.causes.join(', ');
+            }
+
+            // Save Logic
+            if(codTargetInputId) {
+                document.getElementById(codTargetInputId).value = finalStr;
+                closeCod();
+            } else if(codTargetDocId) {
+                try {
+                    await db.collection("rats").doc(codTargetDocId).update({ 
+                        codFull: finalStr,
+                        status: '사망', 
+                        deathDate: getTodayStr() 
+                    });
+                    alert(`저장됨: ${finalStr}`);
+                    closeCod();
+                    loadDetailData(); 
+                } catch(e) {
+                    console.error(e);
+                    alert("저장 실패");
+                }
+            }
+        }
+    // --- 로그 관리(삭제) 기능 함수들 ---
+
+        function admTab(mode) {
+            document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
+            const btn = document.getElementById('adm-' + mode);
+            if(btn) btn.classList.add('active');
+            
+            // 모든 탭 숨기기
+            ['del', 'edit', 'logs'].forEach(m => {
+                const el = document.getElementById('tab-' + m);
+                if(el) el.style.display = 'none';
+            });
+            // 선택된 탭 보이기
+            const target = document.getElementById('tab-' + mode);
+            if(target) target.style.display = 'block';
+        }
+
         async function searchLogsDel() {
             const id = document.getElementById('log-rat-id').value.trim();
             if(!id) return alert("ID를 입력하세요");
+
             const resDiv = document.getElementById('log-del-result');
             resDiv.innerHTML = '<div class="loader"></div> 로그 검색 중...';
+
             try {
-                const [dSnap, dsSnap] = await Promise.all([db.collection("dailyLogs").where("ratId", "==", id).orderBy("date", "desc").get(), db.collection("doseLogs").where("ratId", "==", id).orderBy("date", "desc").get()]);
-                if(dSnap.empty && dsSnap.empty) { resDiv.innerHTML = "<p>로그 데이터가 없습니다.</p>"; return; }
-                let html = `<div style="text-align:right; margin-bottom:10px;"><button class="btn btn-red btn-small" onclick="deleteSelectedLogs()">선택 항목 삭제하기</button></div>`;
+                // Daily Logs와 Dose Logs를 동시에 조회
+                const [dSnap, dsSnap] = await Promise.all([
+                    db.collection("dailyLogs").where("ratId", "==", id).orderBy("date", "desc").get(),
+                    db.collection("doseLogs").where("ratId", "==", id).orderBy("date", "desc").get()
+                ]);
+
+                if(dSnap.empty && dsSnap.empty) {
+                    resDiv.innerHTML = "<p>해당 ID의 로그 데이터가 없습니다.</p>";
+                    return;
+                }
+
+                let html = `<div style="text-align:right; margin-bottom:10px;">
+                                <button class="btn btn-red btn-small" onclick="deleteSelectedLogs()">선택 항목 삭제하기</button>
+                            </div>`;
+
+                // 1. Daily Logs Table
                 if(!dSnap.empty) {
-                    html += `<h4 style="margin-top:20px; color:var(--navy);">📝 데일리 체크 (${dSnap.size}개)</h4><label style="cursor:pointer;"><input type="checkbox" onchange="toggleAllLogs(this, 'chk-daily')"> 전체 선택</label><div style="max-height:250px; overflow-y:auto; border:1px solid #eee;"><table><thead><tr><th width="30">✔</th><th>날짜</th><th>점수</th><th>메모</th></tr></thead><tbody>`;
-                    dSnap.forEach(doc => { const d = doc.data(); html += `<tr><td><input type="checkbox" class="chk-daily" value="${doc.id}"></td><td>${d.date}</td><td>${d.totalScore}</td><td>${d.note||'-'}</td></tr>`; });
+                    html += `<h4 style="margin-top:20px; color:var(--navy);">📝 데일리 체크 로그 (${dSnap.size}개)</h4>
+                    <label style="font-size:0.85rem; cursor:pointer; display:block; margin-bottom:5px;">
+                        <input type="checkbox" onchange="toggleAllLogs(this, 'chk-daily')"> 전체 선택
+                    </label>
+                    <div style="max-height:250px; overflow-y:auto; border:1px solid #eee;">
+                        <table style="font-size:0.85rem;">
+                            <thead><tr><th width="30">✔</th><th>날짜</th><th>점수</th><th>메모</th></tr></thead>
+                            <tbody>`;
+                    dSnap.forEach(doc => {
+                        const d = doc.data();
+                        html += `<tr>
+                            <td><input type="checkbox" class="chk-daily" value="${doc.id}" data-coll="dailyLogs"></td>
+                            <td>${d.date}</td>
+                            <td>${d.totalScore}</td>
+                            <td>${d.note || '-'}</td>
+                        </tr>`;
+                    });
                     html += `</tbody></table></div>`;
                 }
+
+                // 2. Dose Logs Table
                 if(!dsSnap.empty) {
-                    html += `<h4 style="margin-top:20px; color:var(--navy);">💊 투약 기록 (${dsSnap.size}개)</h4><label style="cursor:pointer;"><input type="checkbox" onchange="toggleAllLogs(this, 'chk-dose')"> 전체 선택</label><div style="max-height:250px; overflow-y:auto; border:1px solid #eee;"><table><thead><tr><th width="30">✔</th><th>날짜</th><th>체중</th><th>용량</th></tr></thead><tbody>`;
-                    dsSnap.forEach(doc => { const d = doc.data(); html += `<tr><td><input type="checkbox" class="chk-dose" value="${doc.id}"></td><td>${d.date}</td><td>${d.weight}g</td><td>${d.volMl?d.volMl.toFixed(2):'-'}ml</td></tr>`; });
+                    html += `<h4 style="margin-top:20px; color:var(--navy);">💊 투약 기록 로그 (${dsSnap.size}개)</h4>
+                    <label style="font-size:0.85rem; cursor:pointer; display:block; margin-bottom:5px;">
+                        <input type="checkbox" onchange="toggleAllLogs(this, 'chk-dose')"> 전체 선택
+                    </label>
+                    <div style="max-height:250px; overflow-y:auto; border:1px solid #eee;">
+                        <table style="font-size:0.85rem;">
+                            <thead><tr><th width="30">✔</th><th>날짜</th><th>체중</th><th>용량(ml)</th></tr></thead>
+                            <tbody>`;
+                    dsSnap.forEach(doc => {
+                        const d = doc.data();
+                        html += `<tr>
+                            <td><input type="checkbox" class="chk-dose" value="${doc.id}" data-coll="doseLogs"></td>
+                            <td>${d.date}</td>
+                            <td>${d.weight}g</td>
+                            <td>${d.volMl ? d.volMl.toFixed(2) : '-'}ml</td>
+                        </tr>`;
+                    });
                     html += `</tbody></table></div>`;
                 }
+
                 resDiv.innerHTML = html;
-            } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
-        }
-        function toggleAllLogs(src, cls) { document.querySelectorAll('.'+cls).forEach(cb => cb.checked = src.checked); }
-        
-        async function deleteSelectedLogs() {
-            const dailies = document.querySelectorAll('.chk-daily:checked'), doses = document.querySelectorAll('.chk-dose:checked');
-            const total = dailies.length + doses.length;
-            if(total === 0) return alert("삭제할 항목을 선택해주세요.");
-            if(!confirm(`총 ${total}개의 로그를 삭제하시겠습니까?`)) return;
-            const batch = db.batch();
-            dailies.forEach(cb => batch.delete(db.collection("dailyLogs").doc(cb.value)));
-            doses.forEach(cb => batch.delete(db.collection("doseLogs").doc(cb.value)));
-            try { await batch.commit(); alert("삭제되었습니다."); searchLogsDel(); } catch(e) { console.error(e); alert("오류: " + e.message); }
+
+            } catch(e) {
+                console.error(e);
+                resDiv.innerHTML = `<p style="color:red">오류 발생: ${e.message}</p>`;
+            }
         }
 
+        function toggleAllLogs(source, targetClass) {
+            const checkboxes = document.querySelectorAll('.' + targetClass);
+            checkboxes.forEach(cb => cb.checked = source.checked);
+        }
+
+       
         // ============================================================
-        //  동향 분석 (Trend Analysis) - Scatter 기능 포함
+        //  동향 분석 (Trend Analysis) - UI/UX 개선 최종 버전
+        //  (색상 대비 강화, 버튼 활성화 로직, 그래프 높이/눈금/평균선 추가)
         // ============================================================
+
+        // 전역 변수: 차트 인스턴스 및 데이터 캐시
+        // ============================================================
+        //  동향 분석 (Trend Analysis) - 색상 픽스 & 평균선 로직 수정
+        // ============================================================
+
+        // 전역 변수
+        // ============================================================
+        //  동향 분석 (Trend Analysis) - 필터 독립 & 축 동기화 & 5단위
+        // ============================================================
+
+        // 전역 변수: 차트/데이터 캐시 및 필터 상태 관리
+        let trendScatterCharts = { low: null, high: null };
+        let trendScatterDataCache = { low: [], high: [] };
+        let trendTimepointsCache = []; 
+        // [추가] 각 그룹별 현재 필터 상태 저장 (기본값 All)
+        let trendFilterState = { low: 'All', high: 'All' };
+        // [1단계] 비교 분석용 전역 변수 추가 (스크립트 상단 전역변수 모음 쪽에 붙여넣으세요)
+        let compScatterCharts = {};      // 차트 인스턴스 저장
+        let compScatterDataCache = {};   // 원본 데이터 저장
+        let compFilterState = {};        // 필터 상태 저장
+
 
         function toggleTrendInputs() {
             const mode = document.querySelector('input[name="trend-crit"]:checked').value;
@@ -1791,7 +2171,9 @@
             const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
 
             const mode = document.querySelector('input[name="trend-crit"]:checked').value;
-            let criteriaVal = 0, criteriaTp = '';
+            let criteriaVal = 0;
+            let criteriaTp = '';
+
             if (mode === 'weight') {
                 criteriaTp = document.getElementById('trend-wt-tp').value;
                 const val = document.getElementById('trend-wt-val').value;
@@ -1813,21 +2195,39 @@
             trendFilterState = { low: 'All', high: 'All' }; 
 
             try {
+                // 1. 전체 데이터 로드
                 const ratPromises = selectedCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
                 const ratSnaps = await Promise.all(ratPromises);
                 
-                let allRats = [], allRatIds = [], surgeryMap = {};
+                let allRats = [];
+                let allRatIds = [];
+                const surgeryMap = {};
+
                 ratSnaps.forEach(snap => {
-                    snap.forEach(d => { const r = d.data(); allRats.push(r); allRatIds.push(r.ratId); if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate; });
+                    snap.forEach(d => {
+                        const r = d.data();
+                        allRats.push(r);
+                        allRatIds.push(r.ratId);
+                        if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
+                    });
                 });
+
                 if (allRats.length === 0) { container.innerHTML = "해당 코호트에 데이터가 없습니다."; return; }
 
+                // 2. 전체 측정값 조회 (Global Scale)
                 const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
                 const measSnaps = await Promise.all(measPromises);
 
-                let globalMaxSbp = 0, globalMaxWt = 0, globalMaxPod = 0;
-                const stdPodMap = globalPodMap, tempColumns = [], labelSet = new Set();
+                let globalMaxSbp = 0;
+                let globalMaxWt = 0;
+                let globalMaxPod = 0;
+                
+                // [수정] 전역 맵 사용
+                const stdPodMap = globalPodMap;
+                const tempColumns = [];
+                const labelSet = new Set();
                 const showAll = document.getElementById('trend-show-all')?.checked;
+                
                 const measMap = {}; 
 
                 measSnaps.forEach((snap, idx) => {
@@ -1843,12 +2243,16 @@
                         if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
                         if(d.weight && d.weight > globalMaxWt) globalMaxWt = d.weight;
                         if(surgDate && d.date) {
-                                const p = Math.floor((new Date(d.date) - new Date(surgDate))/(1000*60*60*24));
-                                if(p > globalMaxPod) globalMaxPod = p;
+                             const p = Math.floor((new Date(d.date) - new Date(surgDate))/(1000*60*60*24));
+                             if(p > globalMaxPod) globalMaxPod = p;
                         }
 
+                        // 시점 수집 (데이터가 있는 것만)
                         if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) {
-                            if (!labelSet.has(d.timepoint)) { labelSet.add(d.timepoint); tempColumns.push({ label: d.timepoint, sortVal: stdPodMap[d.timepoint] }); }
+                            if (!labelSet.has(d.timepoint)) {
+                                labelSet.add(d.timepoint);
+                                tempColumns.push({ label: d.timepoint, sortVal: stdPodMap[d.timepoint] });
+                            }
                         } else if (showAll && d.date && surgDate) {
                             if (!labelSet.has(d.date)) {
                                 const diff = new Date(d.date) - new Date(surgDate);
@@ -1862,55 +2266,97 @@
 
                 tempColumns.sort((a,b) => a.sortVal - b.sortVal);
                 const globalLabels = tempColumns.map(c => c.label);
-                trendTimepointsCache = globalLabels; 
+                trendTimepointsCache = globalLabels; // 공유
 
-                let groupLow = [], groupHigh = [];
+                // 3. 그룹 분류
+                let groupLow = [];
+                let groupHigh = [];
+                
                 if (mode === 'pod') {
                     allRats.forEach(r => {
                         if (r.surgeryDate) {
                             const endDate = r.deathDate ? new Date(r.deathDate) : new Date();
                             const pod = Math.floor((endDate - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24));
-                            if (pod < criteriaVal) groupLow.push(r); else groupHigh.push(r);
+                            if (pod < criteriaVal) groupLow.push(r);
+                            else groupHigh.push(r);
                         }
                     });
                 } else {
                     allRats.forEach(r => {
                         let w = measMap[r.ratId]?.[criteriaTp];
-                        if (w !== undefined) { if (w < criteriaVal) groupLow.push(r); else groupHigh.push(r); }
+                        if (w !== undefined) {
+                            if (w < criteriaVal) groupLow.push(r);
+                            else groupHigh.push(r);
+                        }
                     });
                 }
 
+                // 4. 레이아웃 생성
                 container.innerHTML = '';
-                const splitBox = document.createElement('div'); splitBox.className = 'trend-container'; container.appendChild(splitBox);
-                const divLow = document.createElement('div'); divLow.className = 'trend-half'; divLow.id = 'trend-res-low'; splitBox.appendChild(divLow);
-                const divHigh = document.createElement('div'); divHigh.className = 'trend-half'; divHigh.id = 'trend-res-high'; splitBox.appendChild(divHigh);
+                const splitBox = document.createElement('div');
+                splitBox.className = 'trend-container';
+                container.appendChild(splitBox);
 
-                const fixedOptions = { labels: globalLabels, maxSbp: globalMaxSbp, maxWt: globalMaxWt, maxPod: globalMaxPod, mode: mode };
+                const divLow = document.createElement('div');
+                divLow.className = 'trend-half';
+                divLow.id = 'trend-res-low';
+                splitBox.appendChild(divLow);
+
+                const divHigh = document.createElement('div');
+                divHigh.className = 'trend-half';
+                divHigh.id = 'trend-res-high';
+                splitBox.appendChild(divHigh);
+
+                const fixedOptions = {
+                    labels: globalLabels,
+                    maxSbp: globalMaxSbp,
+                    maxWt: globalMaxWt,
+                    maxPod: globalMaxPod,
+                    mode: mode
+                };
+
                 const critText = mode === 'weight' ? `${criteriaTp} 체중` : `POD`;
 
+                // 분석 실행
                 await runRatListAnalysis(groupLow, 'trend-res-low', '_tr_low', `${critText} < ${criteriaVal} (n=${groupLow.length})`, fixedOptions, 'low');
                 await runRatListAnalysis(groupHigh, 'trend-res-high', '_tr_high', `${critText} ≥ ${criteriaVal} (n=${groupHigh.length})`, fixedOptions, 'high');
-            } catch (e) { console.error(e); container.innerHTML = `<p style="color:red">분석 중 오류 발생: ${e.message}</p>`; }
+
+            } catch (e) {
+                console.error(e);
+                container.innerHTML = `<p style="color:red">분석 중 오류 발생: ${e.message}</p>`;
+            }
         }
 
+        // [1] 동향분석 실행 함수 (기존 runRatListAnalysis 교체)
         async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, customTitle, fixedOptions, groupKey) {
             const resDiv = document.getElementById(targetDivId);
-            const headerHtml = `<div style="position:sticky; top:60px; z-index:90; background:#f8f9fa; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);"><span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span></div>`;
+            
+            // [Sticky Header] 상단 고정 제목 (네비게이션 바 높이 60px 고려)
+            const headerHtml = `
+                <div style="position:sticky; top:60px; z-index:90; background:#f8f9fa; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+                    <span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span>
+                </div>`;
 
-            if (ratDataList.length === 0) { resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:#777;">해당 그룹에 포함된 개체가 없습니다.</div>`; return; }
+            if (ratDataList.length === 0) {
+                resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:#777;">해당 그룹에 포함된 개체가 없습니다.</div>`;
+                return;
+            }
+
             resDiv.innerHTML = headerHtml + `<div class="loader"></div> 로딩 중...`;
 
             try {
                 const deadRats = ratDataList.filter(r => r.status === "사망");
                 ratDataList.sort((a, b) => a.ratId.localeCompare(b.ratId));
                 const ratIds = ratDataList.map(r => r.ratId);
-                const ratInfoMap = {}; ratDataList.forEach(r => ratInfoMap[r.ratId] = r);
+                const ratInfoMap = {};
+                ratDataList.forEach(r => ratInfoMap[r.ratId] = r);
 
                 const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
                 const snapshots = await Promise.all(promises);
 
                 let targetTimepoints = fixedOptions.labels;
-                const matrix = {}; const scatterData = [];
+                const matrix = {}; 
+                const scatterData = []; // [New] 상세 분포 데이터
 
                 ratIds.forEach(id => { matrix[id] = {}; targetTimepoints.forEach(tp => matrix[id][tp] = { sbp: null, wt: null }); });
                 
@@ -1924,51 +2370,97 @@
                         
                         if (label && matrix[rid][label] !== undefined) { 
                             matrix[rid][label] = { sbp: d.sbp, wt: d.weight };
+                            
+                            // [New] Scatter Data 수집
                             if(d.weight) {
                                 const xIndex = targetTimepoints.indexOf(label);
                                 if(xIndex !== -1) {
                                     const jitter = (Math.random() - 0.5) * 0.4;
-                                    scatterData.push({ x: xIndex + jitter, y: d.weight, rid: rid, tp: label, originalX: xIndex });
+                                    scatterData.push({ 
+                                        x: xIndex + jitter, 
+                                        y: d.weight, 
+                                        rid: rid, 
+                                        tp: label,
+                                        originalX: xIndex 
+                                    });
                                 }
                             }
                         }
                     });
                 });
 
-                if(groupKey) { trendScatterDataCache[groupKey] = scatterData; trendFilterState[groupKey] = 'All'; }
-
-                const avgs = {}; targetTimepoints.forEach(tp => avgs[tp] = { sCnt:0, sSum:0, wCnt:0, wSum:0 });
-                ratIds.forEach(id => { targetTimepoints.forEach(tp => { const cell = matrix[id][tp]; if (cell) { if(cell.sbp) { avgs[tp].sSum += cell.sbp; avgs[tp].sCnt++; } if(cell.wt) { avgs[tp].wSum += cell.wt; avgs[tp].wCnt++; } } }); });
-
-                let finalHtml = headerHtml;
-                const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`, codChartId = `codChart${uniqueSuffix}`, codLegendId = `codLegend${uniqueSuffix}`, bpChartId = `coChartSbp${uniqueSuffix}`, bpTableId = `coTableSbp${uniqueSuffix}`, wtChartId = `coChartWt${uniqueSuffix}`, wtTableId = `coTableWt${uniqueSuffix}`, wtDistChartId = `coChartWtDist${uniqueSuffix}`;
-
-                if(deadRats.length > 0) {
-                    let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
-                    deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : '?'; survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate||'-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${r.codFull||'미기록'}</span></td></tr>`; });
-                    survTable += `</table>`;
-                    finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length})</h4><div class="chart-area"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div></div><div class="card"><h4>💀 원인 분석</h4><div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;"><div style="flex:1; min-width:180px; height:250px; position:relative;"><canvas id="${codChartId}"></canvas></div><div id="${codLegendId}" style="flex:1; min-width:200px; max-height:250px; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:5px; background:#fdfdfd;"></div></div></div>`;
+                // 데이터 캐싱 (동향분석용)
+                if(groupKey) {
+                    trendScatterDataCache[groupKey] = scatterData;
+                    trendFilterState[groupKey] = 'All'; // 필터 초기화
                 }
 
+                const avgs = {}; 
+                targetTimepoints.forEach(tp => avgs[tp] = { sCnt:0, sSum:0, wCnt:0, wSum:0 });
+                ratIds.forEach(id => {
+                    targetTimepoints.forEach(tp => {
+                        const cell = matrix[id][tp];
+                        if (cell) {
+                            if(cell.sbp) { avgs[tp].sSum += cell.sbp; avgs[tp].sCnt++; }
+                            if(cell.wt) { avgs[tp].wSum += cell.wt; avgs[tp].wCnt++; }
+                        }
+                    });
+                });
+
+                let finalHtml = headerHtml;
+                const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
+                const codChartId = `codChart${uniqueSuffix}`, codLegendId = `codLegend${uniqueSuffix}`;
+                const bpChartId = `coChartSbp${uniqueSuffix}`, bpTableId = `coTableSbp${uniqueSuffix}`;
+                const wtChartId = `coChartWt${uniqueSuffix}`, wtTableId = `coTableWt${uniqueSuffix}`;
+                const wtDistChartId = `coChartWtDist${uniqueSuffix}`; // [New]
+
+                // (사망 분석 섹션)
+                if(deadRats.length > 0) {
+                    let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
+                    deadRats.forEach(r => {
+                        const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)) : '?';
+                        survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate||'-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${r.codFull||'미기록'}</span></td></tr>`;
+                    });
+                    survTable += `</table>`;
+                    
+                    finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length})</h4><div class="chart-area"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div></div>`;
+                    
+                    finalHtml += `<div class="card"><h4>💀 원인 분석</h4><div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;"><div style="flex:1; min-width:180px; height:250px; position:relative;"><canvas id="${codChartId}"></canvas></div><div id="${codLegendId}" style="flex:1; min-width:200px; max-height:250px; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:5px; background:#fdfdfd;"></div></div></div>`;
+                }
+
+                // SBP
                 const avgSbp = targetTimepoints.map(tp => avgs[tp].sCnt ? Math.round(avgs[tp].sSum/avgs[tp].sCnt) : null);
                 let bpTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => { bpTable += `<tr><td>${ratInfoMap[id].status==='사망'?'💀':'🟢'} ${id}</td>`; targetTimepoints.forEach(tp => { bpTable += `<td>${matrix[id][tp]?.sbp || '-'}</td>`; }); bpTable += `</tr>`; });
                 bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>AVG</td>`; avgSbp.forEach(v => bpTable += `<td>${v||'-'}</td>`); bpTable += `</tr></table></div>`;
                 finalHtml += `<div class="card"><h4>🩸 혈압(SBP)</h4><div class="chart-area"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
+                // WT
                 const avgWt = targetTimepoints.map(tp => avgs[tp].wCnt ? (avgs[tp].wSum/avgs[tp].wCnt).toFixed(1) : null);
                 let wtTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${targetTimepoints.map(t=>`<th>${t}</th>`).join('')}</tr>`;
                 ratIds.forEach(id => { wtTable += `<tr><td>${ratInfoMap[id].status==='사망'?'💀':'🟢'} ${id}</td>`; targetTimepoints.forEach(tp => { wtTable += `<td>${matrix[id][tp]?.wt || '-'}</td>`; }); wtTable += `</tr>`; });
                 wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>AVG</td>`; avgWt.forEach(v => wtTable += `<td>${v||'-'}</td>`); wtTable += `</tr></table></div>`;
                 
-                let distBtns = `<div style="margin:10px 0; padding:5px; background:#f1f3f5; border-radius:4px; text-align:center; overflow-x:auto; white-space:nowrap;">`;
-                distBtns += `<button id="btn-trend-${groupKey}-All" class="btn btn-blue btn-small trend-filter-btn-${groupKey}" style="padding:2px 6px; font-size:0.75rem; margin-right:5px; width:auto; border:none;" onclick="updateTrendScatter('All', '${groupKey}')">All</button>`;
-                fixedOptions.labels.forEach(tp => { distBtns += `<button id="btn-trend-${groupKey}-${tp}" class="btn btn-white btn-small trend-filter-btn-${groupKey}" style="padding:2px 6px; font-size:0.75rem; border:1px solid #ccc; width:auto; margin:0 1px;" onclick="updateTrendScatter('${tp}', '${groupKey}')">${tp}</button>`; });
-                distBtns += `</div>`;
+                // [New] 동향분석에도 체중 분포 상세 그래프 추가
+                let distChartHtml = '';
+                let btns = `<div style="margin:10px 0; padding:5px; background:#f1f3f5; border-radius:4px; text-align:center; overflow-x:auto; white-space:nowrap;">`;
+                btns += `<button id="btn-trend-${groupKey}-All" class="btn btn-blue btn-small trend-filter-btn-${groupKey}" style="padding:2px 6px; font-size:0.75rem; margin-right:5px; width:auto; border:none;" onclick="updateTrendScatter('All', '${groupKey}')">All</button>`;
+                fixedOptions.labels.forEach(tp => {
+                    btns += `<button id="btn-trend-${groupKey}-${tp}" class="btn btn-white btn-small trend-filter-btn-${groupKey}" style="padding:2px 6px; font-size:0.75rem; border:1px solid #ccc; width:auto; margin:0 1px;" onclick="updateTrendScatter('${tp}', '${groupKey}')">${tp}</button>`;
+                });
+                btns += `</div>`;
 
-                finalHtml += `<div class="card"><h4>⚖️ 체중(WT)</h4><div class="chart-area"><canvas id="${wtChartId}"></canvas></div><div style="margin-top:20px; border-top:1px dashed #ddd; padding-top:10px;"><h5 style="margin:0 0 5px 0; color:#555;">📍 체중 분포 상세</h5>${distBtns}<div style="height:350px; width:100%;"><canvas id="${wtDistChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
+                distChartHtml = `<div style="margin-top:20px; border-top:1px dashed #ddd; padding-top:10px;">
+                    <h5 style="margin:0 0 5px 0; color:#555;">📍 체중 분포 상세</h5>
+                    ${btns}
+                    <div style="height:350px; width:100%;"><canvas id="${wtDistChartId}"></canvas></div>
+                </div>`;
+                
+                finalHtml += `<div class="card"><h4>⚖️ 체중(WT)</h4><div class="chart-area"><canvas id="${wtChartId}"></canvas></div>${distChartHtml}<button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
+
                 resDiv.innerHTML = finalHtml;
 
+                // --- 차트 그리기 ---
                 if(deadRats.length > 0) {
                     let maxPod = fixedOptions.maxPod || 0;
                     if(maxPod===0) ratDataList.forEach(r=>{if(r.surgeryDate){const p=Math.floor((new Date()-new Date(r.surgeryDate))/(1000*60*60*24));if(p>maxPod)maxPod=p;}});
@@ -1979,6 +2471,7 @@
                     
                     setTimeout(() => {
                         if(!document.getElementById(codChartId)) return;
+                        // COD 차트 로직 (기존과 동일)
                         const h = {};
                         deadRats.forEach(r => {
                             const full = r.codFull || "Unknown";
@@ -2005,7 +2498,8 @@
                                     b3.push(codColors[c] || (lab?codColors["Unknown (3rd)"]:"transparent"));
                                     leg += `<tr><td><span class="color-box" style="background:${c1}"></span>${codAbbrMap[t]||t}</td><td><span class="color-box" style="background:${codColors[s]||'silver'}"></span>${codAbbrMap[s]||s}</td><td><span class="color-box" style="background:${b3[b3.length-1]}"></span>${codAbbrMap[c]||c} (${v})</td></tr>`;
                                 });
-                                d2.push(sTot); tTot+=sTot; customL2.push(s); b2.push(codColors[s] || (t==='Non-Neurological'?codColors['Sacrifice (Sec)']:'#e0e0e0'));
+                                d2.push(sTot); tTot+=sTot; customL2.push(s); 
+                                b2.push(codColors[s] || (t==='Non-Neurological'?codColors['Sacrifice (Sec)']:'#e0e0e0'));
                             });
                             d1.push(tTot); customL1.push(t); b1.push(c1);
                         });
@@ -2022,6 +2516,7 @@
                 new Chart(document.getElementById(bpChartId), { type:'line', data:{labels:targetTimepoints, datasets:[{label:'Avg SBP', data:avgSbp, borderColor:'#d32f2f', tension:0.1, spanGaps: true}]}, options: bpOpts });
                 new Chart(document.getElementById(wtChartId), { type:'line', data:{labels:targetTimepoints, datasets:[{label:'Avg WT', data:avgWt, borderColor:'#00c853', tension:0.1, spanGaps: true}]}, options: wtOpts });
 
+                // [New] Scatter Plot 생성
                 if (document.getElementById(wtDistChartId)) {
                     const chart = new Chart(document.getElementById(wtDistChartId), {
                         type: 'scatter',
@@ -2045,94 +2540,291 @@
             } catch(e) { console.error(e); resDiv.innerHTML = "오류 발생: " + e.message; }
         }
 
-        // 동향분석용 Scatter 업데이트
+        // [2] 동향분석용 Scatter 업데이트 함수
         function updateTrendScatter(filterTp, groupKey) {
+            // 1. 해당 그룹의 필터 상태 업데이트
             trendFilterState[groupKey] = filterTp;
-            const btns = document.querySelectorAll(`.trend-filter-btn-${groupKey}`);
-            btns.forEach(b => { b.classList.remove('btn-blue'); b.classList.add('btn-white'); b.style.border = '1px solid #ccc'; });
-            const activeBtn = document.getElementById(`btn-trend-${groupKey}-${filterTp}`);
-            if(activeBtn) { activeBtn.classList.remove('btn-white'); activeBtn.classList.add('btn-blue'); activeBtn.style.border = 'none'; }
 
+            // 2. 버튼 스타일 업데이트
+            const btns = document.querySelectorAll(`.trend-filter-btn-${groupKey}`);
+            btns.forEach(b => {
+                b.classList.remove('btn-blue');
+                b.classList.add('btn-white');
+                b.style.border = '1px solid #ccc';
+            });
+            const activeBtn = document.getElementById(`btn-trend-${groupKey}-${filterTp}`);
+            if(activeBtn) {
+                activeBtn.classList.remove('btn-white');
+                activeBtn.classList.add('btn-blue');
+                activeBtn.style.border = 'none';
+            }
+
+            // 3. 축 통일 (Low/High MinMax 계산)
             let combinedData = [];
             ['low', 'high'].forEach(key => {
+                const currentFilter = trendFilterState[key];
                 const cache = trendScatterDataCache[key];
-                if(cache) { const filtered = (trendFilterState[key] === 'All') ? cache : cache.filter(pt => pt.tp === trendFilterState[key]); combinedData = combinedData.concat(filtered); }
+                if(cache) {
+                    const filtered = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
+                    combinedData = combinedData.concat(filtered);
+                }
             });
 
             let maxW = 0, minW = 9999;
-            if (combinedData.length > 0) { combinedData.forEach(p => { if (p.y > maxW) maxW = p.y; if (p.y < minW) minW = p.y; }); } 
-            else { maxW = 500; minW = 0; }
-            const yMax = Math.ceil((maxW + 10) / 5) * 5, yMin = Math.max(0, Math.floor((minW - 10) / 5) * 5);
+            if (combinedData.length > 0) {
+                combinedData.forEach(p => { 
+                    if (p.y > maxW) maxW = p.y; 
+                    if (p.y < minW) minW = p.y; 
+                });
+            } else { maxW = 500; minW = 0; }
 
+            const yMax = maxW + 10;
+            const yMin = Math.max(0, minW - 10);
+
+            // 4. 차트 업데이트
             ['low', 'high'].forEach(key => {
                 const chart = trendScatterCharts[key];
                 const cache = trendScatterDataCache[key];
                 const currentFilter = trendFilterState[key];
+                
                 if(!chart || !cache) return;
+
                 const filteredData = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
                 chart.data.datasets[0].data = filteredData;
 
                 if (currentFilter === 'All') {
                     chart.data.datasets[1].data = [];
-                    chart.options.scales.x.min = -0.5; chart.options.scales.x.max = trendTimepointsCache.length - 0.5;
+                    chart.options.scales.x.min = -0.5;
+                    chart.options.scales.x.max = trendTimepointsCache.length - 0.5;
                 } else {
                     if (filteredData.length > 0) {
-                        const sum = filteredData.reduce((acc, cur) => acc + cur.y, 0), avg = sum / filteredData.length;
+                        const sum = filteredData.reduce((acc, cur) => acc + cur.y, 0);
+                        const avg = sum / filteredData.length;
                         const idx = trendTimepointsCache.indexOf(currentFilter);
                         const minX = idx - 0.5, maxX = idx + 0.5;
                         chart.data.datasets[1].data = [{ x: minX, y: avg }, { x: maxX, y: avg }];
-                        chart.options.scales.x.min = minX; chart.options.scales.x.max = maxX;
-                    } else { chart.data.datasets[1].data = []; }
+                        chart.options.scales.x.min = minX;
+                        chart.options.scales.x.max = maxX;
+                    } else {
+                        chart.data.datasets[1].data = [];
+                    }
                 }
-                chart.options.scales.y.max = yMax; chart.options.scales.y.min = yMin; chart.options.scales.y.ticks.stepSize = 5;
+                chart.options.scales.y.max = yMax;
+                chart.options.scales.y.min = yMin;
                 chart.update();
             });
         }
 
-        // 비교 분석용 Scatter 업데이트
+        // [3단계] 비교 분석용 Scatter 업데이트 함수 추가
+        // [3] 비교 분석용 Scatter 업데이트 함수 (Y축 스케일 동기화 및 5단위 적용)
         function updateCompScatter(filterTp, uniqueSuffix) {
+            // 1. 현재 차트의 필터 상태 업데이트
             compFilterState[uniqueSuffix] = filterTp;
-            const btns = document.querySelectorAll(`.comp-filter-btn-${uniqueSuffix}`);
-            btns.forEach(b => { b.classList.remove('btn-blue'); b.classList.add('btn-white'); b.style.border = '1px solid #ccc'; });
-            const activeBtn = document.getElementById(`btn-comp-${uniqueSuffix}-${filterTp}`);
-            if(activeBtn) { activeBtn.classList.remove('btn-white'); activeBtn.classList.add('btn-blue'); activeBtn.style.border = 'none'; }
 
+            // 2. 버튼 스타일 업데이트 (현재 차트만)
+            const btns = document.querySelectorAll(`.comp-filter-btn-${uniqueSuffix}`);
+            btns.forEach(b => {
+                b.classList.remove('btn-blue');
+                b.classList.add('btn-white');
+                b.style.border = '1px solid #ccc';
+            });
+            const activeBtn = document.getElementById(`btn-comp-${uniqueSuffix}-${filterTp}`);
+            if(activeBtn) {
+                activeBtn.classList.remove('btn-white');
+                activeBtn.classList.add('btn-blue');
+                activeBtn.style.border = 'none';
+            }
+
+            // 3. [핵심] 모든 비교 차트의 현재 데이터를 통합하여 Y축 스케일(Min/Max) 계산
             let combinedData = [];
             Object.keys(compScatterDataCache).forEach(key => {
                 const cache = compScatterDataCache[key];
-                const currentFilter = compFilterState[key] || 'All';
+                const currentFilter = compFilterState[key] || 'All'; // 각 차트별 현재 필터 상태 확인
+                
+                // 해당 차트의 필터링된 데이터 가져오기
                 const filtered = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
                 combinedData = combinedData.concat(filtered);
             });
 
-            let maxW = 0, minW = 9999;
-            if (combinedData.length > 0) { combinedData.forEach(p => { if (p.y > maxW) maxW = p.y; if (p.y < minW) minW = p.y; }); } 
-            else { maxW = 500; minW = 0; }
-            const yMax = Math.ceil((maxW + 10) / 5) * 5, yMin = Math.max(0, Math.floor((minW - 10) / 5) * 5);
+            // 통합 데이터에서 Min/Max 찾기
+            let maxW = 0;
+            let minW = 9999;
+            if (combinedData.length > 0) {
+                combinedData.forEach(p => { 
+                    if (p.y > maxW) maxW = p.y; 
+                    if (p.y < minW) minW = p.y; 
+                });
+            } else { maxW = 500; minW = 0; }
+            
+            // Y축 범위 계산 (여백 추가 및 5단위 보정)
+            // maxW+10 후 5의 배수로 올림, minW-10 후 5의 배수로 내림
+            const yMax = Math.ceil((maxW + 10) / 5) * 5; 
+            const yMin = Math.max(0, Math.floor((minW - 10) / 5) * 5);
 
+            // 4. 모든 차트에 데이터 및 계산된 스케일 적용
             Object.keys(compScatterCharts).forEach(key => {
-                const chart = compScatterCharts[key], cache = compScatterDataCache[key], currentFilter = compFilterState[key] || 'All';
+                const chart = compScatterCharts[key];
+                const cache = compScatterDataCache[key];
+                const currentFilter = compFilterState[key] || 'All';
+
                 if(!chart || !cache) return;
+
+                // 해당 차트의 데이터 필터링
                 const filteredData = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
                 chart.data.datasets[0].data = filteredData;
-                const labels = chart.customLabels || [];
 
+                // 평균선 및 X축 줌(Zoom) 로직
+                const labels = chart.customLabels || [];
                 if (currentFilter === 'All') {
                      chart.data.datasets[1].data = [];
-                     chart.options.scales.x.min = -0.5; chart.options.scales.x.max = labels.length - 0.5;
+                     chart.options.scales.x.min = -0.5;
+                     chart.options.scales.x.max = labels.length - 0.5;
                 } else {
                      if(filteredData.length > 0) {
-                         const sum = filteredData.reduce((acc, cur) => acc + cur.y, 0), avg = sum / filteredData.length;
+                         const sum = filteredData.reduce((acc, cur) => acc + cur.y, 0);
+                         const avg = sum / filteredData.length;
                          const idx = labels.indexOf(currentFilter);
-                         const minX = idx - 0.5, maxX = idx + 0.5;
+                         const minX = idx - 0.5;
+                         const maxX = idx + 0.5;
+                         
                          chart.data.datasets[1].data = [{ x: minX, y: avg }, { x: maxX, y: avg }];
-                         chart.options.scales.x.min = minX; chart.options.scales.x.max = maxX;
-                     } else { chart.data.datasets[1].data = []; }
+                         chart.options.scales.x.min = minX;
+                         chart.options.scales.x.max = maxX;
+                     } else {
+                         chart.data.datasets[1].data = [];
+                     }
                 }
-                chart.options.scales.y.max = yMax; chart.options.scales.y.min = yMin; chart.options.scales.y.ticks.stepSize = 5;
+
+                // [중요] 계산된 통합 스케일 적용 (동기화)
+                chart.options.scales.y.max = yMax;
+                chart.options.scales.y.min = yMin;
+                chart.options.scales.y.ticks.stepSize = 5; // 5단위 눈금
+
                 chart.update();
             });
         }
+        
+        // [수정] 개별 필터 업데이트 및 축 동기화
+        function updateTrendScatter(filterTp, groupKey) {
+            // 1. 해당 그룹의 필터 상태 업데이트
+            trendFilterState[groupKey] = filterTp;
+
+            // 2. 해당 그룹의 버튼 스타일만 업데이트
+            const btns = document.querySelectorAll(`.trend-filter-btn-${groupKey}`);
+            btns.forEach(b => {
+                b.classList.remove('btn-blue');
+                b.classList.add('btn-white');
+                b.style.border = '1px solid #ccc';
+            });
+            const activeBtn = document.getElementById(`btn-trend-${groupKey}-${filterTp}`);
+            if(activeBtn) {
+                activeBtn.classList.remove('btn-white');
+                activeBtn.classList.add('btn-blue');
+                activeBtn.style.border = 'none';
+            }
+
+            // 3. 축 통일을 위해 Low와 High 양쪽의 현재 표시 데이터(필터 적용됨)를 모두 가져와서 Min/Max 계산
+            let combinedData = [];
+            
+            ['low', 'high'].forEach(key => {
+                const currentFilter = trendFilterState[key];
+                const cache = trendScatterDataCache[key];
+                if(cache) {
+                    const filtered = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
+                    combinedData = combinedData.concat(filtered);
+                }
+            });
+
+            // 통합 Y축 범위 계산
+            let maxW = 0;
+            let minW = 9999;
+            if (combinedData.length > 0) {
+                combinedData.forEach(p => { 
+                    if (p.y > maxW) maxW = p.y; 
+                    if (p.y < minW) minW = p.y; 
+                });
+            } else { maxW = 500; minW = 0; }
+
+            const yMax = maxW + 10;
+            const yMin = Math.max(0, minW - 10);
+
+            // 4. Low/High 차트 각각 업데이트 (각자의 필터 상태에 맞춰 데이터 갱신하되, 축은 위에서 계산한 값으로 통일)
+            ['low', 'high'].forEach(key => {
+                const chart = trendScatterCharts[key];
+                const cache = trendScatterDataCache[key];
+                const currentFilter = trendFilterState[key];
+                
+                if(!chart || !cache) return;
+
+                const filteredData = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
+                
+                // 데이터 업데이트
+                chart.data.datasets[0].data = filteredData;
+
+                // 평균선 (가로 직선)
+                if (currentFilter === 'All') {
+                    chart.data.datasets[1].data = [];
+                    chart.options.scales.x.min = -0.5;
+                    chart.options.scales.x.max = trendTimepointsCache.length - 0.5;
+                } else {
+                    if (filteredData.length > 0) {
+                        const sum = filteredData.reduce((acc, cur) => acc + cur.y, 0);
+                        const avg = sum / filteredData.length;
+                        const idx = trendTimepointsCache.indexOf(currentFilter);
+                        const minX = idx - 0.5;
+                        const maxX = idx + 0.5;
+                        chart.data.datasets[1].data = [{ x: minX, y: avg }, { x: maxX, y: avg }];
+                        chart.options.scales.x.min = minX;
+                        chart.options.scales.x.max = maxX;
+                    } else {
+                        chart.data.datasets[1].data = [];
+                    }
+                }
+
+                // Y축 업데이트 (동기화된 값 적용 + 5단위)
+                chart.options.scales.y.max = yMax;
+                chart.options.scales.y.min = yMin;
+                chart.options.scales.y.ticks.stepSize = 5; // 5단위 보장
+
+                chart.update();
+            });
+        }
+        
+        async function deleteSelectedLogs() {
+            const dailies = document.querySelectorAll('.chk-daily:checked');
+            const doses = document.querySelectorAll('.chk-dose:checked');
+            const total = dailies.length + doses.length;
+
+            if(total === 0) return alert("삭제할 항목을 선택해주세요.");
+            if(!confirm(`총 ${total}개의 로그를 정말 삭제하시겠습니까?\n(삭제 후 복구 불가)`)) return;
+
+            const batch = db.batch();
+            let count = 0;
+
+            // Firestore Batch Limit is 500. 간단한 처리를 위해 500개 미만 가정.
+            // 만약 500개가 넘으면 나눠서 처리해야 하지만, 일반적인 사용 패턴상 이정도면 충분합니다.
+            
+            dailies.forEach(cb => {
+                const ref = db.collection("dailyLogs").doc(cb.value);
+                batch.delete(ref);
+                count++;
+            });
+
+            doses.forEach(cb => {
+                const ref = db.collection("doseLogs").doc(cb.value);
+                batch.delete(ref);
+                count++;
+            });
+
+            try {
+                await batch.commit();
+                alert(`${count}개의 로그가 삭제되었습니다.`);
+                searchLogsDel(); // 목록 갱신
+            } catch(e) {
+                console.error(e);
+                alert("삭제 중 오류 발생: " + e.message);
+            }
+        }    
     </script>
 </body>
 </html>
