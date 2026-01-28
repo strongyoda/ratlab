@@ -389,6 +389,22 @@
             el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
         }
 
+        // [누락된 탭 전환 함수 추가]
+        function admTab(mode) {
+            // 1. 모든 탭 버튼의 선택 상태(active) 해제
+            document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
+            
+            // 2. 클릭한 탭 버튼 활성화
+            const btn = document.getElementById('adm-' + mode);
+            if(btn) btn.classList.add('active');
+
+            // 3. 해당하는 탭 내용만 보여주고 나머지는 숨김
+            ['del', 'edit', 'logs'].forEach(m => {
+                const el = document.getElementById('tab-' + m);
+                if(el) el.style.display = (m === mode) ? 'block' : 'none';
+            });
+        }
+        
         // ============================================================
         //  메인 네비게이션 (go 함수)
         // ============================================================
