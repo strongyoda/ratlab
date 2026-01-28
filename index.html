@@ -439,6 +439,12 @@
                 main.innerHTML = `
                 <div class="card">
                     <h3>🛠 데이터 관리</h3>
+
+                    <div style="text-align:right; margin-bottom:10px;">
+                        <button id="btn-backup" class="btn btn-green btn-small" style="width:auto; background:#2c3e50;" onclick="backupAllData()">💾 전체 데이터 백업(JSON)</button>
+                    </div>
+
+
                     <div class="tab-container">
                         <div id="adm-del" class="tab active" onclick="admTab('del')">데이터 삭제</div>
                         <div id="adm-edit" class="tab" onclick="admTab('edit')">데이터 수정</div>
@@ -470,6 +476,7 @@
                         <div id="log-del-result" style="margin-top:15px;"></div>
                     </div>
                 </div>`;
+
                 return;
             }
 
@@ -1735,7 +1742,7 @@
             });
         }
 
-        
+
         function toggleBPLog(id) { const el = document.getElementById(id); el.style.display = el.style.display === "none" ? "table-row" : "none"; }
 
         function admTab(mode) {
@@ -2824,7 +2831,53 @@
                 console.error(e);
                 alert("삭제 중 오류 발생: " + e.message);
             }
-        }    
+        }   
+
+        // [데이터 백업 기능] 모든 데이터를 JSON 파일로 다운로드
+        async function backupAllData() {
+            if(!confirm("전체 데이터를 백업(다운로드) 하시겠습니까?\n데이터 양에 따라 시간이 걸릴 수 있습니다.")) return;
+            
+            const backupBtn = document.getElementById('btn-backup');
+            const originalText = backupBtn.innerText;
+            backupBtn.innerText = "데이터 수집 중...";
+            backupBtn.disabled = true;
+
+            try {
+                const collections = ["rats", "measurements", "dailyLogs", "doseLogs", "cohortNotes"];
+                const allData = {};
+
+                // 모든 컬렉션 데이터 가져오기
+                for (const col of collections) {
+                    const snapshot = await db.collection(col).get();
+                    allData[col] = [];
+                    snapshot.forEach(doc => {
+                        allData[col].push({ _id: doc.id, ...doc.data() });
+                    });
+                }
+
+                // 날짜 기반 파일명 생성
+                const today = new Date();
+                const dateStr = today.getFullYear() + "-" + (today.getMonth()+1) + "-" + today.getDate();
+                const fileName = `RAT_LAB_BACKUP_${dateStr}.json`;
+
+                // JSON 파일 생성 및 다운로드 링크 트리거
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allData, null, 2));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", fileName);
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+
+                alert("백업 파일이 다운로드되었습니다.\nPC에 안전하게 보관하세요.");
+            } catch (e) {
+                console.error(e);
+                alert("백업 중 오류 발생: " + e.message);
+            } finally {
+                backupBtn.innerText = originalText;
+                backupBtn.disabled = false;
+            }
+        } 
     </script>
 </body>
 </html>
