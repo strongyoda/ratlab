@@ -329,6 +329,8 @@
         let bpChartInstance = null; 
         let globalBpData = [];
         let allRatsForDetail = [];
+        // [전역 변수 추가] 분석된 데이터를 임시 저장할 공간
+        let currentAnalyzedData = {}; 
         
         // COD Global States
         let codTargetDocId = null;  // For Detail Page (Direct DB Save)
@@ -1698,11 +1700,14 @@
             });
         }
 
+        
+
         function analyzeBP(mode) {
             const output = document.getElementById("bp-output");
             output.innerHTML = "";
             const grouped = {};
-            
+            currentAnalyzedData = {}; // 초기화
+
             // 데이터 그룹화
             bpAllData.forEach(r => {
                 const match = r.specimen.match(/\(([^)]+)\)/);
@@ -1712,29 +1717,37 @@
                 grouped[ratId][r.file].push(r);
             });
 
-            // 결과 출력
+            // "선택한 값 저장하기" 버튼 추가
+            const actionDiv = document.createElement("div");
+            actionDiv.innerHTML = `<button onclick="openBatchModal()" style="padding:10px 20px; background:#00c853; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:20px;">✅ 선택한 값 DB 저장하기</button>`;
+            output.appendChild(actionDiv);
+
             Object.keys(grouped).sort().forEach(ratId => {
                 const box = document.createElement("div");
                 box.className = "bp-rat-box";
                 box.innerHTML = `<div class="bp-rat-title">🐀 개체 ID: ${ratId}</div>`;
                 const table = document.createElement("table");
-                table.innerHTML = `<tr><th>File</th><th>n</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>검증</th></tr>`;
+                
+                // [변경] 맨 앞에 '선택' 헤더 추가
+                table.innerHTML = `<tr><th>선택</th><th>File</th><th>n</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>상태</th></tr>`;
 
                 Object.entries(grouped[ratId]).forEach(([file, rows], idx) => {
-                    // 1. Regular & Accepted 체크
-                    const valid = rows.filter(r => r.regular && r.accepted);
+                    // 1. Regular & Accepted 체크 (대소문자 무시)
+                    const valid = rows.filter(r => (String(r.regular).toUpperCase() === 'TRUE') && (String(r.accepted).toUpperCase() === 'TRUE'));
                     
-                    // 2. 최대/최소 SBP 계산 (valid 데이터가 있을 때만)
                     let sbps = valid.map(r => r.sbp);
                     let maxSBP = sbps.length ? Math.max(...sbps) : 0;
                     let minSBP = sbps.length ? Math.min(...sbps) : 0;
 
-                    // 3. 필터링 판정 로직
                     const judged = rows.map(r => {
                         let reason = "✅ Accepted";
-                        if (!r.regular || !r.accepted) { reason = "❌ Regular/Accepted"; } 
-                        else if (sbps.length > 0 && r.sbp === maxSBP) { reason = "❌ SBP = MAX (set)"; } 
-                        else if (sbps.length > 0 && r.sbp === minSBP) { reason = "❌ SBP = MIN (set)"; } 
+                        // [대소문자 수정 적용됨]
+                        const isReg = String(r.regular).toUpperCase() === 'TRUE';
+                        const isAcc = String(r.accepted).toUpperCase() === 'TRUE';
+
+                        if (!isReg || !isAcc) { reason = "❌ Regular/Accepted"; } 
+                        else if (sbps.length > 0 && r.sbp === maxSBP) { reason = "❌ SBP = MAX"; } 
+                        else if (sbps.length > 0 && r.sbp === minSBP) { reason = "❌ SBP = MIN"; } 
                         else {
                             const diff = r.sbp - r.dbp;
                             if (mode === "control" && (diff < 20 || diff > 60)) reason = "❌ Pulse diff";
@@ -1746,25 +1759,45 @@
                     const passed = judged.filter(r => r.reason === "✅ Accepted");
                     const avgFloor = key => Math.floor(passed.reduce((s, r) => s + r[key], 0) / passed.length);
                     
-                    // 4. 결과 행 생성 (데이터가 없어도 생성)
+                    const nVal = passed.length;
+                    const sbpVal = nVal > 0 ? avgFloor("sbp") : '-';
+                    const dbpVal = nVal > 0 ? avgFloor("dbp") : '-';
+                    const meanVal = nVal > 0 ? avgFloor("mean") : '-';
+                    const volVal = nVal > 0 ? avgFloor("volume") : '-';
+
+                    // 데이터를 전역 변수에 저장 (나중에 저장 버튼 누를 때 사용)
+                    const rowId = `${ratId}__${idx}`; 
+                    currentAnalyzedData[rowId] = {
+                        ratId: ratId,
+                        file: file,
+                        sbp: sbpVal, dbp: dbpVal, mean: meanVal, volume: volVal,
+                        date: rows[0].time.split(' ')[0], // 날짜 추출
+                        originalRows: passed
+                    };
+
+                    // [변경] 라디오 버튼 추가 (name을 ratId로 묶어서 쥐 한 마리당 하나만 선택되게 함)
+                    // 데이터가 없으면(n=0) 선택 불가능하게 disabled 처리
+                    const radioHtml = nVal > 0 
+                        ? `<input type="radio" name="bp_choice_${ratId}" value="${rowId}" style="transform:scale(1.5); cursor:pointer;">` 
+                        : `<input type="radio" disabled>`;
+
                     const logId = `bp_log_${ratId.replace(/[^a-z0-9]/gi, '_')}_${idx}`;
-                    const nDisplay = passed.length > 0 ? passed.length : `<span style="color:red">0</span>`;
-                    const sbpDisplay = passed.length > 0 ? avgFloor("sbp") : '-';
                     
                     table.innerHTML += `
                         <tr>
+                            <td style="text-align:center;">${radioHtml}</td>
                             <td style="color:#e67e22; font-weight:500;">${file}</td>
-                            <td>${nDisplay}</td>
-                            <td>${sbpDisplay}</td>
-                            <td>${passed.length ? avgFloor("dbp") : '-'}</td>
-                            <td>${passed.length ? avgFloor("mean") : '-'}</td>
-                            <td>${passed.length ? avgFloor("volume") : '-'}</td>
+                            <td>${nVal > 0 ? nVal : `<span style="color:red">0</span>`}</td>
+                            <td>${sbpVal}</td>
+                            <td>${dbpVal}</td>
+                            <td>${meanVal}</td>
+                            <td>${volVal}</td>
                             <td><button class="bp-toggle-btn" onclick="toggleBPLog('${logId}')">로그 확인</button></td>
                         </tr>
                         <tr id="${logId}" style="display:none;">
-                            <td colspan="7">
+                            <td colspan="8">
                                 <table class="bp-log-table">
-                                    <tr><th>Time</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>판정 Reason</th></tr>
+                                    <tr><th>Time</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>Reason</th></tr>
                                     ${judged.map(r => `<tr style="${r.reason!=='✅ Accepted'?'color:#aaa':''}"><td>${r.time}</td><td>${r.sbp}</td><td>${r.dbp}</td><td>${r.mean}</td><td>${r.volume}</td><td>${r.reason}</td></tr>`).join("")}
                                 </table>
                             </td>
@@ -1773,6 +1806,167 @@
                 box.appendChild(table);
                 output.appendChild(box);
             });
+        }
+
+        // ==========================================
+        // [새로 추가] 모달 및 저장 관련 함수들
+        // ==========================================
+
+        function openBatchModal() {
+            // 체크된 항목 가져오기
+            const inputs = document.querySelectorAll('input[type="radio"]:checked');
+            if (inputs.length === 0) return alert("저장할 데이터를 하나 이상 선택해주세요.");
+
+            const tbody = document.getElementById("bpBatchList");
+            tbody.innerHTML = "";
+
+            // 요청하신 시점 리스트 (D00 ~ W12)
+            const timeOptions = `
+                <option value="D00">D00 (Baseline)</option>
+                <option value="D0">D0 (Induction)</option>
+                <option value="D2">D2</option>
+                <option value="W1">W1</option>
+                <option value="W4">W4</option>
+                <option value="W8">W8</option>
+                <option value="W12">W12</option>
+            `;
+
+            inputs.forEach((input, idx) => {
+                const data = currentAnalyzedData[input.value];
+                if(!data) return;
+
+                // [핵심] Rat ID 자동 포맷팅 로직
+                // 예: "C0504G1 - 4" -> "C0504" (C+숫자4자리)
+                // 매칭되는게 없으면 원래 ID 그대로 사용
+                let formattedId = data.ratId;
+                const idMatch = data.ratId.match(/C\d{4}/i); // 대소문자 무시하고 C+숫자4자리 검색
+                if (idMatch) {
+                    formattedId = idMatch[0].toUpperCase();
+                }
+
+                const row = `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:10px; color:#888; font-size:13px;">${data.ratId}</td>
+                        
+                        <td style="padding:10px;">
+                            <div style="font-weight:bold; color:#d32f2f;">SBP: ${data.sbp}</div>
+                            <div style="font-size:12px;">DBP: ${data.dbp} / Mean: ${data.mean}</div>
+                        </td>
+                        
+                        <td style="padding:10px;">
+                            <input type="date" id="save_date_${idx}" value="${data.date}" style="padding:5px; border:1px solid #ddd; border-radius:4px;">
+                        </td>
+                        
+                        <td style="padding:10px;">
+                            <input type="text" id="save_id_${idx}" value="${formattedId}" 
+                                style="padding:6px; width:120px; border:2px solid #00c853; border-radius:4px; font-weight:bold; font-size:14px;">
+                        </td>
+                        
+                        <td style="padding:10px; display:flex; align-items:center; gap:5px;">
+                            <select id="save_time_${idx}" style="padding:6px; border:1px solid #1a237e; border-radius:4px; font-weight:bold;">
+                                <option value="">--선택--</option>
+                                ${timeOptions}
+                            </select>
+                            <input type="text" id="save_time_manual_${idx}" placeholder="직접입력" 
+                                style="padding:6px; width:80px; border:1px solid #ddd; border-radius:4px;">
+                        </td>
+                        
+                        <input type="hidden" id="save_data_${idx}" value='${JSON.stringify(data)}'>
+                    </tr>
+                `;
+                tbody.innerHTML += row;
+            });
+
+            document.getElementById("bpBatchModal").style.display = "flex";
+        }
+
+        function closeBatchModal() {
+            document.getElementById("bpBatchModal").style.display = "none";
+        }
+
+        async function saveBatchToDB() {
+            const tbody = document.getElementById("bpBatchList");
+            const rows = tbody.querySelectorAll("tr"); 
+            const batchPromises = [];
+            let savedCount = 0;
+
+            if (rows.length === 0) return alert("저장할 데이터가 없습니다.");
+
+            if (!confirm(`${rows.length}건의 데이터를 데이터베이스에 저장하시겠습니까?\n(기존 시점에 데이터가 있다면 혈압 값만 합쳐집니다.)`)) return;
+
+            for (const row of rows) {
+                const idInput = row.querySelector('input[id^="save_id_"]');
+                const dateInput = row.querySelector('input[id^="save_date_"]'); // 새 데이터일 때만 사용
+                const timeSelect = row.querySelector('select[id^="save_time_"]');
+                const timeManual = row.querySelector('input[id^="save_time_manual_"]');
+                const hiddenData = row.querySelector('input[id^="save_data_"]');
+
+                if (!idInput || !hiddenData) continue;
+
+                const ratId = idInput.value.trim();
+                const inputDate = dateInput.value; 
+                const timepoint = (timeManual.value.trim()) || timeSelect.value;
+                
+                let sourceData;
+                try { sourceData = JSON.parse(hiddenData.value); } catch (e) { continue; }
+
+                if (!ratId) { alert(`Rat ID가 비어있는 행이 있습니다.`); return; }
+                if (!timepoint) { alert(`[${ratId}]의 시점(Timepoint)을 선택해주세요.`); return; }
+
+                // ---------------------------------------------------------
+                // [핵심 변경] 기존 데이터 확인 후 병합(Merge) 로직
+                // ---------------------------------------------------------
+                const docRef = db.collection("measurements").where("ratId", "==", ratId).where("timepoint", "==", timepoint);
+                
+                const promise = docRef.get().then(async (snapshot) => {
+                    if (!snapshot.empty) {
+                        // [Case A] 이미 해당 시점(timepoint)의 데이터가 존재함 -> 업데이트 (Merge)
+                        // 날짜(date)는 건드리지 않고, 혈압 데이터만 덮어씌움
+                        const existingDoc = snapshot.docs[0]; // 첫 번째 일치 문서 가져옴
+                        await db.collection("measurements").doc(existingDoc.id).update({
+                            sbp: Number(sourceData.sbp),
+                            dbp: Number(sourceData.dbp),
+                            mean: Number(sourceData.mean),
+                            // 기존에 있던 weight, memo 등은 그대로 유지됨
+                            // date도 업데이트하지 않음 (기존 날짜 유지)
+                            timestamp: firebase.firestore.FieldValue.serverTimestamp() // 수정 시간 갱신
+                        });
+                        console.log(`[Update] ${ratId} - ${timepoint} 병합 완료`);
+                    } else {
+                        // [Case B] 해당 시점 데이터가 없음 -> 새로 생성
+                        // 이때는 기준이 될 날짜가 필요하므로 입력받은 측정일을 사용
+                        await db.collection("measurements").add({
+                            ratId: ratId,
+                            timepoint: timepoint,
+                            date: inputDate, // 새 데이터일 때만 날짜 저장
+                            sbp: Number(sourceData.sbp),
+                            dbp: Number(sourceData.dbp),
+                            mean: Number(sourceData.mean),
+                            weight: null,
+                            memo: `Batch upload from ${sourceData.file}`,
+                            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        console.log(`[Create] ${ratId} - ${timepoint} 신규 생성 완료`);
+                    }
+                    savedCount++;
+                }).catch(err => {
+                    console.error(`[Error] ${ratId} 저장 실패:`, err);
+                });
+
+                batchPromises.push(promise);
+            }
+
+            if (batchPromises.length === 0) return alert("처리할 데이터가 없습니다.");
+
+            try {
+                await Promise.all(batchPromises);
+                alert(`총 ${savedCount}건의 처리가 완료되었습니다!`);
+                closeBatchModal();
+                // location.reload(); // 필요 시 새로고침
+            } catch (e) {
+                console.error(e);
+                alert("저장 중 오류가 발생했습니다.");
+            }
         }
 
 
@@ -3101,6 +3295,31 @@
             }
         } 
     </script>
+
+    <div id="bpBatchModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:white; padding:20px; border-radius:8px; width:90%; max-width:1200px; max-height:90vh; overflow-y:auto; box-shadow:0 4px 10px rgba(0,0,0,0.3);">
+            <h3 style="margin-top:0;">📊 선택한 BP 데이터 DB 저장</h3>
+            <p style="font-size:14px; color:#666;">선택한 데이터가 어떤 개체와 시점인지 확인 후 저장하세요.</p>
+            
+            <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
+                <thead>
+                    <tr style="background:#f5f5f5; border-bottom:2px solid #ddd; text-align:left;">
+                        <th style="padding:8px;">Rat ID (자동감지)</th>
+                        <th style="padding:8px;">측정값 (SBP/Mean)</th>
+                        <th style="padding:8px;">측정일 (Date)</th>
+                        <th style="padding:8px; color:#d32f2f;">저장할 Rat ID (필수)</th>
+                        <th style="padding:8px; color:#1a237e;">저장할 시점 (필수)</th>
+                    </tr>
+                </thead>
+                <tbody id="bpBatchList">
+                    </tbody>
+            </table>
+
+            <div style="text-align:right; margin-top:20px;">
+                <button onclick="closeBatchModal()" style="padding:10px 20px; background:#9e9e9e; color:white; border:none; border-radius:4px; cursor:pointer;">취소</button>
+                <button onclick="saveBatchToDB()" style="padding:10px 20px; background:#1a237e; color:white; border:none; border-radius:4px; cursor:pointer; margin-left:10px;">💾 데이터베이스에 저장</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
-
