@@ -1688,8 +1688,8 @@
                     file: filename, 
                     time: r[idx("Time")], 
                     specimen: r[idx("Specimen Name")], 
-                    regular: r[idx("Regular Cycle")]?.trim() === "True", 
-                    accepted: r[idx("Accepted")]?.trim() === "True", 
+                    regular: (r[idx("Regular Cycle")] || "").trim().toUpperCase() === "TRUE", 
+                    accepted: (r[idx("Accepted")] || "").trim().toUpperCase() === "TRUE",
                     sbp: Number(r[idx("Systolic")]), 
                     dbp: Number(r[idx("Diastolic")]), 
                     mean: Number(r[idx("Mean")]), 
@@ -3103,3 +3103,4 @@
     </script>
 </body>
 </html>
+
