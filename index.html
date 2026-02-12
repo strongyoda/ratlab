@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.12.0/dist/chartjs-chart-sankey.min.js"></script>
 
     <style>
         :root { 
@@ -1067,12 +1068,9 @@
         // [최종 수정] 1. 라벨 촘촘하게 2. 십자선 On/Off 버튼 추가 3. X/Y 십자선 적용
         async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', fixedOptions = null, customTitle = null) {
             const resDiv = document.getElementById(targetDivId);
-
             let headerHtml = '';
             if (customTitle) {
-                headerHtml = `<div style="position:sticky; top:60px; z-index:80; background:#fff; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-                    <span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span>
-                </div>`;
+                headerHtml = `<div style="position:sticky; top:60px; z-index:80; background:#fff; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);"><span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span></div>`;
             }
             resDiv.innerHTML = headerHtml + `<div class="loader"></div> 데이터 분석 중...`;
 
@@ -1082,14 +1080,7 @@
                 const ratSnaps = await Promise.all(ratPromises);
                 let rats = [];
                 const ratInfoMap = {};
-
-                ratSnaps.forEach(snap => {
-                    snap.forEach(d => {
-                        const r = d.data();
-                        rats.push(r);
-                        ratInfoMap[r.ratId] = r;
-                    });
-                });
+                ratSnaps.forEach(snap => { snap.forEach(d => { const r = d.data(); rats.push(r); ratInfoMap[r.ratId] = r; }); });
 
                 if (rats.length === 0) { resDiv.innerHTML = "데이터 없음"; return; }
 
@@ -1101,121 +1092,56 @@
                 const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
                 const snapshots = await Promise.all(promises);
 
-                // 3. 데이터 가공
-                const scatterDataWt = [];
-                const scatterDataSbp = [];
-                const existTicksWt = new Set();
-                const existTicksSbp = new Set();
+                // 3. 데이터 가공 (Scatter)
+                const scatterDataWt = [], scatterDataSbp = [];
+                const existTicksWt = new Set(), existTicksSbp = new Set();
                 const tickLabelMap = {};
-
-                let maxDataPod = 0;
-                let minWt = 9999, maxWt = 0;
-                let minSbp = 9999, maxSbp = 0;
+                let maxDataPod = 0, minWt = 9999, maxWt = 0, minSbp = 9999, maxSbp = 0;
 
                 snapshots.forEach((snap, idx) => {
-                    const r = rats[idx];
-                    const rid = r.ratId;
-
+                    const r = rats[idx]; const rid = r.ratId;
                     snap.forEach(doc => {
                         const d = doc.data();
-
                         let labelText = d.timepoint;
                         if (!labelText || labelText === 'Manual') labelText = d.date;
-
                         const pod = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
-
-                        // 기준시점(timepoint)이 없으면 D몇으로 표기
-                        if ((d.timepoint === 'Manual' || !d.timepoint) && pod !== null) {
-                            labelText = `D${pod}`;
-                        }
-
+                        if ((d.timepoint === 'Manual' || !d.timepoint) && pod !== null) labelText = `D${pod}`;
                         if (pod !== null) {
                             if (pod > maxDataPod) maxDataPod = pod;
-
                             const jitter = (Math.random() - 0.5) * 0.4;
-
-                            if (d.weight) {
-                                scatterDataWt.push({ x: pod + jitter, y: d.weight, rid: rid, label: labelText });
-                                existTicksWt.add(pod);
-                                if (d.weight < minWt) minWt = d.weight;
-                                if (d.weight > maxWt) maxWt = d.weight;
-                            }
-                            if (d.sbp) {
-                                scatterDataSbp.push({ x: pod + jitter, y: d.sbp, rid: rid, label: labelText });
-                                existTicksSbp.add(pod);
-                                if (d.sbp < minSbp) minSbp = d.sbp;
-                                if (d.sbp > maxSbp) maxSbp = d.sbp;
-                            }
-
-                            // 표준 시점(timepoint)이면 그 라벨 우선 보존
-                            if (!tickLabelMap[pod] || globalPodMap.hasOwnProperty(labelText)) {
-                                tickLabelMap[pod] = labelText;
-                            }
+                            if (d.weight) { scatterDataWt.push({ x: pod + jitter, y: d.weight, rid: rid, label: labelText }); existTicksWt.add(pod); if (d.weight < minWt) minWt = d.weight; if (d.weight > maxWt) maxWt = d.weight; }
+                            if (d.sbp) { scatterDataSbp.push({ x: pod + jitter, y: d.sbp, rid: rid, label: labelText }); existTicksSbp.add(pod); if (d.sbp < minSbp) minSbp = d.sbp; if (d.sbp > maxSbp) maxSbp = d.sbp; }
+                            if (!tickLabelMap[pod] || globalPodMap.hasOwnProperty(labelText)) tickLabelMap[pod] = labelText;
                         }
                     });
                 });
 
-                // 표준 시점 라벨 강제 세팅 (Arrival 포함)
                 const standardKeys = Object.keys(globalPodMap).filter(k => k === 'Arrival' || k === 'D00' || k === 'D0' || k === 'D2' || k.startsWith('W'));
-                standardKeys.forEach(k => {
-                    const pod = globalPodMap[k];
-                    tickLabelMap[pod] = k;
-                });
-
+                standardKeys.forEach(k => { const pod = globalPodMap[k]; tickLabelMap[pod] = k; });
                 const arrivalPod = globalPodMap["Arrival"];
-
-                // pod -> 라벨 헬퍼 (Arrival 기준)
-                const podToLabel = (pod) => {
-                    if (pod <= arrivalPod) return "Arrival";
-                    if (tickLabelMap[pod]) return tickLabelMap[pod];
-                    return `D${pod}`;
-                };
-
-                // X축 범위
-                const getRangeX = (ticksSet) => {
-                    if (ticksSet.size === 0) return { min: arrivalPod, max: 14 };
-                    const arr = Array.from(ticksSet).sort((a, b) => a - b);
-                    const minVal = (arr[0] < arrivalPod) ? (arr[0] - 2) : arrivalPod;
-                    return { min: minVal, max: arr[arr.length - 1] + 2 };
-                };
-
+                const podToLabel = (pod) => { if (pod <= arrivalPod) return "Arrival"; if (tickLabelMap[pod]) return tickLabelMap[pod]; return `D${pod}`; };
+                const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: arrivalPod, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < arrivalPod) ? (arr[0] - 2) : arrivalPod; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
                 const rangeWtX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksWt);
                 const rangeSbpX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksSbp);
-
-                const calcYRange = (minVal, maxVal, defaultMin, defaultMax) => {
-                    if (minVal === 9999) return { min: defaultMin, max: defaultMax };
-                    const diff = maxVal - minVal;
-                    const padding = diff === 0 ? 50 : diff * 0.3;
-                    let finalMin = minVal - padding;
-                    let finalMax = maxVal + padding;
-                    if (finalMin < 0) finalMin = 0;
-                    return { min: finalMin, max: finalMax };
-                };
-
+                const calcYRange = (minVal, maxVal, defMin, defMax) => { if (minVal === 9999) return { min: defMin, max: defMax }; const diff = maxVal - minVal; const padding = diff === 0 ? 50 : diff * 0.3; let fMin = minVal - padding, fMax = maxVal + padding; if (fMin < 0) fMin = 0; return { min: fMin, max: fMax }; };
                 const rangeWtY = calcYRange(minWt, maxWt, 0, 500);
                 const rangeSbpY = calcYRange(minSbp, maxSbp, 0, 250);
 
-                // 평균 계산
                 const avgsWt = {}, avgsSbp = {};
-                const calcAvg = (dataset, targetObj, isInt) => {
-                    const map = {};
-                    dataset.forEach(p => {
-                        const roundedX = Math.round(p.x);
-                        if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 };
-                        map[roundedX].sum += p.y;
-                        map[roundedX].cnt++;
-                    });
-                    Object.keys(map).forEach(x => {
-                        targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1);
-                    });
-                };
-                calcAvg(scatterDataWt, avgsWt, false);
-                calcAvg(scatterDataSbp, avgsSbp, true);
+                const calcAvg = (ds, tObj, isInt) => { const m = {}; ds.forEach(p => { const rx = Math.round(p.x); if (!m[rx]) m[rx] = { s: 0, c: 0 }; m[rx].s += p.y; m[rx].c++; }); Object.keys(m).forEach(x => { tObj[x] = isInt ? Math.round(m[x].s / m[x].c) : (m[x].s / m[x].c).toFixed(1); }); };
+                calcAvg(scatterDataWt, avgsWt, false); calcAvg(scatterDataSbp, avgsSbp, true);
+                const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
+                const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
 
-                // 4. HTML 렌더링
+                // Helper Functions
+                const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["Arrival", "D00", "D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
+                const buildLinearTicks = (minX, maxX, step) => { const ticks = []; const start = Math.ceil(minX); const end = Math.floor(maxX); for (let v = start; v <= end; v += step) ticks.push(v); return ticks; };
+                const createChartOptions = (minX, maxX, minY, maxY) => ({ maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: minX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); return; } if (range > 30) { const ticks = buildLinearTicks(scale.min, scale.max, 2); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); return; } const ticks = buildLinearTicks(scale.min, scale.max, 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => tickLabelMap[ctx.tick.value] ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: arrivalPod, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } });
+
+                // HTML 구성
                 let finalHtml = headerHtml;
                 const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
-                const codChartId = `codChart${uniqueSuffix}`, codLegendId = `codLegend${uniqueSuffix}`;
+                const codChartId = `codSankey${uniqueSuffix}`; // Sankey Chart ID
                 const bpChartId = `coChartSbp${uniqueSuffix}`, bpTableId = `coTableSbp${uniqueSuffix}`;
                 const wtChartId = `coChartWt${uniqueSuffix}`, wtTableId = `coTableWt${uniqueSuffix}`;
                 const chartHeight = "500px";
@@ -1227,62 +1153,38 @@
                         survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${r.codFull || '미기록'}</span></td></tr>`;
                     });
                     survTable += `</table>`;
-                    finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length})</h4><div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div></div>`;
-                    finalHtml += `<div class="card"><h4>💀 원인 분석</h4><div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;"><div style="flex:1; min-width:180px; height:250px; position:relative;"><canvas id="${codChartId}"></canvas></div><div id="${codLegendId}" style="flex:1; min-width:200px; max-height:250px; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:5px; background:#fdfdfd;"></div></div></div>`;
+                    
+                    finalHtml += `<div class="card" style="border-left:5px solid var(--red)">
+                        <h4>⚰️ 사망 분석 (${deadRats.length})</h4>
+                        <div class="chart-area" style="height:300px;"><canvas id="${sChartId}"></canvas></div>
+                        <button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button>
+                        <div id="${sTableId}" class="data-detail-box">${survTable}</div>
+                    </div>`;
+                    
+                    // [변경] COD: Sankey Diagram
+                    finalHtml += `<div class="card">
+                        <h4>💀 원인 구조 (Sankey Diagram)</h4>
+                        <div style="height:400px; width:100%;"><canvas id="${codChartId}"></canvas></div>
+                    </div>`;
                 }
 
-                // 컨트롤 패널
-                const controlPanel = `
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">
-                            ${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}
-                        </button>
-                        <button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">
-                            ${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}
-                        </button>
-                        <span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">
-                            🖱️ 더블클릭: 줌 초기화
-                        </span>
-                    </div>
-                `;
-
-                // 혈압 테이블
+                const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
                 const sortedTicksSbp = Array.from(existTicksSbp).sort((a, b) => a - b);
                 let bpTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${sortedTicksSbp.map(pod => `<th>${podToLabel(pod)}</th>`).join('')}</tr>`;
                 const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
-                ratIds.forEach(id => {
-                    const rInfo = ratInfoMap[id];
-                    const rData = scatterDataSbp.filter(d => d.rid === id);
-                    bpTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`;
-                    sortedTicksSbp.forEach(pod => {
-                        const match = rData.find(d => Math.abs(d.x - pod) < 0.5);
-                        bpTable += `<td>${match ? match.y : '-'}</td>`;
-                    });
-                    bpTable += `</tr>`;
-                });
+                ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => Math.abs(d.x - pod) < 0.5); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
                 bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
                 finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
-                // 체중 테이블
                 const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
                 let wtTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${sortedTicksWt.map(pod => `<th>${podToLabel(pod)}</th>`).join('')}</tr>`;
                 const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
-                ratIds.forEach(id => {
-                    const rInfo = ratInfoMap[id];
-                    const rData = scatterDataWt.filter(d => d.rid === id);
-                    wtTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`;
-                    sortedTicksWt.forEach(pod => {
-                        const match = rData.find(d => Math.abs(d.x - pod) < 0.5);
-                        wtTable += `<td>${match ? match.y : '-'}</td>`;
-                    });
-                    wtTable += `</tr>`;
-                });
+                ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => Math.abs(d.x - pod) < 0.5); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
                 wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
                 finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
                 resDiv.innerHTML = finalHtml;
 
-                // 사망 차트 (기존 유지)
                 if (deadRats.length > 0) {
                     let maxPod = fixedOptions && fixedOptions.maxPod ? fixedOptions.maxPod : 0;
                     if (maxPod === 0) maxPod = maxDataPod;
@@ -1291,7 +1193,7 @@
                         const p = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : 0;
                         if (typeof p === 'number') deathByPod[p] = (deathByPod[p] || 0) + 1;
                     });
-                    var survLabels = [], survData = []; let currentAlive = rats.length;
+                    const survLabels = [], survData = []; let currentAlive = rats.length;
                     for (let i = 0; i <= maxPod; i++) {
                         if (deathByPod[i]) currentAlive -= deathByPod[i];
                         survLabels.push(`POD ${i}`);
@@ -1303,254 +1205,124 @@
                         options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
                     });
 
-                    // COD 차트(기존 유지)
+                    // [Sankey Diagram]
                     setTimeout(() => {
                         if (!document.getElementById(codChartId)) return;
-                        const h = {};
+                        
+                        const flows = {}; // "from->to" : count
+                        const nodeColors = {};
+                        
+                        // 팔레트 정의
+                        const colors = {
+                            "Neurological": "#1a237e", "Non-Neurological": "#b71c1c", "Other": "#616161",
+                            "Total": "#333", "Stroke": "#283593", "SAH": "#3949ab", "ICH": "#5c6bc0", "Unknown": "#9e9e9e"
+                        };
+
                         deadRats.forEach(r => {
                             const f = r.codFull || "Unknown";
-                            let t = "Un", s = "Un", c = ["Un"];
+                            let t = "Unknown", s = "Unknown", c = ["Unknown"];
                             if (f.startsWith("Neuro")) {
                                 t = "Neurological";
-                                const p = f.split('-');
-                                const pr = p[0].trim();
-                                const sf = p.length > 1 ? p[1].trim() : "";
+                                const p = f.split('-'); const pr = p[0].trim(); const sf = p.length > 1 ? p[1].trim() : "";
                                 const o = pr.indexOf('('), cl = pr.lastIndexOf(')');
                                 s = (o > -1 && cl > o) ? pr.substring(o + 1, cl).trim() : "Unknown";
                                 c = sf ? sf.split(',').map(x => x.trim()).filter(x => x) : ["Unknown"];
                             } else if (f.startsWith("Non")) {
                                 t = "Non-Neurological";
-                                const m = f.match(/\(([^)]+)\)/);
-                                s = m ? m[1].trim() : "Unknown";
-                                c = ["None"];
+                                const m = f.match(/\(([^)]+)\)/); s = m ? m[1].trim() : "Unknown"; c = ["None"];
+                            } else { t = "Other"; c = [f]; }
+                            if (!s || s === "Unknown") s = t;
+                            
+                            // 1. Total -> Level 1
+                            const k1 = `Total|${t}`;
+                            flows[k1] = (flows[k1] || 0) + 1;
+
+                            // 2. Level 1 -> Level 2
+                            // 같은 이름이면 생략 (Non -> Non 등)
+                            if (t !== s) {
+                                const k2 = `${t}|${s}`;
+                                flows[k2] = (flows[k2] || 0) + 1;
+                                
+                                // 3. Level 2 -> Level 3
+                                let finalDetails = c; if (!c || c.length === 0 || (c.length === 1 && (c[0] === "None" || c[0] === "Unknown"))) finalDetails = [];
+                                finalDetails.forEach(d => {
+                                    if (d !== s && d !== t) {
+                                        const k3 = `${s}|${d}`;
+                                        flows[k3] = (flows[k3] || 0) + 1;
+                                    }
+                                });
                             } else {
-                                c = [f];
+                                // Level 1 -> Detail directly if L2 is same
+                                let finalDetails = c; if (!c || c.length === 0 || (c.length === 1 && (c[0] === "None" || c[0] === "Unknown"))) finalDetails = [];
+                                finalDetails.forEach(d => {
+                                    if (d !== t) {
+                                        const k2 = `${t}|${d}`;
+                                        flows[k2] = (flows[k2] || 0) + 1;
+                                    }
+                                });
                             }
-                            if (!h[t]) h[t] = {};
-                            if (!h[t][s]) h[t][s] = {};
-                            c.forEach(x => { h[t][s][x] = (h[t][s][x] || 0) + 1; });
                         });
 
-                        const d1 = [], d2 = [], d3 = [], b1 = [], b2 = [], b3 = [], l3 = [];
-                        let leg = `<table class="cod-legend-table"><tbody>`;
-                        Object.keys(h).forEach(t => {
-                            let tt = 0; const c1 = codColors[t] || "#999";
-                            Object.keys(h[t]).forEach(s => {
-                                let st = 0;
-                                Object.keys(h[t][s]).forEach(c => {
-                                    const v = h[t][s][c];
-                                    d3.push(v); st += v; l3.push(c === "None" ? "" : c);
-                                    const color3 = codColors[c] || (c === "None" ? "transparent" : codColors["Unknown (3rd)"] || "silver");
-                                    b3.push(color3);
-                                    leg += `<tr><td><span class="color-box" style="background:${c1}"></span>${codAbbrMap[t] || t}</td><td><span class="color-box" style="background:${codColors[s] || '#e0e0e0'}"></span>${codAbbrMap[s] || s}</td><td><span class="color-box" style="background:${color3}"></span>${codAbbrMap[c] || c}(${v})</td></tr>`;
-                                });
-                                d2.push(st); tt += st; b2.push(codColors[s] || "#ddd");
-                            });
-                            d1.push(tt); b1.push(c1);
+                        const sankeyData = Object.keys(flows).map(k => {
+                            const [src, dst] = k.split('|');
+                            return { from: src, to: dst, flow: flows[k] };
                         });
-                        leg += `</tbody></table>`;
-                        document.getElementById(codLegendId).innerHTML = leg;
+
+                        // 노드 색상 지정 함수
+                        const getColor = (name) => {
+                            if (name === "Total") return "#000";
+                            if (name.startsWith("Neuro")) return "#1a237e";
+                            if (name.startsWith("Non")) return "#b71c1c";
+                            if (colors[name]) return colors[name];
+                            return "#757575"; // Default grey
+                        };
 
                         new Chart(document.getElementById(codChartId), {
-                            type: 'doughnut',
-                            data: { labels: l3, datasets: [{ data: d1, backgroundColor: b1, weight: 2 }, { data: d2, backgroundColor: b2, weight: 1.5 }, { data: d3, backgroundColor: b3, weight: 1 }] },
-                            options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                            type: 'sankey',
+                            data: {
+                                datasets: [{
+                                    data: sankeyData,
+                                    colorFrom: (c) => getColor(c.dataset.data[c.dataIndex].from),
+                                    colorTo: (c) => getColor(c.dataset.data[c.dataIndex].to),
+                                    colorMode: 'gradient',
+                                    labels: Object.fromEntries(sankeyData.flatMap(d => [[d.from, d.from], [d.to, d.to]]))
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                layout: { padding: 20 },
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: (ctx) => `${ctx.raw.from} → ${ctx.raw.to}: ${ctx.raw.flow} 마리`
+                                        }
+                                    }
+                                }
+                            }
                         });
                     }, 300);
                 }
 
-                // ✅ (기존 그대로) "줌 범위에 따라 tick 직접 구성" 유틸
-                const getStandardPodsInRange = (minX, maxX) => {
-                    const pods = [];
-                    ["Arrival", "D00", "D0", "D2"].forEach(k => {
-                        const v = globalPodMap[k];
-                        if (v >= minX && v <= maxX) pods.push(v);
-                    });
-                    for (let i = 1; i <= 12; i++) {
-                        const k = `W${i}`;
-                        const v = globalPodMap[k];
-                        if (v >= minX && v <= maxX) pods.push(v);
-                    }
-                    pods.sort((a, b) => a - b);
-                    return Array.from(new Set(pods));
-                };
-
-                const buildLinearTicks = (minX, maxX, step) => {
-                    const ticks = [];
-                    const start = Math.ceil(minX);
-                    const end = Math.floor(maxX);
-                    for (let v = start; v <= end; v += step) ticks.push(v);
-                    return ticks;
-                };
-
-                // ✅ 차트 옵션
-                const createChartOptions = (minX, maxX, minY, maxY) => ({
-                    maintainAspectRatio: false,
-                    layout: { padding: { right: 10, bottom: 28 } },
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            min: minX,
-                            max: maxX,
-                            afterBuildTicks: (scale) => {
-                                const range = scale.max - scale.min;
-
-                                // 줌아웃: 표준시점만
-                                if (range > 70) {
-                                    const std = getStandardPodsInRange(scale.min, scale.max);
-                                    scale.ticks = std.map(v => ({ value: v }));
-                                    return;
-                                }
-
-                                // 중간: 2일 단위
-                                if (range > 30) {
-                                    const ticks = buildLinearTicks(scale.min, scale.max, 2);
-                                    getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v));
-                                    ticks.sort((a, b) => a - b);
-                                    scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v }));
-                                    return;
-                                }
-
-                                // 줌인: 1일 단위
-                                {
-                                    const ticks = buildLinearTicks(scale.min, scale.max, 1);
-                                    getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v));
-                                    ticks.sort((a, b) => a - b);
-                                    scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v }));
-                                }
-                            },
-                            ticks: {
-                                minRotation: 90,
-                                maxRotation: 90,
-                                autoSkip: false,
-                                callback: function (value) {
-                                    return podToLabel(value);
-                                }
-                            },
-                            grid: {
-                                color: (ctx) => tickLabelMap[ctx.tick.value] ? '#ddd' : '#f5f5f5'
-                            }
-                        },
-                        y: {
-                            min: minY,
-                            max: maxY,
-                            ticks: { maxTicksLimit: 16 }
-                        }
-                    },
-                    plugins: {
-                        zoom: {
-                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
-                            pan: { enabled: true, mode: 'xy', threshold: 10 },
-                            limits: { x: { min: arrivalPod, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } }
-                        },
-                        tooltip: {
-                            enabled: true,
-                            callbacks: {
-                                title: (items) => {
-                                    if (!items || !items.length) return '';
-                                    const it = items[0];
-                                    const pod = Math.round(it.parsed.x);
-                                    if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod);
-                                    return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod);
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // 평균 라인
-                const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
-                const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
-
-                // 차트 생성
                 const wtOpts = createChartOptions(rangeWtX.min, rangeWtX.max, rangeWtY.min, rangeWtY.max);
-                const wtChart = new Chart(document.getElementById(wtChartId), {
-                    type: 'scatter',
-                    data: {
-                        datasets: [
-                            { type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 },
-                            { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }
-                        ]
-                    },
-                    options: wtOpts,
-                    plugins: [syncCrosshairPlugin]
-                });
+                const wtChart = new Chart(document.getElementById(wtChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin] });
                 document.getElementById(wtChartId).ondblclick = () => wtChart.resetZoom();
 
                 const bpOpts = createChartOptions(rangeSbpX.min, rangeSbpX.max, rangeSbpY.min, rangeSbpY.max);
-                const bpChart = new Chart(document.getElementById(bpChartId), {
-                    type: 'scatter',
-                    data: {
-                        datasets: [
-                            { type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 },
-                            { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }
-                        ]
-                    },
-                    options: bpOpts,
-                    plugins: [syncCrosshairPlugin]
-                });
+                const bpChart = new Chart(document.getElementById(bpChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin] });
                 document.getElementById(bpChartId).ondblclick = () => bpChart.resetZoom();
 
-                /* =========================================================
-                ✅ 여기만 “딱 수정” (기존 WT↔BP 동기화 제거하고 타입별로)
-                - 비교하기(_comp_/_grp_)일 때만 WT끼리, SBP끼리 동기화
-                ========================================================= */
-                const enableCompareSync = (uniqueSuffix && (uniqueSuffix.includes('_comp_') || uniqueSuffix.includes('_grp_')));
-
-                // crosshairPlugin도 쓰는 타입 태그
-                wtChart._syncType = 'wt';
-                bpChart._syncType = 'sbp';
-
-                if (enableCompareSync) {
-                    // 전역 배열 정리 + 등록 (중복 방지)
-                    syncChartsWt = syncChartsWt.filter(c => c && !c._destroyed);
-                    syncChartsSbp = syncChartsSbp.filter(c => c && !c._destroyed);
-
-                    if (!syncChartsWt.includes(wtChart)) syncChartsWt.push(wtChart);
-                    if (!syncChartsSbp.includes(bpChart)) syncChartsSbp.push(bpChart);
-
+                wtChart._syncType = 'wt'; bpChart._syncType = 'sbp'; wtChart._syncScope = 'trend'; bpChart._syncScope = 'trend';
+                if (uniqueSuffix.includes('_tr_')) {
+                    syncChartsWt = syncChartsWt.filter(c => c && !c._destroyed); syncChartsSbp = syncChartsSbp.filter(c => c && !c._destroyed);
+                    if (!syncChartsWt.includes(wtChart)) syncChartsWt.push(wtChart); if (!syncChartsSbp.includes(bpChart)) syncChartsSbp.push(bpChart);
                     let __zoomSyncLock = false;
-
-                    function syncZoomPeers(source, peers) {
-                        if (__zoomSyncLock) return;
-                        __zoomSyncLock = true;
-
-                        const sx = source.scales.x;
-                        const sy = source.scales.y;
-
-                        peers.forEach(t => {
-                            if (!t || t === source || t._destroyed) return;
-                            if (t._syncType !== source._syncType) return;
-
-                            t.options.scales.x.min = sx.min;
-                            t.options.scales.x.max = sx.max;
-
-                            // y까지 동기화(원치 않으면 아래 2줄만 지워)
-                            t.options.scales.y.min = sy.min;
-                            t.options.scales.y.max = sy.max;
-
-                            t.update('none');
-                        });
-
-                        __zoomSyncLock = false;
-                    }
-
-                    // WT 조작 → 다른 코호트 WT들만
-                    wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
-                    wtChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
-
-                    // SBP 조작 → 다른 코호트 SBP들만
-                    bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
-                    bpChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
-
-                    wtChart.update('none');
-                    bpChart.update('none');
+                    const syncZoomPeers = (source, peers) => { if (__zoomSyncLock) return; __zoomSyncLock = true; const sx = source.scales.x; const sy = source.scales.y; peers.forEach(t => { if (!t || t === source || t._destroyed || t._syncType !== source._syncType || t._syncScope !== source._syncScope) return; t.options.scales.x.min = sx.min; t.options.scales.x.max = sx.max; t.options.scales.y.min = sy.min; t.options.scales.y.max = sy.max; t.update('none'); }); __zoomSyncLock = false; };
+                    wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); wtChart.options.plugins.zoom.pan.onPanComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp); bpChart.options.plugins.zoom.pan.onPanComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
+                    wtChart.update('none'); bpChart.update('none');
                 }
-
-            } catch (e) {
-                console.error(e);
-                resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`;
-            }
+            } catch (e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
         }
 
 
@@ -3173,155 +2945,68 @@
         // [1] 조건분석(Trend) 그룹 분석 함수 - 코호트 분석과 동일한 스타일로 렌더링
         async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, customTitle, fixedOptions, groupKey) {
             const resDiv = document.getElementById(targetDivId);
+            const headerHtml = `<div style="position:sticky; top:60px; z-index:90; background:#f8f9fa; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);"><span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span></div>`;
 
-            const headerHtml = `
-                <div style="position:sticky; top:60px; z-index:90; background:#f8f9fa; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-                    <span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span>
-                </div>`;
-
-            if (!ratDataList || ratDataList.length === 0) {
-                resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:#777;">해당 그룹에 포함된 개체가 없습니다.</div>`;
-                return;
-            }
-
+            if (!ratDataList || ratDataList.length === 0) { resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:#777;">해당 그룹에 포함된 개체가 없습니다.</div>`; return; }
             resDiv.innerHTML = headerHtml + `<div class="loader"></div> 로딩 중...`;
 
             try {
                 const deadRats = ratDataList.filter(r => r.status === "사망");
                 ratDataList.sort((a, b) => a.ratId.localeCompare(b.ratId));
                 const ratIds = ratDataList.map(r => r.ratId);
-                const ratInfoMap = {};
-                ratDataList.forEach(r => ratInfoMap[r.ratId] = r);
+                const ratInfoMap = {}; ratDataList.forEach(r => ratInfoMap[r.ratId] = r);
 
-                // 측정값 로드
                 const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
                 const snapshots = await Promise.all(promises);
 
-                // --- 코호트 분석과 동일한 “POD 기반” 데이터 구성 ---
-                const scatterDataWt = [];
-                const scatterDataSbp = [];
-                const existTicksWt = new Set();
-                const existTicksSbp = new Set();
+                const scatterDataWt = [], scatterDataSbp = [];
+                const existTicksWt = new Set(), existTicksSbp = new Set();
                 const tickLabelMap = {};
-
-                let minWt = 9999, maxWt = 0;
-                let minSbp = 9999, maxSbp = 0;
-                let maxDataPod = 0;
+                let minWt = 9999, maxWt = 0, minSbp = 9999, maxSbp = 0, maxDataPod = 0;
 
                 snapshots.forEach((snap, idx) => {
-                    const r = ratDataList[idx];
-                    const rid = r.ratId;
-
+                    const r = ratDataList[idx]; const rid = r.ratId;
                     snap.forEach(doc => {
                         const d = doc.data();
-
                         let labelText = d.timepoint;
                         if (!labelText || labelText === 'Manual') labelText = d.date;
-
                         const pod = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
-
-                        // 기준시점(timepoint)이 없으면 D몇으로 표시
-                        if ((d.timepoint === 'Manual' || !d.timepoint) && pod !== null) {
-                            labelText = `D${pod}`;
-                        }
-
+                        if ((d.timepoint === 'Manual' || !d.timepoint) && pod !== null) labelText = `D${pod}`;
                         if (pod !== null) {
                             if (pod > maxDataPod) maxDataPod = pod;
-
                             const jitter = (Math.random() - 0.5) * 0.4;
-
-                            if (d.weight) {
-                                scatterDataWt.push({ x: pod + jitter, y: d.weight, rid: rid, label: labelText });
-                                existTicksWt.add(pod);
-                                if (d.weight < minWt) minWt = d.weight;
-                                if (d.weight > maxWt) maxWt = d.weight;
-                            }
-                            if (d.sbp) {
-                                scatterDataSbp.push({ x: pod + jitter, y: d.sbp, rid: rid, label: labelText });
-                                existTicksSbp.add(pod);
-                                if (d.sbp < minSbp) minSbp = d.sbp;
-                                if (d.sbp > maxSbp) maxSbp = d.sbp;
-                            }
-
-                            // 표준 시점이면 라벨 우선
-                            if (!tickLabelMap[pod] || globalPodMap.hasOwnProperty(labelText)) {
-                                tickLabelMap[pod] = labelText;
-                            }
+                            if (d.weight) { scatterDataWt.push({ x: pod + jitter, y: d.weight, rid: rid, label: labelText }); existTicksWt.add(pod); if (d.weight < minWt) minWt = d.weight; if (d.weight > maxWt) maxWt = d.weight; }
+                            if (d.sbp) { scatterDataSbp.push({ x: pod + jitter, y: d.sbp, rid: rid, label: labelText }); existTicksSbp.add(pod); if (d.sbp < minSbp) minSbp = d.sbp; if (d.sbp > maxSbp) maxSbp = d.sbp; }
+                            if (!tickLabelMap[pod] || globalPodMap.hasOwnProperty(labelText)) tickLabelMap[pod] = labelText;
                         }
                     });
                 });
 
-                // 표준 시점 라벨 강제 세팅 (Arrival 포함)
-                const standardKeys = Object.keys(globalPodMap).filter(k =>
-                    k === 'Arrival' || k === 'D00' || k === 'D0' || k === 'D2' || k.startsWith('W')
-                );
-                standardKeys.forEach(k => {
-                    const pod = globalPodMap[k];
-                    tickLabelMap[pod] = k;
-                });
-
+                const standardKeys = Object.keys(globalPodMap).filter(k => k === 'Arrival' || k === 'D00' || k === 'D0' || k === 'D2' || k.startsWith('W'));
+                standardKeys.forEach(k => { const pod = globalPodMap[k]; tickLabelMap[pod] = k; });
                 const arrivalPod = globalPodMap["Arrival"];
+                const podToLabel = (pod) => { if (pod <= arrivalPod) return "Arrival"; if (tickLabelMap[pod]) return tickLabelMap[pod]; return `D${pod}`; };
+                const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: arrivalPod, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < arrivalPod) ? (arr[0] - 2) : arrivalPod; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
+                const rangeWtX = getRangeX(existTicksWt); const rangeSbpX = getRangeX(existTicksSbp);
+                const calcYRange = (minVal, maxVal, defMin, defMax) => { if (minVal === 9999) return { min: defMin, max: defMax }; const diff = maxVal - minVal; const padding = diff === 0 ? 50 : diff * 0.3; let fMin = minVal - padding, fMax = maxVal + padding; if (fMin < 0) fMin = 0; return { min: fMin, max: fMax }; };
+                const rangeWtY = (fixedOptions && fixedOptions.maxWt) ? { min: 0, max: fixedOptions.maxWt + 50 } : calcYRange(minWt, maxWt, 0, 500);
+                const rangeSbpY = (fixedOptions && fixedOptions.maxSbp) ? { min: 0, max: fixedOptions.maxSbp + 20 } : calcYRange(minSbp, maxSbp, 0, 250);
 
-                const podToLabel = (pod) => {
-                    if (pod <= arrivalPod) return "Arrival";
-                    if (tickLabelMap[pod]) return tickLabelMap[pod];
-                    return `D${pod}`;
-                };
-
-                // X/Y 범위
-                const getRangeX = (ticksSet) => {
-                    if (ticksSet.size === 0) return { min: arrivalPod, max: 14 };
-                    const arr = Array.from(ticksSet).sort((a, b) => a - b);
-                    const minVal = (arr[0] < arrivalPod) ? (arr[0] - 2) : arrivalPod;
-                    return { min: minVal, max: arr[arr.length - 1] + 2 };
-                };
-
-                const rangeWtX = getRangeX(existTicksWt);
-                const rangeSbpX = getRangeX(existTicksSbp);
-
-                const calcYRange = (minVal, maxVal, defaultMin, defaultMax) => {
-                    if (minVal === 9999) return { min: defaultMin, max: defaultMax };
-                    const diff = maxVal - minVal;
-                    const padding = diff === 0 ? 50 : diff * 0.3;
-                    let finalMin = minVal - padding;
-                    let finalMax = maxVal + padding;
-                    if (finalMin < 0) finalMin = 0;
-                    return { min: finalMin, max: finalMax };
-                };
-
-                // fixedOptions가 있으면(조건분석 전체에서 공통 스케일) 그걸 우선
-                const rangeWtY = (fixedOptions && fixedOptions.maxWt)
-                    ? { min: 0, max: fixedOptions.maxWt + 50 }
-                    : calcYRange(minWt, maxWt, 0, 500);
-
-                const rangeSbpY = (fixedOptions && fixedOptions.maxSbp)
-                    ? { min: 0, max: fixedOptions.maxSbp + 20 }
-                    : calcYRange(minSbp, maxSbp, 0, 250);
-
-                // 평균 계산
                 const avgsWt = {}, avgsSbp = {};
-                const calcAvg = (dataset, targetObj, isInt) => {
-                    const map = {};
-                    dataset.forEach(p => {
-                        const roundedX = Math.round(p.x);
-                        if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 };
-                        map[roundedX].sum += p.y;
-                        map[roundedX].cnt++;
-                    });
-                    Object.keys(map).forEach(x => {
-                        targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1);
-                    });
-                };
-                calcAvg(scatterDataWt, avgsWt, false);
-                calcAvg(scatterDataSbp, avgsSbp, true);
-
+                const calcAvg = (ds, tObj, isInt) => { const m = {}; ds.forEach(p => { const rx = Math.round(p.x); if (!m[rx]) m[rx] = { s: 0, c: 0 }; m[rx].s += p.y; m[rx].c++; }); Object.keys(m).forEach(x => { tObj[x] = isInt ? Math.round(m[x].s / m[x].c) : (m[x].s / m[x].c).toFixed(1); }); };
+                calcAvg(scatterDataWt, avgsWt, false); calcAvg(scatterDataSbp, avgsSbp, true);
                 const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
                 const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
 
-                // --- HTML 렌더링(코호트 분석과 동일 카드 구성) ---
+                // Helper Functions
+                const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["Arrival", "D00", "D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
+                const buildLinearTicks = (minX, maxX, step) => { const ticks = []; const start = Math.ceil(minX); const end = Math.floor(maxX); for (let v = start; v <= end; v += step) ticks.push(v); return ticks; };
+                const createChartOptions = (minX, maxX, minY, maxY) => ({ maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: minX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); return; } if (range > 30) { const ticks = buildLinearTicks(scale.min, scale.max, 2); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); return; } const ticks = buildLinearTicks(scale.min, scale.max, 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => tickLabelMap[ctx.tick.value] ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: arrivalPod, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } });
+
+                // HTML 렌더링
                 let finalHtml = headerHtml;
                 const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
-                const codChartId = `codChart${uniqueSuffix}`, codLegendId = `codLegend${uniqueSuffix}`;
+                const codChartId = `codSankey${uniqueSuffix}`;
                 const bpChartId = `coChartSbp${uniqueSuffix}`, bpTableId = `coTableSbp${uniqueSuffix}`;
                 const wtChartId = `coChartWt${uniqueSuffix}`, wtTableId = `coTableWt${uniqueSuffix}`;
                 const chartHeight = "500px";
@@ -3329,333 +3014,173 @@
                 if (deadRats.length > 0) {
                     let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
                     deadRats.forEach(r => {
-                        const pod = r.surgeryDate && r.deathDate
-                            ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24))
-                            : '?';
+                        const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?';
                         survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${r.codFull || '미기록'}</span></td></tr>`;
                     });
                     survTable += `</table>`;
-                    finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length})</h4><div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div></div>`;
-                    finalHtml += `<div class="card"><h4>💀 원인 분석</h4><div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start;"><div style="flex:1; min-width:180px; height:250px; position:relative;"><canvas id="${codChartId}"></canvas></div><div id="${codLegendId}" style="flex:1; min-width:200px; max-height:250px; overflow-y:auto; border:1px solid #eee; border-radius:8px; padding:5px; background:#fdfdfd;"></div></div></div>`;
+                    
+                    finalHtml += `<div class="card" style="border-left:5px solid var(--red)">
+                        <h4>⚰️ 사망 분석 (${deadRats.length})</h4>
+                        <div class="chart-area" style="height:300px;"><canvas id="${sChartId}"></canvas></div>
+                        <button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button>
+                        <div id="${sTableId}" class="data-detail-box">${survTable}</div>
+                    </div>`;
+                    
+                    // [변경] COD: Sankey Diagram
+                    finalHtml += `<div class="card">
+                        <h4>💀 원인 구조 (Sankey Diagram)</h4>
+                        <div style="height:400px; width:100%;"><canvas id="${codChartId}"></canvas></div>
+                    </div>`;
                 }
 
-                const controlPanel = `
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">
-                            ${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}
-                        </button>
-                        <button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">
-                            ${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}
-                        </button>
-                        <span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">
-                            🖱️ 더블클릭: 줌 초기화
-                        </span>
-                    </div>
-                `;
-
-                // 테이블(코호트 분석과 동일: 존재하는 tick 기준)
+                const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
                 const sortedTicksSbp = Array.from(existTicksSbp).sort((a, b) => a - b);
                 let bpTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${sortedTicksSbp.map(pod => `<th>${podToLabel(pod)}</th>`).join('')}</tr>`;
                 const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
-                ratIds.forEach(id => {
-                    const rInfo = ratInfoMap[id];
-                    const rData = scatterDataSbp.filter(d => d.rid === id);
-                    bpTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`;
-                    sortedTicksSbp.forEach(pod => {
-                        const match = rData.find(d => Math.abs(d.x - pod) < 0.5);
-                        bpTable += `<td>${match ? match.y : '-'}</td>`;
-                    });
-                    bpTable += `</tr>`;
-                });
+                ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => Math.abs(d.x - pod) < 0.5); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
                 bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-
                 finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
                 const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
                 let wtTable = `<div style="overflow-x:auto;"><table><tr><th>ID</th>${sortedTicksWt.map(pod => `<th>${podToLabel(pod)}</th>`).join('')}</tr>`;
                 const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
-                ratIds.forEach(id => {
-                    const rInfo = ratInfoMap[id];
-                    const rData = scatterDataWt.filter(d => d.rid === id);
-                    wtTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`;
-                    sortedTicksWt.forEach(pod => {
-                        const match = rData.find(d => Math.abs(d.x - pod) < 0.5);
-                        wtTable += `<td>${match ? match.y : '-'}</td>`;
-                    });
-                    wtTable += `</tr>`;
-                });
+                ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => Math.abs(d.x - pod) < 0.5); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
                 wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-
                 finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
                 resDiv.innerHTML = finalHtml;
 
-                // 사망 차트/원인 도넛: 기존 로직 유지(코호트 분석과 동일 방식)
                 if (deadRats.length > 0) {
                     let maxPod = (fixedOptions && fixedOptions.maxPod) ? fixedOptions.maxPod : 0;
                     if (maxPod === 0) maxPod = maxDataPod;
-
                     const deathByPod = {};
                     deadRats.forEach(r => {
-                        const p = r.surgeryDate && r.deathDate
-                            ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24))
-                            : 0;
+                        const p = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : 0;
                         if (typeof p === 'number') deathByPod[p] = (deathByPod[p] || 0) + 1;
                     });
-
-                    const survLabels = [], survData = [];
-                    let currentAlive = ratDataList.length;
+                    const survLabels = [], survData = []; let currentAlive = ratDataList.length;
                     for (let i = 0; i <= maxPod; i++) {
                         if (deathByPod[i]) currentAlive -= deathByPod[i];
                         survLabels.push(`POD ${i}`);
                         survData.push((currentAlive / ratDataList.length) * 100);
                     }
-
                     new Chart(document.getElementById(sChartId), {
                         type: 'line',
                         data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] },
                         options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
                     });
 
-                    // COD 도넛 + legend (코호트 분석과 동일)
+                    // [Sankey]
                     setTimeout(() => {
                         if (!document.getElementById(codChartId)) return;
+                        
+                        const flows = {}; 
+                        const colors = {
+                            "Neurological": "#1a237e", "Non-Neurological": "#b71c1c", "Other": "#616161",
+                            "Total": "#333", "Stroke": "#283593", "SAH": "#3949ab", "ICH": "#5c6bc0", "Unknown": "#9e9e9e"
+                        };
 
-                        const h = {};
                         deadRats.forEach(r => {
                             const f = r.codFull || "Unknown";
-                            let t = "Un", s = "Un", c = ["Un"];
-
+                            let t = "Unknown", s = "Unknown", c = ["Unknown"];
                             if (f.startsWith("Neuro")) {
                                 t = "Neurological";
-                                const p = f.split('-');
-                                const pr = p[0].trim();
-                                const sf = p.length > 1 ? p[1].trim() : "";
+                                const p = f.split('-'); const pr = p[0].trim(); const sf = p.length > 1 ? p[1].trim() : "";
                                 const o = pr.indexOf('('), cl = pr.lastIndexOf(')');
                                 s = (o > -1 && cl > o) ? pr.substring(o + 1, cl).trim() : "Unknown";
                                 c = sf ? sf.split(',').map(x => x.trim()).filter(x => x) : ["Unknown"];
                             } else if (f.startsWith("Non")) {
                                 t = "Non-Neurological";
-                                const m = f.match(/\(([^)]+)\)/);
-                                s = m ? m[1].trim() : "Unknown";
-                                c = ["None"];
-                            } else {
-                                c = [f];
-                            }
+                                const m = f.match(/\(([^)]+)\)/); s = m ? m[1].trim() : "Unknown"; c = ["None"];
+                            } else { t = "Other"; c = [f]; }
+                            if (!s || s === "Unknown") s = t;
+                            
+                            // 1. Total -> Level 1
+                            const k1 = `Total|${t}`;
+                            flows[k1] = (flows[k1] || 0) + 1;
 
-                            if (!h[t]) h[t] = {};
-                            if (!h[t][s]) h[t][s] = {};
-                            c.forEach(x => { h[t][s][x] = (h[t][s][x] || 0) + 1; });
-                        });
-
-                        const d1 = [], d2 = [], d3 = [], b1 = [], b2 = [], b3 = [], l3 = [];
-                        let leg = `<table class="cod-legend-table"><tbody>`;
-
-                        Object.keys(h).forEach(t => {
-                            let tt = 0;
-                            const c1 = codColors[t] || "#999";
-
-                            Object.keys(h[t]).forEach(s => {
-                                let st = 0;
-                                Object.keys(h[t][s]).forEach(c => {
-                                    const v = h[t][s][c];
-                                    d3.push(v); st += v; l3.push(c === "None" ? "" : c);
-
-                                    const color3 = codColors[c] || (c === "None" ? "transparent" : codColors["Unknown (3rd)"] || "silver");
-                                    b3.push(color3);
-
-                                    leg += `<tr><td><span class="color-box" style="background:${c1}"></span>${codAbbrMap[t] || t}</td><td><span class="color-box" style="background:${codColors[s] || '#e0e0e0'}"></span>${codAbbrMap[s] || s}</td><td><span class="color-box" style="background:${color3}"></span>${codAbbrMap[c] || c}(${v})</td></tr>`;
+                            // 2. Level 1 -> Level 2
+                            if (t !== s) {
+                                const k2 = `${t}|${s}`;
+                                flows[k2] = (flows[k2] || 0) + 1;
+                                
+                                let finalDetails = c; if (!c || c.length === 0 || (c.length === 1 && (c[0] === "None" || c[0] === "Unknown"))) finalDetails = [];
+                                finalDetails.forEach(d => {
+                                    if (d !== s && d !== t) {
+                                        const k3 = `${s}|${d}`;
+                                        flows[k3] = (flows[k3] || 0) + 1;
+                                    }
                                 });
-                                d2.push(st); tt += st; b2.push(codColors[s] || "#ddd");
-                            });
-
-                            d1.push(tt); b1.push(c1);
+                            } else {
+                                let finalDetails = c; if (!c || c.length === 0 || (c.length === 1 && (c[0] === "None" || c[0] === "Unknown"))) finalDetails = [];
+                                finalDetails.forEach(d => {
+                                    if (d !== t) {
+                                        const k2 = `${t}|${d}`;
+                                        flows[k2] = (flows[k2] || 0) + 1;
+                                    }
+                                });
+                            }
                         });
 
-                        leg += `</tbody></table>`;
-                        document.getElementById(codLegendId).innerHTML = leg;
+                        const sankeyData = Object.keys(flows).map(k => {
+                            const [src, dst] = k.split('|');
+                            return { from: src, to: dst, flow: flows[k] };
+                        });
+
+                        const getColor = (name) => {
+                            if (name === "Total") return "#000";
+                            if (name.startsWith("Neuro")) return "#1a237e";
+                            if (name.startsWith("Non")) return "#b71c1c";
+                            if (colors[name]) return colors[name];
+                            return "#757575";
+                        };
 
                         new Chart(document.getElementById(codChartId), {
-                            type: 'doughnut',
-                            data: { labels: l3, datasets: [{ data: d1, backgroundColor: b1, weight: 2 }, { data: d2, backgroundColor: b2, weight: 1.5 }, { data: d3, backgroundColor: b3, weight: 1 }] },
-                            options: { maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                            type: 'sankey',
+                            data: {
+                                datasets: [{
+                                    data: sankeyData,
+                                    colorFrom: (c) => getColor(c.dataset.data[c.dataIndex].from),
+                                    colorTo: (c) => getColor(c.dataset.data[c.dataIndex].to),
+                                    colorMode: 'gradient',
+                                    labels: Object.fromEntries(sankeyData.flatMap(d => [[d.from, d.from], [d.to, d.to]]))
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                layout: { padding: 20 },
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: {
+                                        callbacks: {
+                                            label: (ctx) => `${ctx.raw.from} → ${ctx.raw.to}: ${ctx.raw.flow} 마리`
+                                        }
+                                    }
+                                }
+                            }
                         });
                     }, 300);
                 }
 
-                // --- 차트 옵션(코호트 분석과 동일: 줌아웃=표준시점만, 줌인=촘촘) ---
-                const getStandardPodsInRange = (minX, maxX) => {
-                    const pods = [];
-                    ["Arrival", "D00", "D0", "D2"].forEach(k => {
-                        const v = globalPodMap[k];
-                        if (v >= minX && v <= maxX) pods.push(v);
-                    });
-                    for (let i = 1; i <= 12; i++) {
-                        const k = `W${i}`;
-                        const v = globalPodMap[k];
-                        if (v >= minX && v <= maxX) pods.push(v);
-                    }
-                    pods.sort((a, b) => a - b);
-                    return Array.from(new Set(pods));
-                };
-
-                const buildLinearTicks = (minX, maxX, step) => {
-                    const ticks = [];
-                    const start = Math.ceil(minX);
-                    const end = Math.floor(maxX);
-                    for (let v = start; v <= end; v += step) ticks.push(v);
-                    return ticks;
-                };
-
-                const createChartOptions = (minX, maxX, minY, maxY) => ({
-                    maintainAspectRatio: false,
-                    layout: { padding: { right: 10, bottom: 28 } },
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            min: minX,
-                            max: maxX,
-                            afterBuildTicks: (scale) => {
-                                const range = scale.max - scale.min;
-
-                                if (range > 70) {
-                                    const std = getStandardPodsInRange(scale.min, scale.max);
-                                    scale.ticks = std.map(v => ({ value: v }));
-                                    return;
-                                }
-
-                                if (range > 30) {
-                                    const ticks = buildLinearTicks(scale.min, scale.max, 2);
-                                    getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v));
-                                    ticks.sort((a, b) => a - b);
-                                    scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v }));
-                                    return;
-                                }
-
-                                const ticks = buildLinearTicks(scale.min, scale.max, 1);
-                                getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v));
-                                ticks.sort((a, b) => a - b);
-                                scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v }));
-                            },
-                            ticks: {
-                                minRotation: 90,
-                                maxRotation: 90,
-                                autoSkip: false,
-                                callback: function (value) { return podToLabel(value); }
-                            },
-                            grid: {
-                                color: (ctx) => tickLabelMap[ctx.tick.value] ? '#ddd' : '#f5f5f5'
-                            }
-                        },
-                        y: {
-                            min: minY,
-                            max: maxY,
-                            ticks: { maxTicksLimit: 16 }
-                        }
-                    },
-                    plugins: {
-                        zoom: {
-                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
-                            pan: { enabled: true, mode: 'xy', threshold: 10 },
-                            limits: { x: { min: arrivalPod, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } }
-                        },
-                        tooltip: {
-                            enabled: true,
-                            callbacks: {
-                                title: (items) => {
-                                    if (!items || !items.length) return '';
-                                    const it = items[0];
-                                    const pod = Math.round(it.parsed.x);
-                                    if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod);
-                                    return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod);
-                                }
-                            }
-                        }
-                    }
-                });
-
-                // --- 차트 생성: Average line + Individual scatter ---
                 const wtOpts = createChartOptions(rangeWtX.min, rangeWtX.max, rangeWtY.min, rangeWtY.max);
-                const wtChart = new Chart(document.getElementById(wtChartId), {
-                    type: 'scatter',
-                    data: {
-                        datasets: [
-                            { type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 },
-                            { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }
-                        ]
-                    },
-                    options: wtOpts,
-                    plugins: [syncCrosshairPlugin]
-                });
+                const wtChart = new Chart(document.getElementById(wtChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin] });
                 document.getElementById(wtChartId).ondblclick = () => wtChart.resetZoom();
 
                 const bpOpts = createChartOptions(rangeSbpX.min, rangeSbpX.max, rangeSbpY.min, rangeSbpY.max);
-                const bpChart = new Chart(document.getElementById(bpChartId), {
-                    type: 'scatter',
-                    data: {
-                        datasets: [
-                            { type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 },
-                            { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }
-                        ]
-                    },
-                    options: bpOpts,
-                    plugins: [syncCrosshairPlugin]
-                });
+                const bpChart = new Chart(document.getElementById(bpChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin] });
                 document.getElementById(bpChartId).ondblclick = () => bpChart.resetZoom();
 
-                // --- ✅ 조건분석 Split View에서 줌 동기화: WT는 WT끼리 / SBP는 SBP끼리 (LOW/HIGH 서로) ---
-                // (코호트 비교(_comp_/_grp_)와 섞이지 않게 scope 태그로 분리)
-                wtChart._syncType = 'wt';
-                bpChart._syncType = 'sbp';
-                wtChart._syncScope = 'trend';
-                bpChart._syncScope = 'trend';
-
-                syncChartsWt = syncChartsWt.filter(c => c && !c._destroyed);
-                syncChartsSbp = syncChartsSbp.filter(c => c && !c._destroyed);
-
-                if (!syncChartsWt.includes(wtChart)) syncChartsWt.push(wtChart);
-                if (!syncChartsSbp.includes(bpChart)) syncChartsSbp.push(bpChart);
-
-                let __zoomSyncLock = false;
-
-                function syncZoomPeers(source, peers) {
-                    if (__zoomSyncLock) return;
-                    __zoomSyncLock = true;
-
-                    const sx = source.scales.x;
-                    const sy = source.scales.y;
-
-                    peers.forEach(t => {
-                        if (!t || t === source || t._destroyed) return;
-                        if (t._syncType !== source._syncType) return;
-                        if (t._syncScope !== source._syncScope) return; // ✅ trend끼리만
-
-                        t.options.scales.x.min = sx.min;
-                        t.options.scales.x.max = sx.max;
-
-                        // y까지 동기화(지금 너가 “좋다” 했던 설정 유지)
-                        t.options.scales.y.min = sy.min;
-                        t.options.scales.y.max = sy.max;
-
-                        t.update('none');
-                    });
-
-                    __zoomSyncLock = false;
+                wtChart._syncType = 'wt'; bpChart._syncType = 'sbp'; wtChart._syncScope = 'trend'; bpChart._syncScope = 'trend';
+                if (uniqueSuffix.includes('_tr_')) {
+                    syncChartsWt = syncChartsWt.filter(c => c && !c._destroyed); syncChartsSbp = syncChartsSbp.filter(c => c && !c._destroyed);
+                    if (!syncChartsWt.includes(wtChart)) syncChartsWt.push(wtChart); if (!syncChartsSbp.includes(bpChart)) syncChartsSbp.push(bpChart);
+                    let __zoomSyncLock = false;
+                    const syncZoomPeers = (source, peers) => { if (__zoomSyncLock) return; __zoomSyncLock = true; const sx = source.scales.x; const sy = source.scales.y; peers.forEach(t => { if (!t || t === source || t._destroyed || t._syncType !== source._syncType || t._syncScope !== source._syncScope) return; t.options.scales.x.min = sx.min; t.options.scales.x.max = sx.max; t.options.scales.y.min = sy.min; t.options.scales.y.max = sy.max; t.update('none'); }); __zoomSyncLock = false; };
+                    wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); wtChart.options.plugins.zoom.pan.onPanComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp); bpChart.options.plugins.zoom.pan.onPanComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
+                    wtChart.update('none'); bpChart.update('none');
                 }
-
-                wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
-                wtChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
-
-                bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
-                bpChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
-
-                wtChart.update('none');
-                bpChart.update('none');
-
-            } catch (e) {
-                console.error(e);
-                resDiv.innerHTML = headerHtml + `<p style="color:red">오류 발생: ${e.message}</p>`;
-            }
+            } catch (e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
         }
 
 
