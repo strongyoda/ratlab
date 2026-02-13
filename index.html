@@ -7,16 +7,16 @@
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey"></script>
-
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
 
     <style>
         :root { 
@@ -389,6 +389,10 @@
         let allRatsForDetail = [];
         // [전역 변수 추가] 분석된 데이터를 임시 저장할 공간
         let currentAnalyzedData = {}; 
+        // [추가] 데이터 절약을 위한 캐시 변수
+        let cachedRatsList = null;      // 쥐 목록 캐시
+        let lastCacheTime = 0;          // 마지막으로 불러온 시간
+        const CACHE_DURATION = 1000 * 60 * 5; // 5분 동안은 다시 안 불러옴 (시간 조절 가능)
         
         // COD Global States
         let codTargetDocId = null;  // For Detail Page (Direct DB Save)
@@ -520,6 +524,27 @@
                 }
             }
         };
+
+                // [신규] 쥐 목록 가져오기 (캐싱 적용됨 - 읽기 횟수 획기적 감소)
+        async function getRatsWithCache(forceRefresh = false) {
+            const now = Date.now();
+            // 1. 캐시가 있고, 5분이 안 지났고, 강제 새로고침이 아니면 -> 저장된 거 씀 (읽기 0회)
+            if (cachedRatsList && (now - lastCacheTime < CACHE_DURATION) && !forceRefresh) {
+                console.log("💾 캐시된 데이터 사용 (Firestore 읽기 절약)");
+                return cachedRatsList;
+            }
+
+            // 2. 아니면 진짜로 불러옴 (읽기 발생)
+            console.log("🔥 Firestore에서 데이터 로드 중...");
+            const snap = await db.collection("rats").orderBy("ratId").get();
+            
+            // 결과 변수에 저장
+            cachedRatsList = [];
+            snap.forEach(doc => cachedRatsList.push(doc.data()));
+            lastCacheTime = now;
+            
+            return cachedRatsList;
+        }
 
         function toggleCrosshair() {
             isCrosshairEnabled = !isCrosshairEnabled;
@@ -853,9 +878,11 @@
         }
 
         async function renderGroupSelectors() {
-            const snap = await db.collection("rats").get();
+            // [변경] 캐시된 데이터 사용
+            const ratsData = await getRatsWithCache();
+            
             const cohorts = new Set();
-            snap.forEach(d => cohorts.add(d.data().cohort));
+            ratsData.forEach(d => cohorts.add(d.cohort));
             const sorted = Array.from(cohorts).sort((a,b)=>Number(b)-Number(a));
             
             const createList = (id) => {
@@ -981,9 +1008,13 @@
 
         // ... [Existing renderCohortCheckboxes, initDetailSelectors, updateRatList ...]
         async function renderCohortCheckboxes(containerId) {
-            const snap = await db.collection("rats").get();
+            // [변경] 매번 DB를 읽지 않고 캐시 함수를 통해 데이터 가져옴
+            const ratsData = await getRatsWithCache();
+            
             const cohorts = new Set();
-            snap.forEach(d => cohorts.add(d.data().cohort));
+            // [변경] 스냅샷(forEach)이 아니라 배열(forEach)을 순회
+            ratsData.forEach(d => cohorts.add(d.cohort));
+            
             const sorted = Array.from(cohorts).sort((a,b)=>Number(b)-Number(a));
             
             const container = document.getElementById(containerId);
@@ -1001,13 +1032,18 @@
 
         async function initDetailSelectors(targetId) {
             try {
-                const snap = await db.collection('rats').orderBy('ratId').get();
-                allRatsForDetail = [];
-                snap.forEach(doc => allRatsForDetail.push(doc.data()));
+                // [변경] 캐시된 데이터 사용
+                const ratsData = await getRatsWithCache();
+                
+                // [변경] 이미 배열 형태이므로 forEach로 push할 필요 없이 바로 할당
+                allRatsForDetail = ratsData; 
+                
                 const cohorts = new Set(allRatsForDetail.map(r => r.cohort));
                 const sortedCohorts = Array.from(cohorts).sort((a,b) => Number(b) - Number(a));
+                
                 const cSel = document.getElementById('dt-cohort-sel');
                 cSel.innerHTML = '<option value="">-- 코호트 선택 --</option>' + sortedCohorts.map(c => `<option value="${c}">Cohort ${c}</option>`).join('');
+                
                 if(targetId) {
                     const targetRat = allRatsForDetail.find(r => r.ratId === targetId);
                     if(targetRat) {
@@ -2065,19 +2101,21 @@
 
         async function loadDashboard() { 
             try { 
-                const snap = await db.collection("rats").orderBy("ratId").get(); 
-                if(snap.empty) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } 
+                // 캐시 함수 사용
+                const ratsData = await getRatsWithCache(); 
+                
+                if(ratsData.length === 0) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } 
                 
                 const memoSnap = await db.collection("cohortNotes").get();
                 const noteData = {};
                 memoSnap.forEach(d => noteData[d.id] = d.data());
 
                 const grp = {}; 
-                snap.forEach(doc => { 
-                    const d = doc.data(); 
+                // forEach 대신 배열 순회 사용
+                ratsData.forEach(d => { 
                     if(!grp[d.cohort]) grp[d.cohort] = { rats: [], surg: d.surgeryDate || null }; 
                     grp[d.cohort].rats.push(d); 
-                }); 
+                });
                 
                 let html = '<div style="width:100%; text-align:right; color:#666; font-size:0.85rem; margin-bottom:10px;"><i class="material-icons" style="font-size:1rem; vertical-align:text-bottom;">touch_app</i> 랫드 번호를 누르면 상세보기로 이동합니다.</div>'; 
                 
@@ -4364,4 +4402,3 @@
     </div>
 </body>
 </html>
-
