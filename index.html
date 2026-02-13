@@ -8,16 +8,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    <!-- Firebase v9 compat -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
-
+    
     <style>
         :root { 
             --navy: #1a237e; --green: #00c853; --red: #d32f2f; 
@@ -258,35 +259,6 @@
         .sample-c { color: #2196f3; } /* 파란색 C (Cast) */
         .sample-h { color: #e91e63; } /* 분홍색 H (Histology) */
 
-        /* [추가] 사진 갤러리 스타일 */
-        .photo-gallery {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-            gap: 8px;
-            margin-top: 10px;
-        }
-        .photo-item {
-            position: relative;
-            width: 100%;
-            padding-bottom: 100%; /* 1:1 정사각형 비율 유지 */
-            overflow: hidden;
-            border-radius: 6px;
-            border: 1px solid #ddd;
-            cursor: pointer;
-        }
-        .photo-item img {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            object-fit: cover; /* 꽉 차게 */
-            transition: transform 0.3s;
-        }
-        .photo-item:hover img { transform: scale(1.1); }
-
-        /* 이미지 확대 모달 */
-        #img-modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; justify-content:center; align-items:center; }
-        #img-modal img { max-width:95%; max-height:95%; border-radius:4px; box-shadow:0 4px 20px rgba(0,0,0,0.5); }
-        .close-img { position:absolute; top:20px; right:20px; color:white; font-size:30px; cursor:pointer; font-weight:bold; }
     </style>
 </head>
 <body>
@@ -375,7 +347,7 @@
             apiKey: "AIzaSyCOrTBAQZ4WgFTT5Qk96k0Z_aTTVjKKQeI",
             authDomain: "nidd-lab.firebaseapp.com",
             projectId: "nidd-lab",
-            storageBucket: "nidd-lab.firebasestorage.app",
+            storageBucket: "nidd-lab.appspot.com",
             messagingSenderId: "959472997584",
             appId: "1:959472997584:web:d749f452f2cfc25e3d3ad5"
         };
@@ -558,15 +530,23 @@
             Object.values(Chart.instances).forEach(c => c.render({duration: 0}));
         }
 
-        function login() {
-            const id = document.getElementById('uid').value;
+        async function login() {
+            const id = document.getElementById('uid').value.trim();
             const pw = document.getElementById('upw').value;
-            if(id.toLowerCase() === 'nidd' && pw === '1234') {
+
+            try {
+                await firebase.auth().signInWithEmailAndPassword(id, pw);
+
                 document.getElementById('login-screen').style.display = 'none';
                 document.getElementById('main-app').style.display = 'block';
                 setTimeout(() => go('dash'), 50);
-            } else alert('로그인 실패');
+            } catch (e) {
+                console.error(e);
+                alert('로그인 실패: ' + (e && e.message ? e.message : e));
+            }
         }
+
+
 
         function getTodayStr() {
             const now = new Date();
@@ -1886,21 +1866,7 @@
                     doseInfo = `<div class="info-item"><b>Day ${doseDay}</b><br>투약 시작(${rat.doseStartDate})</div>`;
                 } else { doseInfo = `<div class="info-item" style="color:#ccc;">-</div>`; }
 
-                // [추가됨] 사진 갤러리용 HTML 조각
-                let photoHtml = `
-                <div class="card">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <h4>📷 기록 사진</h4>
-                        <label class="btn btn-blue btn-small" style="width:auto; cursor:pointer;">
-                            <i class="material-icons" style="font-size:1rem; vertical-align:middle;">add_a_photo</i> 사진 추가
-                            <input type="file" accept="image/*" multiple style="display:none;" onchange="uploadRatPhoto(this, '${id}')">
-                        </label>
-                    </div>
-                    <div id="photo-loading" style="display:none; color:var(--blue); font-size:0.9rem; margin:10px 0;"><div class="loader"></div> 압축 및 업로드 중...</div>
-                    <div class="photo-gallery" id="rat-photo-gallery"></div>
-                </div>`;
-
-                // [수정됨] 화면 HTML 조립 (중간에 ${photoHtml} 추가됨)
+                // [수정됨] 화면 HTML 조립 
                 view.innerHTML = `
                     <div class="card"><div style="display:flex; justify-content:space-between;"><h3>${id}</h3><span style="color:${rat.status==='생존'?'green':'red'}">${rat.status}</span></div>
                     <div class="info-grid">
@@ -1947,13 +1913,12 @@
                         <div id="bp-detail-table" style="display:none; margin-top:10px;"></div>
                     </div>
 
-                    ${photoHtml}
+                    
 
                     <div class="card"><h4>투약 이력</h4><div id="dose-logs"></div></div>
                     <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`;
 
-                // [추가됨] 사진 데이터 로드 실행
-                loadRatPhotos(id);
+            
 
                 // --- 기존 로직들 (데일리 로그, 차트 그리기 등) ---
                 const logs = await db.collection("dailyLogs").where("ratId", "==", id).get();
@@ -4219,156 +4184,6 @@
                 backupBtn.disabled = false;
             }
         } 
-
-                // [신규] 랫드 사진 불러오기
-        async function loadRatPhotos(ratId) {
-            const gallery = document.getElementById('rat-photo-gallery');
-            if(!gallery) return;
-            gallery.innerHTML = '<span style="font-size:0.85rem; color:#999;">로딩 중...</span>';
-            
-            try {
-                // 'ratPhotos'라는 하위 컬렉션 사용 (혹은 루트 컬렉션 사용 가능)
-                // 여기서는 관리가 편하게 루트 컬렉션 'rat_photos'를 사용하고 ratId로 쿼리합니다.
-                const snap = await db.collection("rat_photos").where("ratId", "==", ratId).orderBy("uploadedAt", "desc").get();
-                
-                if(snap.empty) {
-                    gallery.innerHTML = '<span style="font-size:0.85rem; color:#ccc;">등록된 사진이 없습니다.</span>';
-                    return;
-                }
-
-                gallery.innerHTML = '';
-                snap.forEach(doc => {
-                    const d = doc.data();
-                    const div = document.createElement('div');
-                    div.className = 'photo-item';
-                    div.innerHTML = `<img src="${d.url}" loading="lazy" alt="photo">`;
-                    div.onclick = () => showImage(d.url);
-                    
-                    // 삭제 버튼 (작게)
-                    const delBtn = document.createElement('div');
-                    delBtn.innerHTML = '×';
-                    delBtn.style.cssText = 'position:absolute; top:2px; right:2px; background:rgba(0,0,0,0.5); color:white; width:20px; height:20px; text-align:center; line-height:18px; border-radius:50%; font-size:14px; z-index:10;';
-                    delBtn.onclick = (e) => {
-                        e.stopPropagation();
-                        if(confirm('이 사진을 삭제하시겠습니까? (복구 불가)')) deleteRatPhoto(doc.id, d.fileName, ratId);
-                    };
-                    div.appendChild(delBtn);
-                    
-                    gallery.appendChild(div);
-                });
-            } catch(e) {
-                console.error(e);
-                gallery.innerHTML = '로딩 실패';
-            }
-        }
-
-        // [신규] 이미지 확대 보기
-        function showImage(url) {
-            const modal = document.getElementById('img-modal');
-            const content = document.getElementById('img-modal-content');
-            content.src = url;
-            modal.style.display = 'flex';
-        }
-
-        // [신규] 사진 압축 및 업로드 (핵심 기능)
-        async function uploadRatPhoto(input, ratId) {
-            if (!input.files || input.files.length === 0) return;
-            
-            const loading = document.getElementById('photo-loading');
-            loading.style.display = 'block';
-
-            // Firebase Storage 참조
-            const storageRef = firebase.storage().ref();
-
-            try {
-                for (let i = 0; i < input.files.length; i++) {
-                    const file = input.files[i];
-                    
-                    // 1. 이미지 압축 (최대 너비 1200px, 퀄리티 0.7)
-                    const compressedBlob = await compressImage(file, 1200, 0.7);
-                    
-                    // 2. 파일명 생성 (ratId_timestamp_random.jpg)
-                    const fileName = `${ratId}_${Date.now()}_${Math.floor(Math.random()*1000)}.jpg`;
-                    const uploadRef = storageRef.child(`rat_images/${ratId}/${fileName}`);
-                    
-                    // 3. Storage 업로드
-                    await uploadRef.put(compressedBlob);
-                    const downloadURL = await uploadRef.getDownloadURL();
-                    
-                    // 4. Firestore에 정보 저장
-                    await db.collection("rat_photos").add({
-                        ratId: ratId,
-                        url: downloadURL,
-                        fileName: fileName, // 삭제 시 필요
-                        uploadedAt: firebase.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-                
-                // 완료 후 갱신
-                loadRatPhotos(ratId);
-                
-            } catch (e) {
-                console.error(e);
-                alert("업로드 중 오류 발생: " + e.message);
-            } finally {
-                loading.style.display = 'none';
-                input.value = ''; // 초기화
-            }
-        }
-
-        // [신규] 이미지 압축 헬퍼 함수
-        function compressImage(file, maxWidth, quality) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.src = event.target.result;
-                    img.onload = () => {
-                        // 캔버스 생성 및 리사이징 계산
-                        const canvas = document.createElement('canvas');
-                        let width = img.width;
-                        let height = img.height;
-
-                        if (width > maxWidth) {
-                            height *= maxWidth / width;
-                            width = maxWidth;
-                        }
-
-                        canvas.width = width;
-                        canvas.height = height;
-
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-
-                        // Blob으로 변환 (압축 적용)
-                        canvas.toBlob((blob) => {
-                            resolve(blob);
-                        }, 'image/jpeg', quality);
-                    };
-                    img.onerror = (e) => reject(e);
-                };
-                reader.onerror = (e) => reject(e);
-            });
-        }
-
-        // [신규] 사진 삭제
-        async function deleteRatPhoto(docId, fileName, ratId) {
-            try {
-                // 1. Storage에서 파일 삭제
-                const storageRef = firebase.storage().ref();
-                const fileRef = storageRef.child(`rat_images/${ratId}/${fileName}`);
-                await fileRef.delete().catch(e => console.log("Storage file not found or already deleted")); // 파일 없어도 DB 삭제 진행
-
-                // 2. Firestore에서 데이터 삭제
-                await db.collection("rat_photos").doc(docId).delete();
-                
-                loadRatPhotos(ratId);
-            } catch(e) {
-                console.error(e);
-                alert("삭제 실패: " + e.message);
-            }
-        }
     </script>
 
     <div id="bpBatchModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
@@ -4396,9 +4211,6 @@
             </div>
         </div>
     </div>
-    <div id="img-modal" onclick="this.style.display='none'">
-        <span class="close-img">&times;</span>
-        <img id="img-modal-content">
-    </div>
+    
 </body>
 </html>
