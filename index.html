@@ -343,6 +343,7 @@
     </div>
 
     <script>
+
         const firebaseConfig = {
             apiKey: "AIzaSyCOrTBAQZ4WgFTT5Qk96k0Z_aTTVjKKQeI",
             authDomain: "nidd-lab.firebaseapp.com",
@@ -387,6 +388,14 @@
         let activeChartId = null; 
         // [전역 상태] 개별 데이터 표시 여부
         let isIndividualVisible = true;
+
+        // [추가] 데이터 변경 시 호출할 캐시 삭제 함수
+        function clearRatsCache() {
+            cachedRatsList = null;
+            lastCacheTime = 0;
+            console.log("♻️ 데이터 변경 감지: 캐시가 초기화되었습니다.");
+        }
+        
 
         // 개별 데이터(Scatter 점) On/Off 토글 함수
         function toggleIndividual() {
@@ -1189,32 +1198,36 @@
         }
 
         // [신규] Sankey 다이어그램 렌더링 함수
+        // [수정] Sankey 다이어그램 렌더링 함수 (Non-Neurological은 2차에서 종료)
         function renderSankeyChart(ctxId, deadRats, colorsMap) {
             const ctx = document.getElementById(ctxId);
             if (!ctx) return;
 
             // 1. 데이터 파싱 (Flow 집계)
             const flows = {}; // "From|To" => count
-            
+
             deadRats.forEach(r => {
                 const full = r.codFull || "Unknown";
                 let type = "Unknown";
                 let category = "Unknown";
                 let details = [];
+                let stopAtSecondLevel = false; // ✅ Non-Neuro면 여기서 true로
 
-                // 파싱 로직 (기존 로직 활용)
+                // 파싱 로직
                 if (full.startsWith("Neurological")) {
                     type = "Neurological";
                     const parts = full.split('-');
                     const pre = parts[0].trim(); // "Neurological (Aneurysm(O))"
-                    
+
                     // 괄호 안 추출 (Category)
                     const openP = pre.indexOf('(');
                     const closeP = pre.lastIndexOf(')');
                     if (openP > -1 && closeP > openP) {
-                        category = pre.substring(openP + 1, closeP).trim(); 
+                        category = pre.substring(openP + 1, closeP).trim();
+                    } else {
+                        category = "General";
                     }
-                    
+
                     // 대시 뒤 추출 (Detail)
                     if (parts.length > 1) {
                         const suf = parts[1].trim();
@@ -1222,77 +1235,89 @@
                     } else {
                         details = ["Unspecified"];
                     }
+
                 } else if (full.startsWith("Non-Neurological")) {
                     type = "Non-Neurological";
+
                     const m = full.match(/\(([^)]+)\)/);
                     if (m) category = m[1].trim();
                     else category = "General";
-                    details = ["Non-Neuro"]; // End node
+
+                    // ✅ Non-Neurological은 2차까지만 (3차 생성 금지)
+                    details = [];
+                    stopAtSecondLevel = true;
+
                 } else {
                     type = "Other";
                     category = full;
                     details = ["End"];
                 }
 
-                // Flow 생성: Type -> Category -> Detail
-                // 1. Type -> Category
+                // Flow 생성: Type -> Category
                 const k1 = `${type}|${category}`;
                 flows[k1] = (flows[k1] || 0) + 1;
 
-                // 2. Category -> Detail(s)
-                details.forEach(d => {
-                    const k2 = `${category}|${d}`;
-                    flows[k2] = (flows[k2] || 0) + 1;
-                });
+                // Flow 생성: Category -> Detail(s)
+                // ✅ Non-Neurological은 여기서 종료
+                if (!stopAtSecondLevel) {
+                    details.forEach(d => {
+                        const k2 = `${category}|${d}`;
+                        flows[k2] = (flows[k2] || 0) + 1;
+                    });
+                }
             });
 
             // 2. Chart.js Sankey 데이터 변환
-            const data = Object.keys(flows).map(key => {
+            const sankeyData = Object.keys(flows).map(key => {
                 const [from, to] = key.split('|');
                 return { from, to, flow: flows[key] };
             });
 
-            // 3. 색상 매핑 헬퍼
-            const getColor = (name) => {
-                // 기존 codColors 맵 활용, 없으면 회색
-                if (colorsMap[name]) return colorsMap[name];
-                // 괄호가 포함된 이름 매핑 (예: Aneurysm(O))
-                const cleanName = name.replace(/\(O\)/g, '').replace(/\(X\)/g, '').trim();
-                if (colorsMap[cleanName]) return colorsMap[cleanName];
-                return "#90a4ae"; // Default Grey
+            // 3. 색상 매핑 (노드별 색상)
+            const getNodeColor = (node) => {
+                if (colorsMap && colorsMap[node]) return colorsMap[node];
+                return '#bdbdbd';
             };
 
-            new Chart(ctx, {
+            // 4. 기존 차트 있으면 파괴 후 재생성
+            if (window._sankeyCharts && window._sankeyCharts[ctxId]) {
+                try { window._sankeyCharts[ctxId].destroy(); } catch(e) {}
+            }
+            if (!window._sankeyCharts) window._sankeyCharts = {};
+
+            window._sankeyCharts[ctxId] = new Chart(ctx, {
                 type: 'sankey',
                 data: {
                     datasets: [{
-                        label: 'Cause of Death Flow',
-                        data: data,
-                        colorFrom: (c) => getColor(c.dataset.data[c.dataIndex].from),
-                        colorTo: (c) => getColor(c.dataset.data[c.dataIndex].to),
-                        colorMode: 'gradient', // 그라데이션 효과
-                        labels: {
-                            font: { size: 11, weight: 'bold' },
-                            color: '#333'
-                        },
-                        size: 'max', // 노드 크기 자동
-                        borderWidth: 1,
-                        borderColor: '#fff'
+                        data: sankeyData,
+                        colorFrom: (c) => getNodeColor(c.dataset.data[c.dataIndex].from),
+                        colorTo: (c) => getNodeColor(c.dataset.data[c.dataIndex].to),
+                        borderWidth: 0,
+                        labels: sankeyData.reduce((acc, cur) => {
+                            acc[cur.from] = cur.from;
+                            acc[cur.to] = cur.to;
+                            return acc;
+                        }, {})
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
+                        legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: (ctx) => `${ctx.raw.from} → ${ctx.raw.to}: ${ctx.raw.flow}마리`
+                                label: (ctx) => {
+                                    const d = ctx.raw;
+                                    return `${d.from} → ${d.to} : ${d.flow}`;
+                                }
                             }
                         }
                     }
                 }
             });
         }
+
 
         // [최종 수정] 가로축 라벨 강제 고정(W1, D30 등) + XY축 줌/이동 완벽 지원
         // [최종 수정] 줌/이동 최적화(납작해짐 방지) + 가로축 라벨 고정 + 마우스 동기화
@@ -2045,7 +2070,7 @@
 
                 // 3. (중요) 사망 여부 체크(checkRatValid) 없이 즉시 업데이트
                 await docRef.update({ sampleType: val });
-                
+                clearRatsCache();
                 alert("샘플 정보가 저장되었습니다.");
                 loadDetailData(); // 화면 갱신
             } catch(e) {
@@ -2231,13 +2256,13 @@
             }
         }
         
-        async function deleteRat() { const id=document.getElementById('del-id').value; if(!id||!confirm("삭제?"))return; (await db.collection("rats").where("ratId","==",id).get()).forEach(d=>d.ref.delete()); ["dailyLogs","doseLogs","measurements"].forEach(async c=>(await db.collection(c).where("ratId","==",id).get()).forEach(d=>d.ref.delete())); alert("삭제됨"); }
+        async function deleteRat() { const id=document.getElementById('del-id').value; if(!id||!confirm("삭제?"))return; (await db.collection("rats").where("ratId","==",id).get()).forEach(d=>d.ref.delete()); ["dailyLogs","doseLogs","measurements"].forEach(async c=>(await db.collection(c).where("ratId","==",id).get()).forEach(d=>d.ref.delete())); clearRatsCache(); alert("삭제됨"); }
         async function deleteCohort() { const c=document.getElementById('del-cohort').value; if(!c||!confirm("전체삭제?"))return; (await db.collection("rats").where("cohort","==",c).get()).forEach(d=>d.ref.delete()); alert("삭제됨(로그제외)"); } 
         function goToDetail(ratId) { go('detail', ratId); }
         function score(k, n, btn) { btn.parentElement.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentScores[k] = n; const t = currentScores.act+currentScores.fur+currentScores.eye; document.getElementById('score-res').innerText=`총점: ${t}점`; }
         function mkId(p) { const c=document.getElementById(`${p}-c`).value, r=document.getElementById(`${p}-r`).value; if(c&&r) document.getElementById(`${p}-id`).value = `C${c.padStart(2,'0')}${r.padStart(2,'0')}`; }
         function calM() { const s=Number(document.getElementById('re-s').value), d=Number(document.getElementById('re-d').value); if(s&&d) document.getElementById('re-m').value = Math.round(d+(s-d)/3); }
-        async function saveBulk() { const c=document.getElementById('add-c').value, s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; for(let i=s; i<=e; i++) { await db.collection("rats").add({ratId:`C${c.padStart(2,'0')}${String(i).padStart(2,'0')}`, cohort:c, num:String(i), arrivalDate:d, status:'생존'}); } alert("완료"); }
+        async function saveBulk() { const c=document.getElementById('add-c').value, s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; for(let i=s; i<=e; i++) { await db.collection("rats").add({ratId:`C${c.padStart(2,'0')}${String(i).padStart(2,'0')}`, cohort:c, num:String(i), arrivalDate:d, status:'생존'}); } clearRatsCache(); alert("완료"); }
         function upDose() { const ns=document.getElementsByClassName('dn'), c=document.getElementById('ds-c').value; for(let i=0; i<ns.length; i++) document.getElementsByClassName('di')[i].innerText = (c&&ns[i].value)?`C${c.padStart(2,'0')}${ns[i].value.padStart(2,'0')}`:'-'; }
         
         async function saveDaily() {
@@ -2277,6 +2302,7 @@
                     else { await rSnap.docs[0].ref.update({ lastScore: total }); } 
                 }
                 
+                clearRatsCache();
                 alert("저장되었습니다.");
                 document.getElementById('dc-note').value = '';
                 document.getElementById('is-dead').checked = false;
@@ -2843,6 +2869,7 @@
 
             try {
                 await batch.commit();
+                clearRatsCache();
                 alert("성공적으로 저장되었습니다.");
                 searchForEdit(); // 화면 갱신
             } catch(e) {
@@ -2937,7 +2964,7 @@
                     await db.collection("rats").doc(codTargetDocId).update({ 
                         codFull: finalStr,
                         status: '사망', 
-                        deathDate: getTodayStr() 
+                        
                     });
                     alert(`저장됨: ${finalStr}`);
                     closeCod();
