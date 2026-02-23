@@ -289,6 +289,7 @@
             <div class="nav-item" onclick="go('cohort')"><i class="material-icons">bar_chart</i>코호트 분석</div>
             <div class="nav-item" onclick="go('compare')"><i class="material-icons">compare_arrows</i>코호트 비교</div>
             <div class="nav-item" onclick="go('trend')"><i class="material-icons">trending_up</i>조건분석</div>
+            <div class="nav-item" onclick="openPptSetup()"><i class="material-icons">slideshow</i>프레젠테이션</div>
             <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>데일리 체크</div>
             <div class="nav-item" onclick="go('add')"><i class="material-icons">add_circle</i>신규 등록</div>
             <div class="nav-item" onclick="go('dose')"><i class="material-icons">science</i>투약 계산기</div>
@@ -705,7 +706,9 @@
                         <div id="adm-del" class="tab active" onclick="admTab('del')">데이터 삭제</div>
                         <div id="adm-edit" class="tab" onclick="admTab('edit')">데이터 수정</div>
                         <div id="adm-logs" class="tab" onclick="admTab('logs')">로그 삭제</div>
+                        <div id="adm-up" class="tab" onclick="admTab('up')" style="background:#e3f2fd; color:var(--navy); font-weight:bold;">일괄 업로드(CSV)</div>
                     </div>
+                    
                     <div id="tab-del">
                         <div class="input-group">
                             <label>개별 랫드 삭제 (ID)</label>
@@ -717,6 +720,7 @@
                             <div style="display:flex; gap:10px;"><input type="number" id="del-cohort" placeholder="11"><button class="btn btn-red btn-small" onclick="deleteCohort()">전체 삭제</button></div>
                         </div>
                     </div>
+                    
                     <div id="tab-edit" style="display:none;">
                         <div class="input-group">
                             <label>랫드 ID 검색 (전체 데이터 수정)</label>
@@ -724,6 +728,7 @@
                         </div>
                         <div id="edit-result"></div>
                     </div>
+                    
                     <div id="tab-logs" style="display:none;">
                         <div class="input-group">
                             <label>랫드 ID 검색 (로그 불러오기)</label>
@@ -731,9 +736,26 @@
                         </div>
                         <div id="log-del-result" style="margin-top:15px;"></div>
                     </div>
+
+                    <div id="tab-up" style="display:none;">
+                        <div style="background:#fff3e0; padding:15px; border-radius:8px; border:1px solid #ffcc80; margin-bottom:15px; font-size:0.9rem; line-height:1.5;">
+                            <b>🚨 엑셀 업로드 주의사항</b><br>
+                            1. 엑셀 첫 줄 헤더 명칭을 정확히 일치시켜주세요. (Rat_ID 필수)<br>
+                            2. 날짜는 YYYY-MM-DD (예: 2026-02-23) 형식으로 적어주세요.<br>
+                            3. 메모 란에는 절대 <b>쉼표(,)</b>를 쓰지 마세요. 열려있는 파일 형식 문제로 에러가 납니다.<br>
+                            4. 파일을 반드시 <b>[CSV UTF-8 (쉼표로 분리)]</b> 형식으로 저장 후 올려주세요.
+                        </div>
+                        <div class="input-group">
+                            <label>CSV 파일 선택</label>
+                            <input type="file" id="csv-upload-input" accept=".csv" onchange="parseRatUploadCSV(event)" style="border:2px dashed var(--navy); padding:15px; background:#f8f9fa;">
+                        </div>
+                        <div id="csv-preview-area" style="margin-top:15px; max-height: 400px; overflow-y:auto; font-size:0.85rem;"></div>
+                        <button id="btn-save-csv" class="btn btn-green" style="margin-top:15px; display:none; width:100%; font-size:1.1rem; padding:12px;" onclick="saveCsvToDB()">🚀 검토 완료: 데이터베이스에 덮어쓰기</button>
+                    </div>
                 </div>`;
                 return;
             }
+
 
             // 3. Cohort Analysis (코호트 분석)
             if(view === 'cohort') {
@@ -1950,7 +1972,9 @@
             document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
             const btn = document.getElementById('adm-' + mode);
             if(btn) btn.classList.add('active');
-            ['del', 'edit', 'imp'].forEach(m => {
+            
+            // 모든 탭 숨기고 선택된 탭만 보이기
+            ['del', 'edit', 'logs', 'up'].forEach(m => {
                 const el = document.getElementById('tab-' + m);
                 if(el) el.style.display = (m === mode) ? 'block' : 'none';
             });
@@ -3681,7 +3705,7 @@
 
                 let deathInfo = '';
                 if(rat.status === '사망') {
-                    const displayCod = rat.cod || extractLegacyCod(rat.codFull);
+                    const displayCod = rat.cod || (rat.codFull ? extractLegacyCod(rat.codFull) : '미기록');
                     const displayAre = rat.are || '미기록';
                     deathInfo = `<div class="info-item" style="grid-column: span 2; color:var(--red); border:1px solid var(--red); background:#ffebee;">
                         <b>사망: ${rat.deathDate||'날짜미상'} (POD ${pod})</b>
@@ -3698,16 +3722,55 @@
 
                 const mrOpts = ['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','Death'];
 
-                // 갤러리 HTML 생성
-                const photos = rat.photos || [];
-                const photoHtml = photos.length > 0 ? photos.map(p => `
-                    <div style="position:relative; width:130px; height:130px; border:1px solid #ddd; border-radius:8px; overflow:hidden; background:#000; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-                        <img src="${p.url}" style="width:100%; height:100%; object-fit:cover; cursor:pointer;" onclick="openPhotoViewer('${p.url}', '${p.memo||''}')">
-                        <button onclick="deletePhoto('${docId}', '${encodeURIComponent(JSON.stringify(p))}')" style="position:absolute; top:5px; right:5px; background:rgba(211,47,47,0.8); color:white; border:none; border-radius:50%; width:24px; height:24px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center;">✖</button>
-                        <div style="position:absolute; bottom:0; width:100%; background:rgba(0,0,0,0.7); color:white; font-size:0.75rem; padding:4px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box;">${p.memo||'메모없음'}</div>
-                    </div>
-                `).join('') : '<div style="color:#888; font-size:0.85rem; padding:10px;">등록된 사진이 없습니다.</div>';
+                // --- 갤러리 날짜/시점 정렬 및 HTML 생성 ---
+                let photos = rat.photos || [];
+                const tpWeight = { 'D00':-1, 'D0':0, 'D2':2, 'W1':7, 'W2':14, 'W3':21, 'W4':28, 'W5':35, 'W6':42, 'W7':49, 'W8':56, 'W9':63, 'W10':70, 'W11':77, 'W12':84, 'none':9999 };
 
+                photos.sort((a, b) => {
+                    // 1순위: 지정된 날짜(photoDate) 오름차순 정렬
+                    if (a.photoDate && b.photoDate && a.photoDate !== b.photoDate) {
+                        return new Date(a.photoDate) - new Date(b.photoDate);
+                    }
+                    // 2순위: 시점(timepoint) 가중치 정렬
+                    const wA = (a.timepoint && tpWeight[a.timepoint] !== undefined) ? tpWeight[a.timepoint] : 9999;
+                    const wB = (b.timepoint && tpWeight[b.timepoint] !== undefined) ? tpWeight[b.timepoint] : 9999;
+                    if (wA !== wB) return wA - wB;
+                    // 3순위: 업로드 타임스탬프
+                    return new Date(a.timestamp || 0) - new Date(b.timestamp || 0);
+                });
+
+                const photoHtml = photos.length > 0 ? photos.map(p => {
+                    let rMarkHtml = '';
+                    if (p.rMark && p.rMark !== 'none') {
+                        let posStyle = '';
+                        if (p.rMark === 'right') posStyle = 'top:50%; right:5px; transform:translateY(-50%);';
+                        if (p.rMark === 'left') posStyle = 'top:50%; left:5px; transform:translateY(-50%);';
+                        if (p.rMark === 'top') posStyle = 'top:5px; left:50%; transform:translateX(-50%);';
+                        if (p.rMark === 'bottom') posStyle = 'bottom:25px; left:50%; transform:translateX(-50%);';
+                        rMarkHtml = `<div style="position:absolute; ${posStyle} font-weight:900; color:#ffeb3b; text-shadow:1px 1px 3px #000; font-size:1.1rem; pointer-events:none;">R</div>`;
+                    }
+                    
+                    // 날짜 + 시점 조합 배지
+                    let tpBadgeText = '';
+                    if (p.photoDate) tpBadgeText += p.photoDate;
+                    if (p.timepoint && p.timepoint !== 'none') tpBadgeText += (tpBadgeText ? ' ' : '') + `[${p.timepoint}]`;
+
+                    let tpBadge = '';
+                    if (tpBadgeText) {
+                        tpBadge = `<div style="position:absolute; top:5px; left:5px; background:rgba(26,35,126,0.9); color:white; padding:2px 6px; border-radius:4px; font-size:0.75rem; font-weight:bold; box-shadow:0 1px 3px rgba(0,0,0,0.3); pointer-events:none; z-index:5;">${tpBadgeText}</div>`;
+                    }
+
+                    return `
+                    <div style="position:relative; width:130px; height:130px; border:1px solid #ddd; border-radius:8px; overflow:hidden; background:#000; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+                        <img src="${p.url}" draggable="false" style="width:100%; height:100%; object-fit:cover; cursor:pointer; user-select:none; -webkit-user-drag:none;" onclick="openPhotoViewer('${p.url}', '${p.memo||''}')">
+                        ${tpBadge}
+                        ${rMarkHtml}
+                        <button onclick="deletePhoto('${docId}', '${encodeURIComponent(JSON.stringify(p))}')" style="position:absolute; top:5px; right:5px; background:rgba(211,47,47,0.8); color:white; border:none; border-radius:50%; width:24px; height:24px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10;">✖</button>
+                        <div style="position:absolute; bottom:0; left:0; width:100%; background:rgba(0,0,0,0.7); color:white; font-size:0.75rem; padding:4px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; z-index:5;">${p.memo||'메모없음'}</div>
+                    </div>`;
+                }).join('') : '<div style="color:#888; font-size:0.85rem; padding:10px;">등록된 사진이 없습니다.</div>';
+
+                // --- 화면 UI 조합 ---
                 view.innerHTML = `
                     <div class="card">
                         <div style="display:flex; justify-content:space-between;">
@@ -3785,11 +3848,27 @@
 
                     <div class="card">
                         <h4 style="color:var(--navy); margin-top:0;">🖼️ 사진 및 결과 기록</h4>
-                        <div style="display:flex; gap:10px; margin-bottom:15px; align-items:center; flex-wrap:wrap; background:#f8f9fa; padding:10px; border-radius:8px; border:1px solid #eee;">
-                            <input type="file" id="photo-upload-input" accept="image/*" style="flex:1; min-width:200px; padding:5px; background:#fff; border:1px solid #ddd;">
-                            <input type="text" id="photo-memo-input" placeholder="메모 (예: 조직 채취 상태)" style="flex:2; min-width:200px; padding:8px;">
-                            <button id="photo-upload-btn" class="btn btn-green btn-small" onclick="uploadPhotoForRat('${docId}')" style="white-space:nowrap;">사진 추가</button>
+                        
+                        <div id="photo-dropzone-${docId}" 
+                             style="border: 2px dashed #1a237e; border-radius: 8px; padding: 20px; text-align: center; background: #f8f9fa; cursor: pointer; margin-bottom:15px; transition: 0.2s;" 
+                             ondragover="event.preventDefault(); this.style.background='#e3f2fd'; this.style.borderColor='#00c853';" 
+                             ondragleave="this.style.background='#f8f9fa'; this.style.borderColor='#1a237e';" 
+                             ondrop="handlePhotoDrop(event, '${docId}')" 
+                             onclick="document.getElementById('photo-upload-input-${docId}').click()">
+                            <div style="font-size:2rem; margin-bottom:10px;">📸</div>
+                            <div style="font-weight:bold; color:#333;">여기로 사진을 드래그하거나 클릭하여 선택하세요</div>
+                            <div style="font-size:0.85rem; color:#666; margin-top:5px;">(Ctrl+V 복사/붙여넣기도 지원합니다. <b>여러 장 선택 가능</b>)</div>
+                            <input type="file" id="photo-upload-input-${docId}" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect(event, '${docId}')">
                         </div>
+                        
+                        <div id="photo-staging-area-${docId}" style="display:none; margin-bottom:15px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:8px; margin-bottom:10px;">
+                                <h5 style="margin:0; color:var(--navy);">📤 업로드 대기 목록 (개별 설정 후 업로드)</h5>
+                            </div>
+                            <div id="photo-staging-list-${docId}" style="display:flex; flex-direction:column; gap:10px; max-height:400px; overflow-y:auto; margin-bottom:10px; padding-right:5px;"></div>
+                            <button id="photo-upload-all-btn-${docId}" class="btn btn-green" onclick="uploadAllStagedPhotos('${docId}')" style="width:100%; font-size:1rem; padding:10px; font-weight:bold;">🚀 준비된 사진 모두 업로드</button>
+                        </div>
+
                         <div id="photo-gallery" style="display:flex; gap:15px; flex-wrap:wrap;">
                             ${photoHtml}
                         </div>
@@ -3813,6 +3892,7 @@
                     <div class="card"><h4>투약 이력</h4><div id="dose-logs"></div></div>
                     <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`;
 
+                // 기존 차트 그리기 로직 등등 (생략 없이 유지)
                 const logs = await db.collection("dailyLogs").where("ratId", "==", id).get();
                 let processedLogs = [];
                 logs.forEach(doc => {
@@ -3879,9 +3959,10 @@
                 const sortedMs = ms.docs.map(d=>d.data()).sort((a,b)=>new Date(b.date)-new Date(a.date));
                 sortedMs.slice(0,5).forEach(v=>{rHtml+=`<tr><td>${v.date}</td><td>${v.timepoint||'-'}</td><td>${v.sbp||'-'}</td><td>${v.weight||'-'}</td></tr>`;});
                 document.getElementById('rec-logs').innerHTML = rHtml+'</table>';
+
             } catch(e) { console.error(e); }
         }
-        
+
         async function searchForEdit() {
             const id = document.getElementById('edit-id').value.trim();
             if(!id) return alert("ID를 입력하세요");
@@ -4172,38 +4253,42 @@
         }
 
         // ==========================================
-        //  사진 압축, 업로드, 뷰어 제어 로직
+        //  멀티 이미지 업로드, 시점 설정, 뷰어 통합 제어 로직
         // ==========================================
-
-        // 이미지 압축기 (~0.5MB 유지)
-        function compressImage(file) {
+        function compressImage(file, rMark = 'none') {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     const img = new Image();
                     img.onload = () => {
                         const canvas = document.createElement('canvas');
-                        let width = img.width;
-                        let height = img.height;
-                        const maxDim = 1280; // 최대 해상도 1280 제한
+                        let width = img.width, height = img.height;
+                        const maxDim = 1280;
 
                         if (width > maxDim || height > maxDim) {
-                            if (width > height) {
-                                height = Math.round((height *= maxDim / width));
-                                width = maxDim;
-                            } else {
-                                width = Math.round((width *= maxDim / height));
-                                height = maxDim;
-                            }
+                            if (width > height) { height = Math.round((height *= maxDim / width)); width = maxDim; }
+                            else { width = Math.round((width *= maxDim / height)); height = maxDim; }
                         }
-
-                        canvas.width = width;
-                        canvas.height = height;
+                        canvas.width = width; canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
 
-                        // 0.7 품질의 JPEG로 변환하면 대부분 200~400KB 수준으로 억제됩니다.
-                        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.7);
+                        if (rMark && rMark !== 'none') {
+                            const fontSize = Math.max(40, Math.floor(Math.min(width, height) * 0.08));
+                            ctx.font = `900 ${fontSize}px Arial`;
+                            ctx.fillStyle = '#ffeb3b'; 
+                            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                            ctx.shadowColor = 'rgba(0, 0, 0, 0.9)'; ctx.shadowBlur = 8;
+                            ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 3;
+
+                            let x = width / 2, y = height / 2; const padding = fontSize;
+                            if (rMark === 'right') x = width - padding;
+                            else if (rMark === 'left') x = padding;
+                            else if (rMark === 'top') y = padding;
+                            else if (rMark === 'bottom') y = height - padding;
+                            ctx.fillText('R', x, y);
+                        }
+                        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.8);
                     };
                     img.src = event.target.result;
                 };
@@ -4212,49 +4297,142 @@
             });
         }
 
-        async function uploadPhotoForRat(ratDocId) {
-            const fileInput = document.getElementById('photo-upload-input');
-            const memoInput = document.getElementById('photo-memo-input').value.trim();
-            if(!fileInput.files.length) return alert("업로드할 사진을 선택해주세요.");
+        let stagedPhotos = []; 
+        window.currentRatDocId = null; 
 
-            const file = fileInput.files[0];
-            const btn = document.getElementById('photo-upload-btn');
-            btn.innerText = "압축/업로드 중...";
+        const observer = new MutationObserver(() => {
+            const dropzone = document.querySelector('[id^="photo-dropzone-"]');
+            if(dropzone) window.currentRatDocId = dropzone.id.replace('photo-dropzone-', '');
+            else { window.currentRatDocId = null; stagedPhotos = []; }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        window.addEventListener('paste', e => {
+            if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+            if(!window.currentRatDocId) return;
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            const files = [];
+            for (let index in items) {
+                const item = items[index];
+                if (item.kind === 'file' && item.type.startsWith('image/')) files.push(item.getAsFile());
+            }
+            if(files.length > 0) { e.preventDefault(); addFilesToStage(files, window.currentRatDocId); }
+        });
+
+        function handlePhotoSelect(e, docId) { addFilesToStage(e.target.files, docId); e.target.value = ''; }
+        function handlePhotoDrop(e, docId) {
+            e.preventDefault();
+            document.getElementById(`photo-dropzone-${docId}`).style.background = '#f8f9fa';
+            document.getElementById(`photo-dropzone-${docId}`).style.borderColor = '#1a237e';
+            addFilesToStage(e.dataTransfer.files, docId);
+        }
+
+        function addFilesToStage(files, docId) {
+            let added = false;
+            for(let i=0; i<files.length; i++) {
+                if(files[i].type.startsWith('image/')) {
+                    stagedPhotos.push({ id: 'stage_' + Date.now() + '_' + i, file: files[i], url: URL.createObjectURL(files[i]) });
+                    added = true;
+                }
+            }
+            if(added) renderStagingArea(docId);
+        }
+
+        function removeStagedPhoto(id, docId) { stagedPhotos = stagedPhotos.filter(p => p.id !== id); renderStagingArea(docId); }
+
+        function renderStagingArea(docId) {
+            const area = document.getElementById(`photo-staging-area-${docId}`);
+            const list = document.getElementById(`photo-staging-list-${docId}`);
+            if(!area || !list) return;
+
+            if(stagedPhotos.length === 0) { area.style.display = 'none'; return; }
+            area.style.display = 'block';
+            
+            const tpOptions = ['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12'].map(v=>`<option value="${v}">${v}</option>`).join('');
+            
+            // 오늘 날짜를 기본값으로 세팅
+            const todayStr = new Date().toISOString().split('T')[0];
+            
+            let html = '';
+            stagedPhotos.forEach(p => {
+                html += `
+                <div style="display:flex; gap:10px; align-items:center; background:#f1f3f5; padding:10px; border-radius:6px; border:1px solid #ccc;">
+                    <img src="${p.url}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border:1px solid #aaa;">
+                    <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                        <span style="font-size:0.85rem; font-weight:bold; color:#333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${p.file.name}</span>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                            <input type="date" id="stage-date-${p.id}" value="${todayStr}" style="width:125px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
+                            <select id="stage-tp-${p.id}" style="width:120px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
+                                <option value="none">시점(선택안함)</option>
+                                ${tpOptions}
+                            </select>
+                            <select id="stage-rmark-${p.id}" style="width:110px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
+                                <option value="none">R 마크 (X)</option>
+                                <option value="right">▶ 오른쪽 (R)</option>
+                                <option value="left">◀ 왼쪽 (R)</option>
+                                <option value="top">▲ 위쪽 (R)</option>
+                                <option value="bottom">▼ 아래쪽 (R)</option>
+                            </select>
+                            <input type="text" id="stage-memo-${p.id}" placeholder="개별 메모 (예: 조직 채취시 손상)" style="flex:1; min-width:150px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
+                        </div>
+                    </div>
+                    <button class="btn-red" onclick="removeStagedPhoto('${p.id}', '${docId}')" style="padding:6px 12px; font-weight:bold; font-size:1.1rem;">✖</button>
+                </div>
+                `;
+            });
+            list.innerHTML = html;
+        }
+
+        async function uploadAllStagedPhotos(docId) {
+            if(stagedPhotos.length === 0) return;
+            const btn = document.getElementById(`photo-upload-all-btn-${docId}`);
+            btn.innerText = `업로드 중... (0 / ${stagedPhotos.length})`;
             btn.disabled = true;
 
+            let successCount = 0; const newPhotos = [];
+
             try {
-                // 1. 이미지 압축
-                const compressedBlob = await compressImage(file);
-                
-                // 2. Storage 업로드
-                const filename = `rats_photos/${ratDocId}/${Date.now()}_${file.name}.jpg`;
-                const storageRef = firebase.storage().ref().child(filename);
-                const snapshot = await storageRef.put(compressedBlob);
-                const downloadURL = await snapshot.ref.getDownloadURL();
+                for(let i = 0; i < stagedPhotos.length; i++) {
+                    const p = stagedPhotos[i];
+                    const memoVal = document.getElementById(`stage-memo-${p.id}`).value.trim();
+                    const rMarkVal = document.getElementById(`stage-rmark-${p.id}`).value;
+                    const tpVal = document.getElementById(`stage-tp-${p.id}`).value;
+                    const dateVal = document.getElementById(`stage-date-${p.id}`).value; // 날짜 추출
 
-                // 3. Firestore 기록
-                const photoObj = {
-                    url: downloadURL,
-                    memo: memoInput,
-                    timestamp: new Date().toISOString(),
-                    filename: filename
-                };
+                    btn.innerText = `압축 및 업로드 중... (${i + 1} / ${stagedPhotos.length})`;
 
-                await db.collection('rats').doc(ratDocId).update({
-                    photos: firebase.firestore.FieldValue.arrayUnion(photoObj)
-                });
+                    const compressedBlob = await compressImage(p.file, rMarkVal);
+                    const filename = `rats_photos/${docId}/${Date.now()}_${i}_${p.file.name}.jpg`;
+                    const storageRef = firebase.storage().ref().child(filename);
+                    
+                    const snapshot = await storageRef.put(compressedBlob);
+                    const downloadURL = await snapshot.ref.getDownloadURL();
 
-                alert("사진이 성공적으로 업로드되었습니다.");
+                    newPhotos.push({
+                        url: downloadURL,
+                        memo: memoVal,
+                        rMark: rMarkVal,
+                        timepoint: tpVal,
+                        photoDate: dateVal, // DB에 날짜 저장
+                        timestamp: new Date().toISOString(),
+                        filename: filename
+                    });
+                    successCount++;
+                }
+
+                btn.innerText = `데이터베이스 저장 중...`;
+                for (let np of newPhotos) {
+                    await db.collection('rats').doc(docId).update({ photos: firebase.firestore.FieldValue.arrayUnion(np) });
+                }
+
+                alert(`${successCount}장의 사진이 성공적으로 등록되었습니다.`);
+                stagedPhotos = []; 
                 clearRatsCache();
-                loadDetailData();
+                await loadDetailData();
+
             } catch(e) {
-                console.error(e);
-                alert("업로드 실패: " + e.message);
-            } finally {
-                btn.innerText = "사진 추가";
-                btn.disabled = false;
-                fileInput.value = '';
-                document.getElementById('photo-memo-input').value = '';
+                console.error(e); alert("오류 발생: " + e.message);
+                btn.innerText = "🚀 준비된 사진 모두 업로드"; btn.disabled = false;
             }
         }
 
@@ -4262,40 +4440,66 @@
             if(!confirm("이 사진을 정말 삭제하시겠습니까?")) return;
             const photoObj = JSON.parse(decodeURIComponent(photoObjStr));
             try {
-                // Storage에서 삭제 시도 (에러나도 무시)
                 await firebase.storage().ref().child(photoObj.filename).delete().catch(e=>console.warn(e));
-                
-                // Firestore 배열에서 삭제
-                await db.collection('rats').doc(docId).update({
-                    photos: firebase.firestore.FieldValue.arrayRemove(photoObj)
-                });
-                alert("삭제되었습니다.");
-                clearRatsCache();
-                loadDetailData();
+                await db.collection('rats').doc(docId).update({ photos: firebase.firestore.FieldValue.arrayRemove(photoObj) });
+                alert("삭제되었습니다."); clearRatsCache(); loadDetailData();
             } catch(e) { console.error(e); alert("삭제 실패"); }
         }
 
-        // --- 뷰어 제어 로직 ---
-        let pvScale = 1;
-        let pvTransX = 0, pvTransY = 0;
-        let pvDragging = false;
-        let pvStartX = 0, pvStartY = 0;
-
+        let pvScale = 1, pvTransX = 0, pvTransY = 0, pvDragging = false, pvStartX = 0, pvStartY = 0;
         function openPhotoViewer(url, memo) {
             const modal = document.getElementById('photo-viewer-modal');
             const img = document.getElementById('photo-viewer-img');
             document.getElementById('photo-viewer-memo').innerText = memo || '메모 없음';
             img.src = url;
-            
-            // 위치/줌 초기화
             pvScale = 1; pvTransX = 0; pvTransY = 0;
             img.style.transform = `translate(0px, 0px) scale(1)`;
             modal.style.display = 'flex';
         }
+        function closePhotoViewer() { document.getElementById('photo-viewer-modal').style.display = 'none'; }
 
-        function closePhotoViewer() {
-            document.getElementById('photo-viewer-modal').style.display = 'none';
-        }
+        window.addEventListener('DOMContentLoaded', () => {
+            const img = document.getElementById('photo-viewer-img');
+            if(!img) return;
+            img.addEventListener('wheel', (e) => { e.preventDefault(); pvScale += e.deltaY < 0 ? 0.15 : -0.15; if(pvScale < 0.5) pvScale = 0.5; if(pvScale > 5) pvScale = 5; img.style.transform = `translate(${pvTransX}px, ${pvTransY}px) scale(${pvScale})`; });
+            img.addEventListener('mousedown', (e) => { e.preventDefault(); pvDragging = true; pvStartX = e.clientX - pvTransX; pvStartY = e.clientY - pvTransY; img.style.cursor = 'grabbing'; });
+            window.addEventListener('mouseup', () => { pvDragging = false; if(img) img.style.cursor = 'grab'; });
+            window.addEventListener('mousemove', (e) => { if(!pvDragging) return; pvTransX = e.clientX - pvStartX; pvTransY = e.clientY - pvStartY; img.style.transform = `translate(${pvTransX}px, ${pvTransY}px) scale(${pvScale})`; });
+        });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const img = document.getElementById('photo-viewer-img');
+            if(!img) return;
+
+            img.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                pvScale += e.deltaY < 0 ? 0.15 : -0.15;
+                if(pvScale < 0.5) pvScale = 0.5;
+                if(pvScale > 5) pvScale = 5;
+                img.style.transform = `translate(${pvTransX}px, ${pvTransY}px) scale(${pvScale})`;
+            });
+
+            // [중요 수정] e.preventDefault() 를 추가해 사진 드래그(복사) 잔상 현상을 완벽히 차단
+            img.addEventListener('mousedown', (e) => {
+                e.preventDefault(); 
+                pvDragging = true;
+                pvStartX = e.clientX - pvTransX;
+                pvStartY = e.clientY - pvTransY;
+                img.style.cursor = 'grabbing';
+            });
+
+            window.addEventListener('mouseup', () => {
+                pvDragging = false;
+                if(img) img.style.cursor = 'grab';
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if(!pvDragging) return;
+                pvTransX = e.clientX - pvStartX;
+                pvTransY = e.clientY - pvStartY;
+                img.style.transform = `translate(${pvTransX}px, ${pvTransY}px) scale(${pvScale})`;
+            });
+        });
 
         // 초기 로드 시 뷰어 이벤트 바인딩 (1회)
         window.addEventListener('DOMContentLoaded', () => {
@@ -4329,6 +4533,579 @@
                 img.style.transform = `translate(${pvTransX}px, ${pvTransY}px) scale(${pvScale})`;
             });
         });
+
+        // ==========================================
+        //  PPT 프레젠테이션 모드 엔진 (완벽 통합본)
+        // ==========================================
+        let pptSlides = [];
+        let currentPptIndex = 0;
+        let pptChart = null; // 오직 이 변수 하나만 사용합니다.
+
+        function openPptSetup() {
+            const modal = document.getElementById('ppt-setup-modal');
+            const sel = document.getElementById('ppt-cohort-sel');
+            modal.style.display = 'flex';
+            sel.innerHTML = '<option value="">데이터 불러오는 중...</option>';
+
+            getRatsWithCache().then(ratsData => {
+                const cohorts = new Set();
+                ratsData.forEach(d => { if (d.cohort) cohorts.add(d.cohort); });
+                const sorted = Array.from(cohorts).sort((a, b) => Number(b) - Number(a));
+                
+                if (sorted.length === 0) {
+                    sel.innerHTML = '<option value="">데이터 없음</option>';
+                } else {
+                    sel.innerHTML = '<option value="">-- 코호트 선택 --</option>' + 
+                                    sorted.map(c => `<option value="${c}">Cohort ${c}</option>`).join('');
+                }
+            }).catch(e => {
+                console.error(e);
+                sel.innerHTML = '<option value="">오류 발생</option>';
+            });
+        }
+
+        async function startPpt() {
+            const cohort = document.getElementById('ppt-cohort-sel').value;
+            if(!cohort) return alert("코호트를 선택하세요.");
+            
+            const btn = document.querySelector('#ppt-setup-modal .btn-blue');
+            btn.innerText = "데이터 및 사진 미리 불러오는 중...";
+            btn.disabled = true;
+
+            try {
+                const rSnap = await db.collection("rats").where("cohort", "==", cohort).get();
+                if(rSnap.empty) { throw new Error("해당 코호트에 데이터가 없습니다."); }
+                
+                let rats = [];
+                rSnap.forEach(d => rats.push(d.data()));
+                rats.sort((a, b) => a.ratId.localeCompare(b.ratId));
+
+                rats.forEach(r => {
+                    if(r.photos) {
+                        r.photos.forEach(p => {
+                            if(p.url) { const img = new Image(); img.src = p.url; }
+                        });
+                    }
+                });
+
+                const promises = rats.map(r => db.collection("measurements").where("ratId", "==", r.ratId).get());
+                const measSnaps = await Promise.all(promises);
+                
+                const ratMeasData = {}; 
+                measSnaps.forEach((snap, idx) => {
+                    const r = rats[idx];
+                    ratMeasData[r.ratId] = [];
+                    snap.forEach(doc => {
+                        const d = doc.data();
+                        ratMeasData[r.ratId].push({
+                            date: d.date,
+                            label: d.timepoint || d.date,
+                            sbp: d.sbp || null,
+                            wt: d.weight || null
+                        });
+                    });
+                    ratMeasData[r.ratId].sort((a,b) => new Date(a.date) - new Date(b.date));
+                });
+
+                pptSlides = [];
+                pptSlides.push({ type: 'title', title: `Cohort ${cohort}<br>프레젠테이션` });
+                pptSlides.push({ type: 'summary', rats: rats });
+
+                const tpWeight = { 'D00':-1, 'D0':0, 'D2':2, 'W1':7, 'W2':14, 'W3':21, 'W4':28, 'W5':35, 'W6':42, 'W7':49, 'W8':56, 'W9':63, 'W10':70, 'W11':77, 'W12':84, 'none':9999 };
+                
+                rats.forEach(r => {
+                    const codStr = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '미기록');
+                    const headerText = `${r.ratId} <span style="font-weight:400; font-size:1.2rem; color:#ffb74d; margin-left:15px;">| 사망원인: ${codStr}</span>`;
+
+                    let photos = r.photos || [];
+                    
+                    // --- 날짜순 최우선 정렬 ---
+                    photos.sort((a,b) => {
+                        if (a.photoDate && b.photoDate && a.photoDate !== b.photoDate) {
+                            return new Date(a.photoDate) - new Date(b.photoDate);
+                        }
+                        const wA = (a.timepoint && tpWeight[a.timepoint] !== undefined) ? tpWeight[a.timepoint] : 9999;
+                        const wB = (b.timepoint && tpWeight[b.timepoint] !== undefined) ? tpWeight[b.timepoint] : 9999;
+                        if(wA !== wB) return wA - wB;
+                        return new Date(a.timestamp||0) - new Date(b.timestamp||0);
+                    });
+
+                    for(let i=0; i<photos.length; i+=2) {
+                        pptSlides.push({ type: 'photos', header: headerText, photos: photos.slice(i, i+2) });
+                    }
+                    pptSlides.push({ type: 'charts', header: headerText, ratId: r.ratId, data: ratMeasData[r.ratId] });
+                });
+
+                let totalN = rats.length;
+                let surgFailN = 0, areO = 0, areX = 0, areMicro = 0, areMacro = 0, areUnk = 0;
+                let sahN = 0, infarctN = 0, vasoN = 0, sacN = 0;
+                let survivalN = 0;
+
+                rats.forEach(r => {
+                    if(r.status === '생존') survivalN++;
+                    
+                    const cod = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '');
+                    if (cod === 'Surgical Failure') surgFailN++;
+                    if (cod === 'SAH') sahN++;
+                    if (cod === 'Infarction') infarctN++;
+                    if (cod === 'Vasospasm') vasoN++;
+                    if (cod === 'Sacrifice') sacN++;
+
+                    if (r.are) {
+                        if (r.are.startsWith('O')) {
+                            areO++;
+                            if(r.are.includes('micro')) areMicro++;
+                            else if(r.are.includes('macro')) areMacro++;
+                            else areUnk++;
+                        } else if (r.are === 'X') {
+                            areX++;
+                        }
+                    }
+                });
+
+                pptSlides.push({ 
+                    type: 'final-summary', 
+                    stats: { totalN, surgFailN, areO, areX, areMicro, areMacro, areUnk, sahN, infarctN, vasoN, sacN, survivalN } 
+                });
+
+                pptSlides.push({ type: 'end' });
+
+                document.getElementById('ppt-setup-modal').style.display = 'none';
+                document.getElementById('ppt-main-modal').style.display = 'flex';
+                
+                window.addEventListener('keydown', handlePptKeys);
+                
+                currentPptIndex = 0;
+                renderCurrentSlide();
+
+            } catch(e) {
+                console.error(e);
+                alert("오류: " + e.message);
+            } finally {
+                btn.innerText = "시작하기";
+                btn.disabled = false;
+            }
+        }
+
+        function renderCurrentSlide() {
+            const container = document.getElementById('ppt-slide-container');
+            const headerInfo = document.getElementById('ppt-header-info');
+            const progress = document.getElementById('ppt-progress');
+            
+            const slide = pptSlides[currentPptIndex];
+            progress.innerText = `${currentPptIndex + 1} / ${pptSlides.length}`;
+
+            if(pptChart) { pptChart.destroy(); pptChart = null; }
+
+            if(slide.type === 'title') {
+                headerInfo.innerHTML = 'Presentation Start';
+                container.innerHTML = `<div style="text-align:center;"><h1 style="font-size:4rem; color:var(--navy); margin-bottom:20px;">${slide.title}</h1><p style="font-size:1.5rem; color:#666;">방향키(◀ ▶)를 눌러 이동하세요</p></div>`;
+            } 
+            else if(slide.type === 'summary') {
+                headerInfo.innerHTML = '📋 전체 코호트 요약 데이터';
+                
+                const codCounts = {};
+                const areCounts = { 'O': 0, 'X': 0, 'micro': 0, 'macro': 0, '미확인': 0 };
+                
+                slide.rats.forEach(r => {
+                    if(r.status === '사망') {
+                        const cod = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '미기록');
+                        codCounts[cod] = (codCounts[cod] || 0) + 1;
+                        if(r.are) {
+                            if(r.are.startsWith('O')) {
+                                areCounts['O']++;
+                                if(r.are.includes('micro')) areCounts['micro']++;
+                                else if(r.are.includes('macro')) areCounts['macro']++;
+                                else areCounts['미확인']++;
+                            } else if(r.are === 'X') {
+                                areCounts['X']++;
+                            }
+                        }
+                    }
+                });
+
+                const codStatHtml = Object.entries(codCounts).map(([k,v]) => `<span style="background:#e3f2fd; color:var(--navy); padding:4px 10px; border-radius:6px; font-size:0.9rem; font-weight:bold;">${k}: ${v}마리</span>`).join('');
+                const areStatHtml = `
+                    <span style="background:#ffebee; color:var(--red); padding:4px 10px; border-radius:6px; font-size:0.9rem; font-weight:bold;">ARE(O): ${areCounts['O']}마리 (micro ${areCounts['micro']}, macro ${areCounts['macro']}, 미확인 ${areCounts['미확인']})</span>
+                    <span style="background:#e8f5e9; color:var(--green); padding:4px 10px; border-radius:6px; font-size:0.9rem; font-weight:bold;">ARE(X): ${areCounts['X']}마리</span>
+                `;
+
+                const rowCount = slide.rats.length || 1;
+                const fontSizeRem = Math.max(0.7, 1.2 - Math.max(0, rowCount - 5) * 0.035);
+                const paddingPx = Math.max(2, 12 - Math.max(0, rowCount - 5) * 0.6);
+
+                let tbody = '';
+                slide.rats.forEach(r => {
+                    const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+                    let surgAgeStr = '-', deathAgeStr = '-', smpAgeStr = '-';
+                    
+                    if(r.arrivalDate && r.surgeryDate) {
+                        const surgAge = arrAge + ((new Date(r.surgeryDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
+                        surgAgeStr = `${r.surgeryDate} <span style="color:#666; font-size:0.85em;">(${surgAge.toFixed(1)}주)</span>`;
+                    }
+                    if(r.arrivalDate && r.deathDate && r.status === '사망') {
+                        const deathAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
+                        deathAgeStr = `${r.deathDate} <span style="color:var(--red); font-size:0.85em;">(${deathAge.toFixed(1)}주)</span>`;
+                    } else if(r.status === '생존') { deathAgeStr = '<span style="color:green; font-weight:bold;">생존</span>'; }
+                    
+                    if(r.sampleDate && r.arrivalDate) {
+                        const smpAge = arrAge + ((new Date(r.sampleDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
+                        smpAgeStr = `${r.sampleDate} <span style="color:var(--navy); font-size:0.85em;">(${smpAge.toFixed(1)}주)</span>`;
+                    }
+
+                    const codStr = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '-');
+                    const areStr = r.are || '-';
+
+                    tbody += `
+                        <tr style="border-bottom:1px solid #ddd; text-align:center;">
+                            <td style="padding:${paddingPx}px; font-weight:bold; color:var(--navy);">${r.ratId}</td>
+                            <td style="padding:${paddingPx}px;">${arrAge}주</td>
+                            <td style="padding:${paddingPx}px;">${surgAgeStr}</td>
+                            <td style="padding:${paddingPx}px;">${deathAgeStr}</td>
+                            <td style="padding:${paddingPx}px; font-weight:bold; color:#d32f2f;">${codStr} <span style="font-size:0.8rem; color:#666; font-weight:normal;">(ARE: ${areStr})</span></td>
+                            <td style="padding:${paddingPx}px;">${r.sampleType||'-'} ${smpAgeStr==='-'?'':smpAgeStr}</td>
+                        </tr>
+                    `;
+                });
+
+                container.innerHTML = `
+                <div style="width:95%; max-width:1400px; height:85vh; display:flex; flex-direction:column; gap:15px;">
+                    <div style="background:white; border-radius:12px; box-shadow:0 5px 15px rgba(0,0,0,0.1); padding:15px 20px; flex-shrink:0;">
+                        <h4 style="margin:0 0 10px 0; color:var(--navy);">📊 사망 원인 및 ARE 발생 요약</h4>
+                        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px; align-items:center;">
+                            <b style="color:#555; font-size:0.95rem; width:80px;">사망원인:</b> ${codStatHtml || '<span style="color:#888;">사망 개체 없음</span>'}
+                        </div>
+                        <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                            <b style="color:#555; font-size:0.95rem; width:80px;">ARE 통계:</b> ${areCounts['O']+areCounts['X'] > 0 ? areStatHtml : '<span style="color:#888;">기록 없음</span>'}
+                        </div>
+                    </div>
+                    <div style="flex:1; background:white; border-radius:12px; box-shadow:0 5px 15px rgba(0,0,0,0.1); padding:10px 20px; overflow:hidden; display:flex; flex-direction:column;">
+                        <table style="width:100%; border-collapse:collapse; font-size:${fontSizeRem}rem; height:100%;">
+                            <thead style="background:#f1f3f5; color:#333; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+                                <tr>
+                                    <th style="padding:10px; border-bottom:2px solid #ccc;">Rat ID</th>
+                                    <th style="border-bottom:2px solid #ccc;">반입주령</th>
+                                    <th style="border-bottom:2px solid #ccc;">수술일자 (주령)</th>
+                                    <th style="border-bottom:2px solid #ccc;">사망일자 (주령)</th>
+                                    <th style="border-bottom:2px solid #ccc;">사망원인</th>
+                                    <th style="border-bottom:2px solid #ccc;">얻은 샘플 (날짜/주령)</th>
+                                </tr>
+                            </thead>
+                            <tbody style="display:table-row-group;">${tbody}</tbody>
+                        </table>
+                    </div>
+                </div>`;
+            }
+            else if(slide.type === 'photos') {
+                headerInfo.innerHTML = slide.header;
+                
+                let photoHtml = '';
+                slide.photos.forEach(p => {
+                    // PPT에서도 날짜와 시점 표기
+                    let tpText = '';
+                    if (p.photoDate) tpText += p.photoDate;
+                    if (p.timepoint && p.timepoint !== 'none') tpText += (tpText ? ' ' : '') + `[${p.timepoint}]`;
+                    if (!tpText) tpText = '일자/시점 미지정';
+
+                    photoHtml += `
+                    <div style="flex:1; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;">
+                        <div style="flex:1; width:100%; display:flex; align-items:center; justify-content:center; background:#000; border-radius:12px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.3);">
+                            <img src="${p.url}" style="max-width:100%; max-height:100%; object-fit:contain; cursor:pointer;" onclick="openPhotoViewer('${p.url}', '${p.memo||''}')">
+                        </div>
+                        <div style="margin-top:15px; text-align:center; font-size:1.3rem;">
+                            <span style="background:var(--navy); color:white; padding:4px 12px; border-radius:6px; font-weight:bold; margin-right:10px;">${tpText}</span>
+                            <span style="color:#333;">${p.memo || '메모 없음'}</span>
+                        </div>
+                    </div>`;
+                });
+
+                container.innerHTML = `<div style="display:flex; width:100%; height:85vh; gap:30px; justify-content:center;">${photoHtml}</div>`;
+            }
+            else if(slide.type === 'charts') {
+                headerInfo.innerHTML = slide.header;
+                
+                container.innerHTML = `
+                <div style="width:90%; height:85vh; display:flex; flex-direction:column; background:white; border-radius:12px; padding:20px; box-shadow:0 5px 20px rgba(0,0,0,0.1);">
+                    <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:10px; background:#f8f9fa; padding:8px; border-radius:8px;">
+                        <span style="font-weight:bold; color:var(--red);">■ 혈압 (SBP)</span>
+                        <span style="font-weight:bold; color:var(--green);">■ 체중 (Weight)</span>
+                    </div>
+                    <div style="position:relative; flex:1; width:100%;"><canvas id="ppt-canvas-bp"></canvas></div>
+                </div>`;
+
+                setTimeout(() => {
+                    const ctx = document.getElementById('ppt-canvas-bp');
+                    const dArr = slide.data; 
+
+                    const showSbp = dArr.some(d => d.sbp !== null);
+                    const showWt = dArr.some(d => d.wt !== null);
+
+                    const datasets = [];
+                    if (showSbp) { datasets.push({ label: 'SBP', data: dArr.map(d => d.sbp), borderColor: '#d32f2f', yAxisID: 'y', spanGaps: true }); }
+                    if (showWt) { datasets.push({ label: 'WT', data: dArr.map(d => d.wt), borderColor: '#00c853', yAxisID: 'y1', spanGaps: true }); }
+
+                    pptChart = new Chart(ctx, {
+                        type: 'line',
+                        data: { 
+                            labels: dArr.map(d => (d.label && d.label !== d.date) ? `${d.date} (${d.label})` : d.date), 
+                            datasets: datasets 
+                        },
+                        options: { 
+                            maintainAspectRatio: false, 
+                            animation: false, 
+                            interaction: { mode: 'index', intersect: false }, 
+                            scales: { 
+                                y: { position: 'left', display: showSbp }, 
+                                y1: { position: 'right', display: showWt, grid: { drawOnChartArea: false } } 
+                            } 
+                        }
+                    });
+                }, 50);
+            }
+            else if(slide.type === 'final-summary') {
+                headerInfo.innerHTML = '🎯 Final Conclusion';
+                
+                const { totalN, surgFailN, areO, areX, areMicro, areMacro, areUnk, sahN, infarctN, vasoN, sacN, survivalN } = slide.stats;
+                const validN = totalN - surgFailN;
+                const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0;
+
+                container.innerHTML = `
+                <div style="width:90%; display:flex; flex-direction:column; justify-content:center; gap:40px;">
+                    <h2 style="color:var(--navy); text-align:center; font-size:3rem; margin:0; text-shadow:2px 2px 5px rgba(0,0,0,0.1);">📊 Cohort Final Summary</h2>
+                    
+                    <div style="display:flex; justify-content:center; gap:30px; flex-wrap:wrap;">
+                        <div style="background:#fff; border-radius:15px; padding:30px; box-shadow:0 10px 30px rgba(0,0,0,0.1); flex:1; min-width:250px; text-align:center; border-top:8px solid var(--navy);">
+                            <h3 style="color:#555; margin-top:0; font-size:1.5rem;">총 개체 수</h3>
+                            <div style="font-size:4rem; font-weight:900; color:var(--navy); line-height:1;">${totalN}<span style="font-size:1.5rem; font-weight:bold;"> 마리</span></div>
+                            <div style="font-size:1.1rem; color:#888; margin-top:15px; font-weight:bold;">(Surgical Failure 제외 유효 N = ${validN})</div>
+                        </div>
+
+                        <div style="background:#fff; border-radius:15px; padding:30px; box-shadow:0 15px 40px rgba(211, 47, 47, 0.2); flex:1.2; min-width:300px; text-align:center; border:4px solid var(--red); transform:scale(1.05);">
+                            <h3 style="color:var(--red); margin-top:0; font-size:1.6rem;">🎯 ARE 발생률 (유효 N 기준)</h3>
+                            <div style="font-size:5rem; font-weight:900; color:var(--red); line-height:1; margin:10px 0;">${rateValid}<span style="font-size:2.5rem; font-weight:bold;"> %</span></div>
+                            <div style="font-size:1.4rem; color:#333; font-weight:bold;">${areO} / ${validN} 마리</div>
+                            <div style="font-size:1rem; color:#666; margin-top:10px; background:#ffebee; padding:5px 10px; border-radius:8px; display:inline-block;">
+                                <b>micro:</b> ${areMicro} &nbsp;|&nbsp; <b>macro:</b> ${areMacro} &nbsp;|&nbsp; <b>미확인:</b> ${areUnk}
+                            </div>
+                        </div>
+
+                        <div style="background:#fff; border-radius:15px; padding:30px; box-shadow:0 10px 30px rgba(0,0,0,0.1); flex:1; min-width:250px; text-align:center; border-top:8px solid #00c853;">
+                            <h3 style="color:#555; margin-top:0; font-size:1.5rem;">주요 결과 분포</h3>
+                            <div style="display:flex; flex-direction:column; gap:10px; text-align:left; display:inline-flex; width:100%; max-width:200px; font-size:1.2rem;">
+                                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding-bottom:5px;"><b>SAH:</b> <span><b style="color:var(--navy);">${sahN}</b> 마리</span></div>
+                                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding-bottom:5px;"><b>Infarction:</b> <span><b style="color:var(--navy);">${infarctN}</b> 마리</span></div>
+                                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding-bottom:5px;"><b>Vasospasm:</b> <span><b style="color:var(--navy);">${vasoN}</b> 마리</span></div>
+                                <div style="display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding-bottom:5px;"><b>Sacrifice:</b> <span><b style="color:var(--navy);">${sacN}</b> 마리</span></div>
+                                <div style="display:flex; justify-content:space-between; padding-bottom:5px;"><b>생존:</b> <span><b style="color:var(--green);">${survivalN}</b> 마리</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            else if(slide.type === 'end') {
+                headerInfo.innerHTML = 'Presentation End';
+                container.innerHTML = `
+                <div style="text-align:center;">
+                    <h1 style="font-size:4rem; color:var(--navy); margin-bottom:20px;">프레젠테이션이 종료되었습니다.</h1>
+                    <button class="btn btn-red" onclick="closePpt()" style="font-size:1.5rem; padding:15px 40px; border-radius:30px;">나가기 (ESC)</button>
+                </div>`;
+            }
+        }
+
+        function nextPptSlide() {
+            if(currentPptIndex < pptSlides.length - 1) {
+                currentPptIndex++;
+                renderCurrentSlide();
+            }
+        }
+
+        function prevPptSlide() {
+            if(currentPptIndex > 0) {
+                currentPptIndex--;
+                renderCurrentSlide();
+            }
+        }
+
+        function handlePptKeys(e) {
+            const viewer = document.getElementById('photo-viewer-modal');
+            if(viewer && viewer.style.display === 'flex') {
+                if(e.key === 'Escape') closePhotoViewer();
+                return; 
+            }
+
+            if(e.key === 'ArrowRight' || e.key === ' ') { nextPptSlide(); }
+            else if(e.key === 'ArrowLeft') { prevPptSlide(); }
+            else if(e.key === 'Escape') { closePpt(); }
+        }
+
+        function closePpt() {
+            document.getElementById('ppt-main-modal').style.display = 'none';
+            window.removeEventListener('keydown', handlePptKeys);
+            
+            // 닫을 때도 확실하게 파괴
+            if(pptChart) { 
+                pptChart.destroy(); 
+                pptChart = null; 
+            }
+            pptSlides = [];
+        }
+
+        // ============================================================
+        //  대량 데이터 CSV 일괄 업로드 로직
+        // ============================================================
+        let csvUploadData = [];
+
+        function parseRatUploadCSV(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const text = event.target.result;
+                // 맥/윈도우 줄바꿈 호환 처리
+                const rows = text.trim().split(/\r?\n/);
+                if (rows.length < 2) return alert("데이터가 비어있습니다.");
+
+                const headers = rows[0].split(',').map(h => h.trim());
+                const idIdx = headers.indexOf('Rat_ID');
+                if (idIdx === -1) return alert("엑셀 첫 줄에 'Rat_ID' 열이 반드시 있어야 합니다.");
+
+                csvUploadData = [];
+                let previewHtml = '<table style="width:100%; border-collapse:collapse; white-space:nowrap;"><thead><tr style="background:#f1f3f5;">';
+                headers.forEach(h => previewHtml += `<th style="border:1px solid #ddd; padding:5px;">${h}</th>`);
+                previewHtml += '</tr></thead><tbody>';
+
+                for (let i = 1; i < rows.length; i++) {
+                    const cols = rows[i].split(',');
+                    if (cols.length < headers.length) continue; // 빈 줄 무시
+
+                    let rowData = {};
+                    previewHtml += '<tr>';
+                    headers.forEach((h, idx) => {
+                        const val = cols[idx] ? cols[idx].trim() : '';
+                        rowData[h] = val;
+                        previewHtml += `<td style="border:1px solid #eee; padding:5px;">${val}</td>`;
+                    });
+                    previewHtml += '</tr>';
+                    csvUploadData.push(rowData);
+                }
+                previewHtml += '</tbody></table>';
+                
+                document.getElementById('csv-preview-area').innerHTML = 
+                    `<p style="color:var(--navy); font-weight:bold; font-size:1rem; margin-bottom:10px;">
+                        ✅ 총 ${csvUploadData.length}마리의 데이터가 인식되었습니다. 표를 확인하시고 이상이 없으면 아래 저장 버튼을 누르세요.
+                    </p>` + previewHtml;
+                
+                document.getElementById('btn-save-csv').style.display = 'block';
+            };
+            // UTF-8로 읽어서 한글 깨짐 방지
+            reader.readAsText(file, "UTF-8"); 
+        }
+
+        async function saveCsvToDB() {
+            if (!csvUploadData.length) return;
+            if (!confirm(`총 ${csvUploadData.length}마리의 데이터를 데이터베이스에 업데이트하시겠습니까?\n(기존 데이터에 덮어씌워지며 빈 칸은 안전하게 무시됩니다.)`)) return;
+
+            const btn = document.getElementById('btn-save-csv');
+            btn.innerText = "데이터 저장 중... 화면을 끄지 마세요!";
+            btn.disabled = true;
+
+            let successCount = 0;
+            let failCount = 0;
+
+            try {
+                // 직렬화 처리 (안정성을 위해 한 마리씩 순차 업데이트)
+                for (const row of csvUploadData) {
+                    const ratId = row['Rat_ID'];
+                    if (!ratId) continue;
+
+                    const rSnap = await db.collection("rats").where("ratId", "==", ratId).get();
+                    if (rSnap.empty) {
+                        console.warn(`[${ratId}] 해당 쥐를 DB에서 찾을 수 없습니다.`);
+                        failCount++;
+                        continue;
+                    }
+                    
+                    const docRef = rSnap.docs[0].ref;
+                    const existingData = rSnap.docs[0].data();
+                    let updates = {};
+
+                    // 1. 단일 데이터 매핑
+                    if (row['Death_Date']) { updates.deathDate = row['Death_Date']; updates.status = '사망'; }
+                    if (row['OVX_Date']) updates.ovxDate = row['OVX_Date'];
+                    if (row['Sample_Type']) updates.sampleType = row['Sample_Type'];
+                    if (row['Sample_Date']) updates.sampleDate = row['Sample_Date'];
+                    if (row['Sample_Memo']) updates.sampleMemo = row['Sample_Memo'];
+
+                    // 2. 사망 원인(COD) 및 ARE 논리 매핑
+                    const cod = row['COD'];
+                    const areMain = row['ARE_Main'];
+                    const areSub = row['ARE_Sub'];
+                    
+                    let finalCod = cod || existingData.cod;
+                    let finalAreStr = existingData.are; 
+
+                    if (areMain === 'O') finalAreStr = `O (${areSub || '미확인'})`;
+                    else if (areMain === 'X') finalAreStr = 'X';
+
+                    if (cod || areMain) {
+                        if (finalCod) updates.cod = finalCod;
+                        if (finalAreStr) updates.are = finalAreStr;
+                        // 호환성을 위한 codFull 통합 저장
+                        if (finalCod && finalAreStr) updates.codFull = `${finalCod} / ARE: ${finalAreStr}`;
+                        else if (finalCod) updates.codFull = finalCod;
+                    }
+
+                    // 3. MR 촬영 시점 매핑 (기존 배열과 병합)
+                    let mrArr = existingData.mrDates || [];
+                    let hasNewMr = false;
+
+                    Object.keys(row).forEach(key => {
+                        if (key.startsWith('MR_') && row[key]) {
+                            hasNewMr = true;
+                            const timepoint = key.replace('MR_', '');
+                            const newDate = row[key];
+                            
+                            // 기존 배열에 해당 시점이 이미 있다면 날짜만 덮어쓰고, 없다면 새로 밀어넣음
+                            const existingIdx = mrArr.findIndex(m => m.timepoint === timepoint);
+                            if (existingIdx > -1) {
+                                mrArr[existingIdx].date = newDate;
+                            } else {
+                                mrArr.push({ timepoint: timepoint, date: newDate });
+                            }
+                        }
+                    });
+
+                    if (hasNewMr) {
+                        // 시간 순서대로 예쁘게 정렬 후 업데이트
+                        mrArr.sort((a,b) => new Date(a.date) - new Date(b.date));
+                        updates.mrDates = mrArr;
+                    }
+
+                    // 업데이트 할 내용이 하나라도 있다면 DB 전송
+                    if (Object.keys(updates).length > 0) {
+                        await docRef.update(updates);
+                        successCount++;
+                    }
+                }
+
+                // 완료 후 캐시 비우고 알림
+                clearRatsCache();
+                alert(`✨ 대량 업데이트가 완료되었습니다!\n\n- 성공: ${successCount}건\n- 실패(없는 ID 등): ${failCount}건`);
+                
+                // UI 초기화
+                document.getElementById('csv-preview-area').innerHTML = '';
+                btn.style.display = 'none';
+                document.getElementById('csv-upload-input').value = '';
+
+            } catch (e) {
+                console.error(e);
+                alert("저장 중 시스템 오류가 발생했습니다: " + e.message);
+            } finally {
+                btn.innerText = "🚀 검토 완료: 데이터베이스에 덮어쓰기";
+                btn.disabled = false;
+            }
+        }
     </script>
 
     <div id="bpBatchModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
@@ -4394,11 +5171,46 @@
         </div>
     </div>
 
-    <div id="photo-viewer-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:10000; align-items:center; justify-content:center; overflow:hidden;">
-        <button onclick="closePhotoViewer()" style="position:absolute; top:20px; right:20px; background:var(--red); color:white; border:none; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; z-index:10001; font-size:1rem;">닫기 ✖</button>
-        <div id="photo-viewer-memo" style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); padding:10px 20px; border-radius:20px; z-index:10001; pointer-events:none; font-weight:bold; font-size:1.1rem; color:#333; max-width:80%; text-align:center;"></div>
-        <img id="photo-viewer-img" style="max-width:90%; max-height:90%; transition: transform 0.1s; cursor:grab;" src="">
+    <div id="photo-viewer-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:12000; align-items:center; justify-content:center; overflow:hidden;">
+        <button onclick="closePhotoViewer()" style="position:absolute; top:20px; right:20px; background:var(--red); color:white; border:none; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; z-index:12001; font-size:1rem;">닫기 ✖</button>
+        <div id="photo-viewer-memo" style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); padding:10px 20px; border-radius:20px; z-index:12001; pointer-events:none; font-weight:bold; font-size:1.1rem; color:#333; max-width:80%; text-align:center;"></div>
+        
+        <div id="photo-viewer-rmark" style="display:none; position:absolute; font-size:3rem; font-weight:900; color:#ffeb3b; text-shadow:2px 2px 5px rgba(0,0,0,0.8); z-index:12001; pointer-events:none;">R</div>
+        
+        <img id="photo-viewer-img" draggable="false" style="max-width:90%; max-height:90%; transition: transform 0.1s; cursor:grab; user-select:none; -webkit-user-drag:none;" src="">
+    </div>
+
+    <div id="ppt-setup-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:white; padding:20px; border-radius:12px; width:90%; max-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+            <h3 style="margin-top:0; color:var(--navy);">📽️ 프레젠테이션 모드</h3>
+            <p style="font-size:0.9rem; color:#666;">발표를 진행할 코호트를 선택하세요.</p>
+            
+            <select id="ppt-cohort-sel" style="width:100%; padding:10px; margin-bottom:15px; border:1px solid #ccc; border-radius:6px; font-size:1rem;">
+                <option value="">데이터 불러오는 중...</option>
+            </select>
+
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-blue" style="flex:1;" onclick="startPpt()">시작하기</button>
+                <button class="btn" style="flex:1; background:#eee; color:#333;" onclick="document.getElementById('ppt-setup-modal').style.display='none'">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ppt-main-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#fff; z-index:11000; flex-direction:column;">
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 30px; background:var(--navy); color:white; box-shadow:0 2px 10px rgba(0,0,0,0.2); z-index:11001;">
+            <div id="ppt-header-info" style="font-size:1.5rem; font-weight:bold;">Cohort Presentation</div>
+            <div style="display:flex; align-items:center; gap:20px;">
+                <span id="ppt-progress" style="font-size:1.2rem; font-weight:bold; background:rgba(255,255,255,0.2); padding:5px 15px; border-radius:20px;">1 / 10</span>
+                <button onclick="closePpt()" style="background:var(--red); color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:1rem;">✖ 종료 (ESC)</button>
+            </div>
+        </div>
+
+        <div id="ppt-slide-container" style="flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; padding:20px; background:#f4f6f9;">
+            </div>
+
+        <button onclick="prevPptSlide()" style="position:absolute; top:50%; left:20px; transform:translateY(-50%); background:rgba(0,0,0,0.3); color:white; border:none; width:60px; height:60px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:11001; transition:0.3s;" onmouseover="this.style.background='rgba(0,0,0,0.7)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'">◀</button>
+        <button onclick="nextPptSlide()" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(0,0,0,0.3); color:white; border:none; width:60px; height:60px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:11001; transition:0.3s;" onmouseover="this.style.background='rgba(0,0,0,0.7)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'">▶</button>
     </div>
 </body>
 </html>
-
