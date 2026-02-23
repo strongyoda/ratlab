@@ -1984,14 +1984,19 @@
         function toggleBPLog(id) { const el = document.getElementById(id); el.style.display = el.style.display === "none" ? "table-row" : "none"; }
 
         function admTab(mode) {
+            // 1. 모든 탭 버튼의 활성화(active) 상태 해제
             document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
+            
+            // 2. 클릭한 탭 버튼만 활성화
             const btn = document.getElementById('adm-' + mode);
             if(btn) btn.classList.add('active');
             
-            // 모든 탭 숨기고 선택된 탭만 보이기
+            // 3. 내용 화면 숨기기/보이기 제어 (여기에 'up', 'ai'가 추가되어야 겹치지 않습니다)
             ['del', 'edit', 'logs', 'up', 'ai'].forEach(m => {
                 const el = document.getElementById('tab-' + m);
-                if(el) el.style.display = (m === mode) ? 'block' : 'none';
+                if(el) {
+                    el.style.display = (m === mode) ? 'block' : 'none';
+                }
             });
         }
 
@@ -2235,18 +2240,20 @@
     // --- 로그 관리(삭제) 기능 함수들 ---
 
         function admTab(mode) {
+            // 1. 모든 탭 버튼의 활성화(active) 상태 해제
             document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
+            
+            // 2. 클릭한 탭 버튼만 활성화
             const btn = document.getElementById('adm-' + mode);
             if(btn) btn.classList.add('active');
             
-            // 모든 탭 숨기기
-            ['del', 'edit', 'logs'].forEach(m => {
+            // 3. 내용 화면 숨기기/보이기 제어 (여기에 'up', 'ai'가 추가되어야 겹치지 않습니다)
+            ['del', 'edit', 'logs', 'up', 'ai'].forEach(m => {
                 const el = document.getElementById('tab-' + m);
-                if(el) el.style.display = 'none';
+                if(el) {
+                    el.style.display = (m === mode) ? 'block' : 'none';
+                }
             });
-            // 선택된 탭 보이기
-            const target = document.getElementById('tab-' + mode);
-            if(target) target.style.display = 'block';
         }
 
         async function searchLogsDel() {
@@ -5368,3 +5375,4 @@
     </div>
 </body>
 </html>
+
