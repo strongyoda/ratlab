@@ -706,7 +706,8 @@
                         <div id="adm-del" class="tab active" onclick="admTab('del')">데이터 삭제</div>
                         <div id="adm-edit" class="tab" onclick="admTab('edit')">데이터 수정</div>
                         <div id="adm-logs" class="tab" onclick="admTab('logs')">로그 삭제</div>
-                        <div id="adm-up" class="tab" onclick="admTab('up')" style="background:#e3f2fd; color:var(--navy); font-weight:bold;">일괄 업로드(CSV)</div>
+                        <div id="adm-up" class="tab" onclick="admTab('up')">업로드(CSV)</div>
+                        <div id="adm-ai" class="tab" onclick="admTab('ai')" style="background:#f3e5f5; color:#6a1b9a; font-weight:bold; border-bottom:3px solid #6a1b9a;">🤖 AI 논문 추출</div>
                     </div>
                     
                     <div id="tab-del">
@@ -752,6 +753,20 @@
                         <div id="csv-preview-area" style="margin-top:15px; max-height: 400px; overflow-y:auto; font-size:0.85rem;"></div>
                         <button id="btn-save-csv" class="btn btn-green" style="margin-top:15px; display:none; width:100%; font-size:1.1rem; padding:12px;" onclick="saveCsvToDB()">🚀 검토 완료: 데이터베이스에 덮어쓰기</button>
                     </div>
+
+                    <div id="tab-ai" style="display:none;">
+                        <div style="background:#f3e5f5; padding:15px; border-radius:8px; border:1px solid #ce93d8; margin-bottom:15px; font-size:0.95rem; line-height:1.5; color:#4a148c;">
+                            <b>🧠 AI 딥러닝 & 논문 초안 작성용 데이터 추출기</b><br>
+                            - 코호트 조건(메모), 개체별 타임라인(수술/사망/MR/샘플 채취일), 혈압/체중 변화, ARE 발생 여부가 AI가 읽기 가장 좋은 형태로 정리됩니다.<br>
+                            - 추출된 텍스트 파일을 <b>Gemini, ChatGPT, Claude</b>에 업로드하고 논문 주제나 초안 작성을 지시하세요.
+                        </div>
+                        
+                        <div style="display:flex; gap:10px; margin-top:20px;">
+                            <button id="btn-extract-ai" class="btn" style="background:#8e24aa; color:white; font-size:1.1rem; padding:15px;" onclick="exportForAI()">📄 AI 프롬프트용 텍스트 데이터 추출 및 다운로드</button>
+                        </div>
+                        <div id="ai-extract-status" style="margin-top:15px; font-weight:bold; color:var(--navy); text-align:center;"></div>
+                    </div>
+
                 </div>`;
                 return;
             }
@@ -1974,7 +1989,7 @@
             if(btn) btn.classList.add('active');
             
             // 모든 탭 숨기고 선택된 탭만 보이기
-            ['del', 'edit', 'logs', 'up'].forEach(m => {
+            ['del', 'edit', 'logs', 'up', 'ai'].forEach(m => {
                 const el = document.getElementById('tab-' + m);
                 if(el) el.style.display = (m === mode) ? 'block' : 'none';
             });
@@ -5104,6 +5119,145 @@
             } finally {
                 btn.innerText = "🚀 검토 완료: 데이터베이스에 덮어쓰기";
                 btn.disabled = false;
+            }
+        }
+
+        // ============================================================
+        //  AI 논문 작성용 풀-컨텍스트 구조화 데이터 추출 로직
+        // ============================================================
+        async function exportForAI() {
+            const btn = document.getElementById('btn-extract-ai');
+            const statusText = document.getElementById('ai-extract-status');
+            
+            if(!confirm("모든 데이터를 분석하여 AI가 읽기 좋은 텍스트 파일로 추출하시겠습니까?\n데이터 양에 따라 수 초가 소요될 수 있습니다.")) return;
+
+            btn.disabled = true;
+            btn.style.background = '#ccc';
+            statusText.innerHTML = '<div class="loader"></div> 데이터를 구조화하는 중...';
+
+            try {
+                // 1. 모든 관련 데이터 한 번에 가져오기
+                const [rSnap, mSnap, cSnap] = await Promise.all([
+                    db.collection("rats").get(),
+                    db.collection("measurements").get(),
+                    db.collection("cohortNotes").get()
+                ]);
+
+                // 2. 코호트 메모 정리 (조건)
+                const cohortInfo = {};
+                cSnap.forEach(doc => { cohortInfo[doc.id] = doc.data().memo || "조건 미기재"; });
+
+                // 3. 혈압/체중 데이터 정리 (Rat ID 기준으로 묶기)
+                const measData = {};
+                mSnap.forEach(doc => {
+                    const d = doc.data();
+                    if (!measData[d.ratId]) measData[d.ratId] = [];
+                    measData[d.ratId].push(d);
+                });
+
+                // 4. 구조화된 텍스트 생성 시작
+                let aiText = `[SYSTEM PROMPT & CONTEXT]\n`;
+                aiText += `당신은 최고 수준의 신경외과 및 기초의학 연구원입니다. 아래 제공되는 데이터는 뇌동맥류(Cerebral Aneurysm, ARE) 동물 모델(Rat)의 Raw Data입니다.\n`;
+                aiText += `각 코호트별 실험 조건, 개체별 생존 여부, 사망 원인(COD), 동맥류 유무(ARE), 타임라인(수술일, 사망일, MR 촬영일, 샘플 채취일), 생리적 수치(혈압, 체중)가 포함되어 있습니다.\n`;
+                aiText += `데이터를 면밀히 분석하여, 시점별(예: MR 촬영 시점과 샘플 획득 시점의 매칭) 비교, 실험군 간의 병태생리학적 차이 등을 파악하고 SCI급 논문 주제 도출 및 초안 작성에 활용하십시오.\n\n`;
+                aiText += `=================================================\n\n`;
+                
+                aiText += `[1. COHORT EXPERIMENTAL CONDITIONS (코호트별 실험 조건)]\n`;
+                
+                // 랫드를 코호트별로 분류
+                const ratsByCohort = {};
+                rSnap.forEach(doc => {
+                    const r = doc.data();
+                    if (!ratsByCohort[r.cohort]) ratsByCohort[r.cohort] = [];
+                    ratsByCohort[r.cohort].push(r);
+                });
+
+                // 코호트 번호순 정렬
+                const sortedCohorts = Object.keys(ratsByCohort).sort((a,b) => Number(a) - Number(b));
+
+                sortedCohorts.forEach(c => {
+                    aiText += `- Cohort ${c}: ${cohortInfo[c] || '메모 없음'}\n`;
+                });
+                aiText += `\n=================================================\n\n`;
+
+                aiText += `[2. RAT TIMELINES & OUTCOMES (개체별 타임라인 및 결과)]\n`;
+
+                sortedCohorts.forEach(c => {
+                    aiText += `\n### COHORT ${c} ###\n`;
+                    const rats = ratsByCohort[c].sort((a, b) => a.ratId.localeCompare(b.ratId));
+
+                    rats.forEach(r => {
+                        aiText += `\n▶ Rat ID: ${r.ratId}\n`;
+                        
+                        // 사망 및 ARE 정보
+                        const cod = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '-');
+                        aiText += `  - Status: ${r.status} ${r.deathDate ? `(Death Date: ${r.deathDate})` : ''}\n`;
+                        aiText += `  - Cause of Death (COD): ${cod}\n`;
+                        aiText += `  - Aneurysm (ARE): ${r.are || '-'}\n`;
+
+                        // 타임라인 계산 (POD: 수술 후 경과일)
+                        aiText += `  - Timeline Events:\n`;
+                        aiText += `    * Arrival: ${r.arrivalDate || '-'} (Age: ${r.arrivalAge || 6} weeks)\n`;
+                        if (r.ovxDate) aiText += `    * OVX Surgery: ${r.ovxDate}\n`;
+                        aiText += `    * Ligation Surgery (Day 0): ${r.surgeryDate || '-'}\n`;
+                        
+                        // MR 데이터
+                        if (r.mrDates && r.mrDates.length > 0) {
+                            const mrStr = r.mrDates.sort((a,b) => new Date(a.date) - new Date(b.date))
+                                          .map(m => `${m.timepoint}(${m.date})`).join(', ');
+                            aiText += `    * MR Scans: ${mrStr}\n`;
+                        } else {
+                            aiText += `    * MR Scans: None\n`;
+                        }
+
+                        // 샘플 데이터
+                        if (r.sampleType && r.sampleType !== 'Fail') {
+                            aiText += `    * Sample Acquired: ${r.sampleType} on ${r.sampleDate || '-'} (Memo: ${r.sampleMemo || 'None'})\n`;
+                        } else if (r.sampleType === 'Fail') {
+                            aiText += `    * Sample Acquired: Failed\n`;
+                        }
+
+                        // 혈압/체중 데이터 (시점별 정렬)
+                        const ratMeas = measData[r.ratId] || [];
+                        if (ratMeas.length > 0) {
+                            ratMeas.sort((a, b) => new Date(a.date) - new Date(b.date));
+                            let measStrArr = ratMeas.map(m => {
+                                const tp = m.timepoint || m.date;
+                                let str = `[${tp}]`;
+                                if (m.sbp) str += ` SBP:${m.sbp}`;
+                                if (m.weight) str += ` WT:${m.weight}g`;
+                                return str;
+                            });
+                            aiText += `  - Measurements (BP/WT): ${measStrArr.join(' | ')}\n`;
+                        } else {
+                            aiText += `  - Measurements: No data\n`;
+                        }
+                    });
+                });
+
+                // 5. 다운로드 처리
+                const today = new Date();
+                const dateStr = today.getFullYear() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0');
+                const fileName = `AI_Research_Data_Cerebral_Aneurysm_${dateStr}.txt`;
+
+                const blob = new Blob([aiText], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                statusText.innerHTML = `<span style="color:green;">✅ 데이터가 성공적으로 추출되어 다운로드되었습니다! (파일명: ${fileName})</span><br><span style="font-size:0.9rem; font-weight:normal; color:#555;">이 텍스트 파일을 AI 챗봇에 업로드하고 지시를 내려보세요.</span>`;
+
+            } catch (e) {
+                console.error(e);
+                statusText.innerHTML = `<span style="color:red;">❌ 오류 발생: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.style.background = '#8e24aa';
             }
         }
     </script>
