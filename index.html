@@ -1469,7 +1469,49 @@
                 calcAvg(scatterDataWt, avgsWt, false);
                 calcAvg(scatterDataSbp, avgsSbp, true);
 
+                const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
+                const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
+
+                // --- [신규 추가] ARE 발생률 계산 및 HTML 생성 ---
+                let aneurysmN = 0;
+                let surgicalFailureN = 0;
+                rats.forEach(r => {
+                    if (r.codFull) {
+                        if (r.codFull.includes('Aneurysm(O)') || r.codFull.includes('Aneurysm (O)')) aneurysmN++;
+                        if (r.codFull.includes('Surgical Failure')) surgicalFailureN++;
+                    }
+                });
+                const totalN = rats.length;
+                const validN = totalN - surgicalFailureN;
+                const rateTotal = totalN > 0 ? ((aneurysmN / totalN) * 100).toFixed(1) : 0;
+                const rateValid = validN > 0 ? ((aneurysmN / validN) * 100).toFixed(1) : 0;
+
                 let finalHtml = headerHtml;
+
+                finalHtml += `
+                <div class="card" style="border-left:5px solid #9c27b0;">
+                    <h4 style="margin-top:0; margin-bottom:15px; color:var(--navy);">🧠 ARE (Aneurysm) 발생률</h4>
+                    <div style="margin-bottom: 15px;">
+                        <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
+                            <span>전체 기준 (Total N = ${totalN})</span>
+                            <span style="font-weight:bold; color:#333;">${aneurysmN} / ${totalN} (${rateTotal}%)</span>
+                        </div>
+                        <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
+                            <div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
+                            <span>Surgical Failure 제외 (Valid N = ${validN})</span>
+                            <span style="font-weight:bold; color:#333;">${aneurysmN} / ${validN} (${rateValid}%)</span>
+                        </div>
+                        <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
+                            <div style="width:${rateValid}%; background:#F57C00; height:100%;"></div>
+                        </div>
+                    </div>
+                </div>`;
+                // -----------------------------------------------------
+
                 const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
                 const codChartId = `codChart${uniqueSuffix}`;
                 const bpChartId = `coChartSbp${uniqueSuffix}`, bpTableId = `coTableSbp${uniqueSuffix}`;
@@ -1692,9 +1734,6 @@
                         }
                     }
                 });
-
-                const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
-                const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
 
                 const wtOpts = createChartOptions(rangeWtX.min, rangeWtX.max, rangeWtY.min, rangeWtY.max);
                 const wtChart = new Chart(document.getElementById(wtChartId), {
@@ -3445,6 +3484,7 @@
         // [1] 동향분석 실행 함수 (기존 runRatListAnalysis 교체)
         // [최종 수정] Trend 분석: Arrival 제한 + 십자선 On/Off + 라벨 밀도 증가
         // [1] 조건분석(Trend) 그룹 분석 함수 - 코호트 분석과 동일한 스타일로 렌더링
+        // [1] 조건분석(Trend) 그룹 분석 함수 - 코호트 분석과 동일한 스타일로 렌더링
         async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, customTitle, fixedOptions, groupKey) {
             const resDiv = document.getElementById(targetDivId);
 
@@ -3584,7 +3624,46 @@
                 const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
                 const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
 
+                // --- [신규 추가] ARE 발생률 계산 및 HTML 생성 ---
+                let aneurysmN = 0;
+                let surgicalFailureN = 0;
+                ratDataList.forEach(r => {
+                    if (r.codFull) {
+                        if (r.codFull.includes('Aneurysm(O)') || r.codFull.includes('Aneurysm (O)')) aneurysmN++;
+                        if (r.codFull.includes('Surgical Failure')) surgicalFailureN++;
+                    }
+                });
+                const totalN = ratDataList.length;
+                const validN = totalN - surgicalFailureN;
+                const rateTotal = totalN > 0 ? ((aneurysmN / totalN) * 100).toFixed(1) : 0;
+                const rateValid = validN > 0 ? ((aneurysmN / validN) * 100).toFixed(1) : 0;
+
                 let finalHtml = headerHtml;
+
+                finalHtml += `
+                <div class="card" style="border-left:5px solid #9c27b0;">
+                    <h4 style="margin-top:0; margin-bottom:15px; color:var(--navy);">🧠 ARE (Aneurysm) 발생률</h4>
+                    <div style="margin-bottom: 15px;">
+                        <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
+                            <span>전체 기준 (Total N = ${totalN})</span>
+                            <span style="font-weight:bold; color:#333;">${aneurysmN} / ${totalN} (${rateTotal}%)</span>
+                        </div>
+                        <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
+                            <div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
+                            <span>Surgical Failure 제외 (Valid N = ${validN})</span>
+                            <span style="font-weight:bold; color:#333;">${aneurysmN} / ${validN} (${rateValid}%)</span>
+                        </div>
+                        <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
+                            <div style="width:${rateValid}%; background:#F57C00; height:100%;"></div>
+                        </div>
+                    </div>
+                </div>`;
+                // -----------------------------------------------------
+
                 const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
                 const codChartId = `codChart${uniqueSuffix}`;
                 const bpChartId = `coChartSbp${uniqueSuffix}`, bpTableId = `coTableSbp${uniqueSuffix}`;
@@ -3880,8 +3959,6 @@
                 resDiv.innerHTML = headerHtml + `<p style="color:red">오류 발생: ${e.message}</p>`;
             }
         }
-
-
         // [2] 동향분석용 Scatter 업데이트 함수
         function updateTrendScatter(filterTp, groupKey) {
             // 1. 해당 그룹의 필터 상태 업데이트
