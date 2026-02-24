@@ -1223,6 +1223,10 @@ async function loadGroupComparison() {
     let globalMaxWt = 0;
     let globalMaxPod = 0;
 
+    let allRatIds = [];
+    let allRatsObj = [];
+    let surgeryMap = {};
+
     try {
         const allCohorts = [];
         activeGroups.forEach(g => allCohorts.push(...g.cohorts));
@@ -1231,9 +1235,7 @@ async function loadGroupComparison() {
         const ratPromises = uniqueCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
         const ratSnaps = await Promise.all(ratPromises);
         
-        let allRatIds = [];
-        let allRatsObj = [];
-        let surgeryMap = {};
+
 
         ratSnaps.forEach(snap => {
             snap.forEach(d => {
@@ -2132,4 +2134,5 @@ function renderUnifiedTimeline(groupsData, container) {
             }
         });
     }, 50);
+
 }
