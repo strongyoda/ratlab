@@ -1049,62 +1049,56 @@ async function saveSimpleCod() {
 // ============================================================
 //  AI 논문 작성용 풀-컨텍스트 구조화 데이터 추출 로직
 // ============================================================
+// ============================================================
+//  AI 논문 작성용 풀-컨텍스트 데이터 추출 (100% 완벽 통합판)
+// ============================================================
 async function exportForAI() {
     const btn = document.getElementById('btn-extract-ai');
     const statusText = document.getElementById('ai-extract-status');
     
-    if(!confirm("모든 데이터를 분석하여 AI가 읽기 좋은 텍스트 파일로 추출하시겠습니까?\n데이터 양에 따라 수 초가 소요될 수 있습니다.")) return;
+    if(!confirm("모든 데이터를 분석하여 AI가 읽기 좋은 텍스트 파일로 추출하시겠습니까?\n(주령, 사진 메모, DBP/Mean, 데일리 로그가 100% 포함됩니다.)")) return;
 
     btn.disabled = true;
     btn.style.background = '#ccc';
     statusText.innerHTML = '<div class="loader"></div> 데이터를 구조화하는 중...';
 
     try {
-        // 1. 모든 관련 데이터 한 번에 가져오기
-        const [rSnap, mSnap, cSnap] = await Promise.all([
+        const [rSnap, mSnap, cSnap, dailySnap, doseSnap] = await Promise.all([
             db.collection("rats").get(),
             db.collection("measurements").get(),
-            db.collection("cohortNotes").get()
+            db.collection("cohortNotes").get(),
+            db.collection("dailyLogs").get(),
+            db.collection("doseLogs").get()
         ]);
 
-        // 2. 코호트 메모 정리 (조건)
         const cohortInfo = {};
         cSnap.forEach(doc => { cohortInfo[doc.id] = doc.data().memo || "조건 미기재"; });
 
-        // 3. 혈압/체중 데이터 정리 (Rat ID 기준으로 묶기)
         const measData = {};
-        mSnap.forEach(doc => {
-            const d = doc.data();
-            if (!measData[d.ratId]) measData[d.ratId] = [];
-            measData[d.ratId].push(d);
-        });
+        mSnap.forEach(doc => { const d = doc.data(); if (!measData[d.ratId]) measData[d.ratId] = []; measData[d.ratId].push(d); });
+        
+        const dailyData = {};
+        dailySnap.forEach(doc => { const d = doc.data(); if (!dailyData[d.ratId]) dailyData[d.ratId] = []; dailyData[d.ratId].push(d); });
 
-        // 4. 구조화된 텍스트 생성 시작
+        const doseData = {};
+        doseSnap.forEach(doc => { const d = doc.data(); if (!doseData[d.ratId]) doseData[d.ratId] = []; doseData[d.ratId].push(d); });
+
         let aiText = `[SYSTEM PROMPT & CONTEXT]\n`;
         aiText += `당신은 최고 수준의 신경외과 및 기초의학 연구원입니다. 아래 제공되는 데이터는 뇌동맥류(Cerebral Aneurysm, ARE) 동물 모델(Rat)의 Raw Data입니다.\n`;
-        aiText += `각 코호트별 실험 조건, 개체별 생존 여부, 사망 원인(COD), 동맥류 유무(ARE), 타임라인(수술일, 사망일, MR 촬영일, 샘플 채취일), 생리적 수치(혈압, 체중)가 포함되어 있습니다.\n`;
-        aiText += `데이터를 면밀히 분석하여, 시점별(예: MR 촬영 시점과 샘플 획득 시점의 매칭) 비교, 실험군 간의 병태생리학적 차이 등을 파악하고 SCI급 논문 주제 도출 및 초안 작성에 활용하십시오.\n\n`;
+        aiText += `각 개체별 타임라인(수술, 사망, MR 촬영, 샘플 획득)과 해당 시점의 정확한 '주령(Age in weeks)'이 명시되어 있습니다.\n`;
+        aiText += `혈압(SBP/DBP/Mean), 체중(WT), 매일의 상태 점수(Daily Score), 약물 투여량 및 연구자의 특이사항 메모(Photo/Sample Memos)까지 모두 활용하여 SCI급 논문 분석 및 초안 작성을 수행하십시오.\n\n`;
         aiText += `=================================================\n\n`;
         
         aiText += `[1. COHORT EXPERIMENTAL CONDITIONS (코호트별 실험 조건)]\n`;
         
-        // 랫드를 코호트별로 분류
         const ratsByCohort = {};
-        rSnap.forEach(doc => {
-            const r = doc.data();
-            if (!ratsByCohort[r.cohort]) ratsByCohort[r.cohort] = [];
-            ratsByCohort[r.cohort].push(r);
-        });
-
-        // 코호트 번호순 정렬
+        rSnap.forEach(doc => { const r = doc.data(); if (!ratsByCohort[r.cohort]) ratsByCohort[r.cohort] = []; ratsByCohort[r.cohort].push(r); });
         const sortedCohorts = Object.keys(ratsByCohort).sort((a,b) => Number(a) - Number(b));
 
-        sortedCohorts.forEach(c => {
-            aiText += `- Cohort ${c}: ${cohortInfo[c] || '메모 없음'}\n`;
-        });
+        sortedCohorts.forEach(c => { aiText += `- Cohort ${c}: ${cohortInfo[c] || '메모 없음'}\n`; });
         aiText += `\n=================================================\n\n`;
 
-        aiText += `[2. RAT TIMELINES & OUTCOMES (개체별 타임라인 및 결과)]\n`;
+        aiText += `[2. RAT TIMELINES & ALL LOGS (개체별 상세 타임라인 및 전체 로그)]\n`;
 
         sortedCohorts.forEach(c => {
             aiText += `\n### COHORT ${c} ###\n`;
@@ -1113,35 +1107,40 @@ async function exportForAI() {
             rats.forEach(r => {
                 aiText += `\n▶ Rat ID: ${r.ratId}\n`;
                 
-                // 사망 및 ARE 정보
+                const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+                const arrDate = r.arrivalDate;
+                
+                const getAgeStr = (targetDateStr) => {
+                    if(!targetDateStr || !arrDate) return '';
+                    const target = new Date(targetDateStr);
+                    const base = new Date(arrDate);
+                    if(isNaN(target.getTime()) || isNaN(base.getTime())) return '';
+                    const age = arrAge + ((target - base) / (1000*60*60*24*7));
+                    return ` (${age.toFixed(1)} weeks old)`;
+                };
+
                 const cod = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '-');
-                aiText += `  - Status: ${r.status} ${r.deathDate ? `(Death Date: ${r.deathDate})` : ''}\n`;
+                const deathAgeStr = r.deathDate ? getAgeStr(r.deathDate) : '';
+                aiText += `  - Status: ${r.status} ${r.deathDate ? `(Death Date: ${r.deathDate}${deathAgeStr})` : ''}\n`;
                 aiText += `  - Cause of Death (COD): ${cod}\n`;
                 aiText += `  - Aneurysm (ARE): ${r.are || '-'}\n`;
 
-                // 타임라인 계산 (POD: 수술 후 경과일)
                 aiText += `  - Timeline Events:\n`;
-                aiText += `    * Arrival: ${r.arrivalDate || '-'} (Age: ${r.arrivalAge || 6} weeks)\n`;
-                if (r.ovxDate) aiText += `    * OVX Surgery: ${r.ovxDate}\n`;
-                aiText += `    * Ligation Surgery (Day 0): ${r.surgeryDate || '-'}\n`;
+                aiText += `    * Arrival: ${r.arrivalDate || '-'} (Age: ${arrAge.toFixed(1)} weeks old)\n`;
+                if (r.ovxDate) aiText += `    * OVX Surgery: ${r.ovxDate}${getAgeStr(r.ovxDate)}\n`;
+                aiText += `    * Ligation Surgery (Day 0): ${r.surgeryDate || '-'}${getAgeStr(r.surgeryDate)}\n`;
                 
-                // MR 데이터
                 if (r.mrDates && r.mrDates.length > 0) {
                     const mrStr = r.mrDates.sort((a,b) => new Date(a.date) - new Date(b.date))
-                                    .map(m => `${m.timepoint}(${m.date})`).join(', ');
+                                    .map(m => `${m.timepoint} on ${m.date}${getAgeStr(m.date)}`).join(' | ');
                     aiText += `    * MR Scans: ${mrStr}\n`;
-                } else {
-                    aiText += `    * MR Scans: None\n`;
-                }
+                } else { aiText += `    * MR Scans: None\n`; }
 
-                // 샘플 데이터
                 if (r.sampleType && r.sampleType !== 'Fail') {
-                    aiText += `    * Sample Acquired: ${r.sampleType} on ${r.sampleDate || '-'} (Memo: ${r.sampleMemo || 'None'})\n`;
-                } else if (r.sampleType === 'Fail') {
-                    aiText += `    * Sample Acquired: Failed\n`;
-                }
+                    aiText += `    * Sample Acquired: ${r.sampleType} on ${r.sampleDate || '-'}${getAgeStr(r.sampleDate)} (Memo: ${r.sampleMemo || 'None'})\n`;
+                } else if (r.sampleType === 'Fail') { aiText += `    * Sample Acquired: Failed\n`; }
 
-                // 혈압/체중 데이터 (시점별 정렬)
+                // 1. 혈압/체중 데이터 (DBP, Mean 추가)
                 const ratMeas = measData[r.ratId] || [];
                 if (ratMeas.length > 0) {
                     ratMeas.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1149,17 +1148,45 @@ async function exportForAI() {
                         const tp = m.timepoint || m.date;
                         let str = `[${tp}]`;
                         if (m.sbp) str += ` SBP:${m.sbp}`;
+                        if (m.dbp) str += ` DBP:${m.dbp}`;
+                        if (m.mean) str += ` Mean:${m.mean}`;
                         if (m.weight) str += ` WT:${m.weight}g`;
                         return str;
                     });
                     aiText += `  - Measurements (BP/WT): ${measStrArr.join(' | ')}\n`;
-                } else {
-                    aiText += `  - Measurements: No data\n`;
+                } else { aiText += `  - Measurements (BP/WT): No data\n`; }
+
+                // 2. 데일리 체크
+                const ratDaily = dailyData[r.ratId] || [];
+                if (ratDaily.length > 0) {
+                    ratDaily.sort((a, b) => new Date(a.date) - new Date(b.date));
+                    let dailyStrArr = ratDaily.map(d => {
+                        const act = d.scores?.activity !== undefined ? d.scores.activity : (d.scores?.act || 0);
+                        const fur = d.scores?.fur || 0;
+                        const eye = d.scores?.eye || 0;
+                        return `[${d.date}] Score:${d.totalScore}(A${act}/F${fur}/E${eye}) Memo:${d.note || '-'}`;
+                    });
+                    aiText += `  - Daily Checks: ${dailyStrArr.join(' | ')}\n`;
+                }
+
+                // 3. 투약 기록 (부피 ml 추가)
+                const ratDose = doseData[r.ratId] || [];
+                if (ratDose.length > 0) {
+                    ratDose.sort((a, b) => new Date(a.date) - new Date(b.date));
+                    let doseStrArr = ratDose.map(d => {
+                        return `[${d.date}] WT:${d.weight}g Dose:${Number(d.doseMg).toFixed(2)}mg Vol:${Number(d.volMl).toFixed(2)}ml`;
+                    });
+                    aiText += `  - Dosing History: ${doseStrArr.join(' | ')}\n`;
+                }
+
+                // 4. 사진 메모 기록 (AI에게 특이사항 전달용)
+                if (r.photos && r.photos.length > 0) {
+                    const photoStrs = r.photos.map(p => `[${p.timepoint || p.photoDate || 'Unspecified'}] ${p.memo || 'No memo'}`);
+                    aiText += `  - Researcher Memos (from Photos): ${photoStrs.join(' | ')}\n`;
                 }
             });
         });
 
-        // 5. 다운로드 처리
         const today = new Date();
         const dateStr = today.getFullYear() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0');
         const fileName = `AI_Research_Data_Cerebral_Aneurysm_${dateStr}.txt`;
