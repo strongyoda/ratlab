@@ -418,13 +418,24 @@ async function loadDetailData() {
                     <div style="background:#fff; border:1px solid #ddd; padding:10px; border-radius:6px;">
                         <div style="font-size:0.85rem; font-weight:bold; color:var(--navy); margin-bottom:8px;">📷 MR 촬영 이력</div>
                         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-                            ${(rat.mrDates || []).map((mr, idx) => `
-                                <span style="background:#f1f3f5; border:1px solid #ccc; padding:3px 8px; border-radius:4px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px;">
-                                    <b>${mr.timepoint}</b>: ${mr.date} 
-                                    <i class="material-icons" style="font-size:1.1rem; color:var(--red); cursor:pointer;" onclick="removeMrDate('${docId}', ${idx})">cancel</i>
-                                </span>
-                            `).join('')}
-                            ${(!rat.mrDates || rat.mrDates.length === 0) ? '<span style="font-size:0.8rem; color:#888;">기록된 MR이 없습니다.</span>' : ''}
+                            ${(() => {
+                                const mrArr = rat.mrDates || [];
+                                if(mrArr.length === 0) return '<span style="font-size:0.8rem; color:#888;">기록된 MR이 없습니다.</span>';
+                                
+                                // 진짜 순서(DB 인덱스)를 기억한 상태로, 보여줄 때만 주령(timepoint) 순서대로 예쁘게 자동 정렬
+                                return mrArr.map((mr, idx) => ({ ...mr, originalIdx: idx }))
+                                    .sort((a, b) => {
+                                        const wA = tpWeight[a.timepoint] !== undefined ? tpWeight[a.timepoint] : 9999;
+                                        const wB = tpWeight[b.timepoint] !== undefined ? tpWeight[b.timepoint] : 9999;
+                                        return wA - wB;
+                                    })
+                                    .map(mr => `
+                                        <span style="background:#f1f3f5; border:1px solid #ccc; padding:3px 8px; border-radius:4px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px;">
+                                            <b>${mr.timepoint}</b>: ${mr.date} 
+                                            <i class="material-icons" style="font-size:1.1rem; color:var(--red); cursor:pointer;" onclick="removeMrDate('${docId}', ${mr.originalIdx})">cancel</i>
+                                        </span>
+                                    `).join('');
+                            })()}
                         </div>
                         <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed #eee; padding-top:8px;">
                             <select id="new-mr-tp" style="width:90px; padding:4px; font-size:0.85rem;">
@@ -683,16 +694,41 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
             }
 
             if(r.surgeryDate && r.mrDates) {
+                const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
                 const surgDt = new Date(r.surgeryDate);
+                const isValidSurg = !isNaN(surgDt.getTime());
+                const arrDt = r.arrivalDate ? new Date(r.arrivalDate) : null;
+                const isValidArr = arrDt && !isNaN(arrDt.getTime());
+                
                 r.mrDates.forEach(mr => {
                     if(mr.timepoint === 'Death') return;
                     const expDays = podDaysMap[mr.timepoint];
                     if(expDays !== undefined && mr.date) {
-                        const actDays = (new Date(mr.date) - surgDt) / (1000*60*60*24);
-                        const dev = actDays - expDays;
-                        if(!mrStats[mr.timepoint]) mrStats[mr.timepoint] = { sum:0, cnt:0 };
-                        mrStats[mr.timepoint].sum += dev;
-                        mrStats[mr.timepoint].cnt++;
+                        const mrDt = new Date(mr.date);
+                        if(isNaN(mrDt.getTime())) return; // 🚨 유효하지 않은 MR 날짜는 평균 계산에서 제외
+                        
+                        if(!mrStats[mr.timepoint]) mrStats[mr.timepoint] = { sum:0, cnt:0, sumAge:0, ageCnt:0 };
+
+                        // 편차 계산 (수술일이 정상일 때만)
+                        if(isValidSurg) {
+                            const actDays = (mrDt - surgDt) / (1000*60*60*24);
+                            const dev = actDays - expDays;
+                            mrStats[mr.timepoint].sum += dev;
+                            mrStats[mr.timepoint].cnt++;
+                        }
+                        
+                        // 주령 계산 (반입일 우선, 없으면 수술일 기준 7.5주령으로 가상 계산)
+                        let age = NaN;
+                        if(isValidArr) {
+                            age = arrAge + ((mrDt - arrDt) / (1000*60*60*24*7));
+                        } else if(isValidSurg) {
+                            age = 7.5 + ((mrDt - surgDt) / (1000*60*60*24*7));
+                        }
+
+                        if(!isNaN(age)) {
+                            mrStats[mr.timepoint].sumAge += age;
+                            mrStats[mr.timepoint].ageCnt++;
+                        }
                     }
                 });
             }
@@ -701,9 +737,25 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         const avgSurgAge = surgAgeCnt > 0 ? (surgAgeSum/surgAgeCnt).toFixed(1) : '-';
         const mrKeys = Object.keys(mrStats).sort((a,b) => podDaysMap[a] - podDaysMap[b]);
         const mrHtml = mrKeys.length === 0 ? '<span style="color:#888;">데이터 없음</span>' : mrKeys.map(k => {
-            const avgDev = (mrStats[k].sum / mrStats[k].cnt).toFixed(1);
-            const devStr = avgDev > 0 ? `+${avgDev}` : avgDev;
-            return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${devStr}일 (n=${mrStats[k].cnt})</span>`;
+            const stat = mrStats[k];
+            
+            let devStr = '-';
+            if(stat.cnt > 0) {
+                const avgDev = (stat.sum / stat.cnt).toFixed(1);
+                devStr = avgDev > 0 ? `+${avgDev}` : avgDev;
+            }
+
+            let ageStr = '-';
+            let printCnt = stat.cnt > 0 ? stat.cnt : stat.ageCnt; // 표시할 n수
+            if(stat.ageCnt > 0) {
+                ageStr = (stat.sumAge / stat.ageCnt).toFixed(1);
+            }
+
+            if (k === 'D00' || k === 'D0') {
+                return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
+            } else {
+                return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 / 편차 ${devStr}일 (n=${printCnt})</span>`;
+            }
         }).join('');
 
         let surgFailN = 0, areO = 0, areX = 0, areMicro = 0, areMacro = 0, areUnk = 0;
@@ -774,15 +826,11 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         finalHtml += `
         <div class="card" style="border-left:5px solid #9c27b0;">
             <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률</h4>
-            <div style="text-align:right; margin-bottom:15px;">
-                <select id="are-filter-${uniqueSuffix}" style="padding:4px 8px; border-radius:4px; border:1px solid #1a237e;"
-                    data-total="${totalN}" data-valid="${validN}" data-o="${areO}" data-micro="${areMicro}" data-macro="${areMacro}" data-unk="${areUnk}"
-                    onchange="updateAreBar(this, '${uniqueSuffix}')">
-                    <option value="all">전체 ARE (O)</option>
-                    <option value="micro">micro</option>
-                    <option value="macro">macro</option>
-                    <option value="미확인">미확인</option>
-                </select>
+            <div id="are-data-wrap-${uniqueSuffix}" style="display:flex; justify-content:flex-end; gap:15px; margin-bottom:15px; font-size:0.9rem;"
+                data-total="${totalN}" data-valid="${validN}" data-micro="${areMicro}" data-macro="${areMacro}" data-unk="${areUnk}">
+                <label style="cursor:pointer;"><input type="checkbox" value="micro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> micro</label>
+                <label style="cursor:pointer;"><input type="checkbox" value="macro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> macro</label>
+                <label style="cursor:pointer;"><input type="checkbox" value="미확인" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> 미확인</label>
             </div>
             <div style="margin-bottom: 15px;">
                 <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
@@ -874,7 +922,8 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
             const codCounts = {}; deadRats.forEach(r => { const cod = r.cod || extractLegacyCod(r.codFull) || 'Unknown'; codCounts[cod] = (codCounts[cod] || 0) + 1; });
             const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; rats.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; });
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
-            new Chart(document.getElementById(codChartId), { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#C9CBCF'] }] }, options: dOpt });
+            const codBgColors = Object.keys(codCounts).map(k => typeof codColors !== 'undefined' && codColors[k] ? codColors[k] : '#C9CBCF');
+            new Chart(document.getElementById(codChartId), { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: codBgColors }] }, options: dOpt });
             new Chart(document.getElementById(areChartId), { type: 'doughnut', data: { labels: Object.keys(areCountsObj), datasets: [{ data: Object.values(areCountsObj), backgroundColor: ['#1565C0', '#4CAF50', '#9E9E9E'] }] }, options: dOpt });
         }
 
@@ -1004,16 +1053,41 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             }
 
             if(r.surgeryDate && r.mrDates) {
+                const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
                 const surgDt = new Date(r.surgeryDate);
+                const isValidSurg = !isNaN(surgDt.getTime());
+                const arrDt = r.arrivalDate ? new Date(r.arrivalDate) : null;
+                const isValidArr = arrDt && !isNaN(arrDt.getTime());
+                
                 r.mrDates.forEach(mr => {
                     if(mr.timepoint === 'Death') return;
                     const expDays = podDaysMap[mr.timepoint];
                     if(expDays !== undefined && mr.date) {
-                        const actDays = (new Date(mr.date) - surgDt) / (1000*60*60*24);
-                        const dev = actDays - expDays;
-                        if(!mrStats[mr.timepoint]) mrStats[mr.timepoint] = { sum:0, cnt:0 };
-                        mrStats[mr.timepoint].sum += dev;
-                        mrStats[mr.timepoint].cnt++;
+                        const mrDt = new Date(mr.date);
+                        if(isNaN(mrDt.getTime())) return; // 🚨 유효하지 않은 MR 날짜는 평균 계산에서 제외
+                        
+                        if(!mrStats[mr.timepoint]) mrStats[mr.timepoint] = { sum:0, cnt:0, sumAge:0, ageCnt:0 };
+
+                        // 편차 계산 (수술일이 정상일 때만)
+                        if(isValidSurg) {
+                            const actDays = (mrDt - surgDt) / (1000*60*60*24);
+                            const dev = actDays - expDays;
+                            mrStats[mr.timepoint].sum += dev;
+                            mrStats[mr.timepoint].cnt++;
+                        }
+                        
+                        // 주령 계산 (반입일 우선, 없으면 수술일 기준 7.5주령으로 가상 계산)
+                        let age = NaN;
+                        if(isValidArr) {
+                            age = arrAge + ((mrDt - arrDt) / (1000*60*60*24*7));
+                        } else if(isValidSurg) {
+                            age = 7.5 + ((mrDt - surgDt) / (1000*60*60*24*7));
+                        }
+
+                        if(!isNaN(age)) {
+                            mrStats[mr.timepoint].sumAge += age;
+                            mrStats[mr.timepoint].ageCnt++;
+                        }
                     }
                 });
             }
@@ -1022,9 +1096,25 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const avgSurgAge = surgAgeCnt > 0 ? (surgAgeSum/surgAgeCnt).toFixed(1) : '-';
         const mrKeys = Object.keys(mrStats).sort((a,b) => podDaysMap[a] - podDaysMap[b]);
         const mrHtml = mrKeys.length === 0 ? '<span style="color:#888;">데이터 없음</span>' : mrKeys.map(k => {
-            const avgDev = (mrStats[k].sum / mrStats[k].cnt).toFixed(1);
-            const devStr = avgDev > 0 ? `+${avgDev}` : avgDev;
-            return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${devStr}일 (n=${mrStats[k].cnt})</span>`;
+            const stat = mrStats[k];
+            
+            let devStr = '-';
+            if(stat.cnt > 0) {
+                const avgDev = (stat.sum / stat.cnt).toFixed(1);
+                devStr = avgDev > 0 ? `+${avgDev}` : avgDev;
+            }
+
+            let ageStr = '-';
+            let printCnt = stat.cnt > 0 ? stat.cnt : stat.ageCnt; // 표시할 n수
+            if(stat.ageCnt > 0) {
+                ageStr = (stat.sumAge / stat.ageCnt).toFixed(1);
+            }
+
+            if (k === 'D00' || k === 'D0') {
+                return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
+            } else {
+                return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 / 편차 ${devStr}일 (n=${printCnt})</span>`;
+            }
         }).join('');
 
         let surgFailN = 0, areO = 0, areX = 0, areMicro = 0, areMacro = 0, areUnk = 0;
@@ -1088,15 +1178,11 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         finalHtml += `
         <div class="card" style="border-left:5px solid #9c27b0;">
             <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률</h4>
-            <div style="text-align:right; margin-bottom:15px;">
-                <select id="are-filter-${uniqueSuffix}" style="padding:4px 8px; border-radius:4px; border:1px solid #1a237e;"
-                    data-total="${totalN}" data-valid="${validN}" data-o="${areO}" data-micro="${areMicro}" data-macro="${areMacro}" data-unk="${areUnk}"
-                    onchange="updateAreBar(this, '${uniqueSuffix}')">
-                    <option value="all">전체 ARE (O)</option>
-                    <option value="micro">micro</option>
-                    <option value="macro">macro</option>
-                    <option value="미확인">미확인</option>
-                </select>
+            <div id="are-data-wrap-${uniqueSuffix}" style="display:flex; justify-content:flex-end; gap:15px; margin-bottom:15px; font-size:0.9rem;"
+                data-total="${totalN}" data-valid="${validN}" data-micro="${areMicro}" data-macro="${areMacro}" data-unk="${areUnk}">
+                <label style="cursor:pointer;"><input type="checkbox" value="micro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> micro</label>
+                <label style="cursor:pointer;"><input type="checkbox" value="macro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> macro</label>
+                <label style="cursor:pointer;"><input type="checkbox" value="미확인" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> 미확인</label>
             </div>
             <div style="margin-bottom: 15px;">
                 <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
@@ -1166,7 +1252,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             const codCounts = {}; deadRats.forEach(r => { const cod = r.cod || extractLegacyCod(r.codFull) || 'Unknown'; codCounts[cod] = (codCounts[cod] || 0) + 1; });
             const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; ratDataList.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; });
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
-            new Chart(document.getElementById(codChartId), { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#C9CBCF'] }] }, options: dOpt });
+            const codBgColors = Object.keys(codCounts).map(k => typeof codColors !== 'undefined' && codColors[k] ? codColors[k] : '#C9CBCF');
+            new Chart(document.getElementById(codChartId), { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: codBgColors }] }, options: dOpt });
             new Chart(document.getElementById(areChartId), { type: 'doughnut', data: { labels: Object.keys(areCountsObj), datasets: [{ data: Object.values(areCountsObj), backgroundColor: ['#1565C0', '#4CAF50', '#9E9E9E'] }] }, options: dOpt });
         }
 
@@ -1222,7 +1309,7 @@ async function loadGroupComparison() {
     let globalMaxSbp = 0;
     let globalMaxWt = 0;
     let globalMaxPod = 0;
-
+    
     let allRatIds = [];
     let allRatsObj = [];
     let surgeryMap = {};
@@ -1235,7 +1322,6 @@ async function loadGroupComparison() {
         const ratPromises = uniqueCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
         const ratSnaps = await Promise.all(ratPromises);
         
-
 
         ratSnaps.forEach(snap => {
             snap.forEach(d => {
@@ -1457,6 +1543,17 @@ async function analyzeTrend() {
             titleA = `${critText} < ${criteriaVal} (n=${groupTarget.length})`;
             titleB = `${critText} ≥ ${criteriaVal} (n=${groupControl.length})`;
         }
+
+        const titleAFull = `${titleA} (n=${groupTarget.length})`;
+        const titleBFull = `${titleB} (n=${groupControl.length})`;
+
+        // 👇 신규 추가: 조건 분석에도 비교군 통합 타임라인 렌더링 👇
+        const groupsData = [
+            { name: titleA, color: '#E6194B', rats: groupTarget }, // Group A (조건 부합)
+            { name: titleB, color: '#3CB44B', rats: groupControl } // Group B (대조군)
+        ];
+        renderUnifiedTimeline(groupsData, container);
+        // 👆 여기까지 👆
 
         await runRatListAnalysis(groupTarget, 'trend-res-low', '_tr_low', titleA, fixedOptions, 'low');
         await runRatListAnalysis(groupControl, 'trend-res-high', '_tr_high', titleB, fixedOptions, 'high');
@@ -1696,16 +1793,20 @@ function updateTrendScatter(filterTp, groupKey) {
     });
 }
 
-function updateAreBar(selectEl, suffix) {
-    const mode = selectEl.value; // 'all', 'micro', 'macro', '미확인'
-    const totalN = Number(selectEl.dataset.total);
-    const validN = Number(selectEl.dataset.valid);
-    let targetCount = 0;
+function updateAreBarMulti(suffix) {
+    const wrap = document.getElementById(`are-data-wrap-${suffix}`);
+    if (!wrap) return;
     
-    if(mode === 'all') targetCount = Number(selectEl.dataset.o);
-    else if(mode === 'micro') targetCount = Number(selectEl.dataset.micro);
-    else if(mode === 'macro') targetCount = Number(selectEl.dataset.macro);
-    else if(mode === '미확인') targetCount = Number(selectEl.dataset.unk);
+    const totalN = Number(wrap.dataset.total);
+    const validN = Number(wrap.dataset.valid);
+    const chks = wrap.querySelectorAll('input[type="checkbox"]:checked');
+    
+    let targetCount = 0;
+    chks.forEach(chk => {
+        if(chk.value === 'micro') targetCount += Number(wrap.dataset.micro);
+        if(chk.value === 'macro') targetCount += Number(wrap.dataset.macro);
+        if(chk.value === '미확인') targetCount += Number(wrap.dataset.unk);
+    });
 
     const rateTotal = totalN > 0 ? ((targetCount / totalN) * 100).toFixed(1) : 0;
     const rateValid = validN > 0 ? ((targetCount / validN) * 100).toFixed(1) : 0;
@@ -2134,5 +2235,4 @@ function renderUnifiedTimeline(groupsData, container) {
             }
         });
     }, 50);
-
 }
