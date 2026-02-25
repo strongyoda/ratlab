@@ -22,7 +22,7 @@ async function searchForEdit() {
         const currentAre = rData.are || '';
         let areMain = currentAre.split(' ')[0] || '';
         let areSub = currentAre.split(' ')[1] ? currentAre.split(' ')[1].replace(/[()]/g, '') : '';
-        const mrOpts = ['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','Death'];
+        const mrOpts = ['-','D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','Death'];
 
         let html = `
         <div class="edit-container">
@@ -1004,7 +1004,7 @@ async function saveCodFinal() {
     }
 }
 
-function openSimpleCod(docId, currentCod, currentAre) {
+function openSimpleCod(docId, currentCod, currentAre, currentDeathDate = '') {
     activeCodRatId = docId;
     document.getElementById('modal-cod').value = currentCod && currentCod !== '미기록' ? currentCod : '';
     
@@ -1018,6 +1018,26 @@ function openSimpleCod(docId, currentCod, currentAre) {
     document.getElementById('modal-are-sub').value = sub;
     document.getElementById('modal-are-sub').style.display = main === 'O' ? 'block' : 'none';
     
+    // 👇 사망일 필드 동적 생성 👇
+    let deathInputBox = document.getElementById('modal-death-date-box');
+    if (!deathInputBox) {
+        const modalContent = document.querySelector('#simple-cod-modal > div');
+        if(modalContent) {
+            const btnDiv = modalContent.querySelector('div[style*="justify-content: flex-end"]') || modalContent.lastElementChild;
+            deathInputBox = document.createElement('div');
+            deathInputBox.id = 'modal-death-date-box';
+            deathInputBox.style.marginBottom = '15px';
+            deathInputBox.innerHTML = `
+                <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">사망일 (선택)</label>
+                <input type="date" id="modal-death-date" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+            `;
+            modalContent.insertBefore(deathInputBox, btnDiv);
+        }
+    }
+    if(document.getElementById('modal-death-date')) {
+        document.getElementById('modal-death-date').value = currentDeathDate || '';
+    }
+
     document.getElementById('simple-cod-modal').style.display = 'flex';
 }
 
@@ -1025,17 +1045,25 @@ async function saveSimpleCod() {
     const cod = document.getElementById('modal-cod').value;
     const areMain = document.getElementById('modal-are-main').value;
     const areSub = document.getElementById('modal-are-sub').value;
+    const deathDateEl = document.getElementById('modal-death-date');
     
     if(!cod || !areMain) return alert("COD와 ARE를 모두 선택해주세요.");
     
-    const areStr = areMain === 'O' ? `O (${areSub})` : 'X';
+    const areStr = areMain === 'O' ? `O (${areSub})` : (areMain === 'X' ? 'X' : '');
     
+    const updateData = {
+        cod: cod,
+        are: areStr,
+        codFull: `${cod} / ARE: ${areStr}`
+    };
+    
+    if (deathDateEl && deathDateEl.value) {
+        updateData.deathDate = deathDateEl.value;
+        updateData.status = '사망';
+    }
+
     try {
-        await db.collection("rats").doc(activeCodRatId).update({
-            cod: cod,
-            are: areStr,
-            codFull: `${cod} / ARE: ${areStr}` // 구버전 차트 하위 호환을 위해 텍스트로 합쳐서 유지
-        });
+        await db.collection("rats").doc(activeCodRatId).update(updateData);
         alert("저장되었습니다.");
         document.getElementById('simple-cod-modal').style.display = 'none';
         clearRatsCache();
@@ -1045,6 +1073,7 @@ async function saveSimpleCod() {
         alert("오류: " + e.message);
     }
 }
+
 
 // ============================================================
 //  AI 논문 작성용 풀-컨텍스트 구조화 데이터 추출 로직
