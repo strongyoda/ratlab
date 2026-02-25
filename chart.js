@@ -300,7 +300,7 @@ async function loadDetailData() {
             const displayAre = rat.are || '미기록';
             deathInfo = `<div class="info-item" style="grid-column: span 2; color:var(--red); border:1px solid var(--red); background:#ffebee;">
                 <b>사망: ${rat.deathDate||'날짜미상'} (POD ${pod})</b>
-                <button class="btn-red btn-small" style="float:right; padding:2px 8px;" onclick="openSimpleCod('${docId}', '${displayCod}', '${displayAre}')">원인 기록</button>
+                <button class="btn-red btn-small" style="float:right; padding:2px 8px;" onclick="openSimpleCod('${docId}', '${displayCod}', '${displayAre}', '${rat.deathDate||''}')">원인 기록</button>
                 <br><span style="font-size:0.9rem; color:#d32f2f; font-weight:bold;">COD: ${displayCod} / ARE: ${displayAre}</span>
             </div>`;
         }
@@ -648,9 +648,8 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
 
         const standardKeys = Object.keys(globalPodMap).filter(k => k === 'Arrival' || k === 'D00' || k === 'D0' || k === 'D2' || k.startsWith('W'));
         standardKeys.forEach(k => { tickLabelMap[globalPodMap[k]] = k; });
-
         const arrivalPod = globalPodMap["Arrival"];
-        const podToLabel = (pod) => pod <= arrivalPod ? "Arrival" : (tickLabelMap[pod] || `D${pod}`);
+        const podToLabel = (pod) => pod === arrivalPod ? "Arrival" : (tickLabelMap[pod] || `D${pod}`);
 
         const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: arrivalPod, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < arrivalPod) ? (arr[0] - 2) : arrivalPod; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
         const rangeWtX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksWt);
@@ -934,10 +933,20 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                 if(endAge < minAge) minAge = Math.floor(endAge); if(endAge > maxAge) maxAge = Math.ceil(endAge);
             });
             if(minAge === 999) minAge = 6;
-            const survLabels = [], survData = []; let currentAlive = rats.length;
-            for (let w = minAge; w <= maxAge; w++) { survLabels.push(`${w}주령`); if (deathByAge[w]) currentAlive -= deathByAge[w]; survData.push((currentAlive / rats.length) * 100); }
-            new Chart(document.getElementById(sChartId), { type: 'line', data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] }, options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
 
+            // 👇 전체 비교군 통일 축 적용
+            const targetMaxAge = (fixedOptions && fixedOptions.maxAge) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
+
+            const survLabels = [], survData = []; 
+            let currentAlive = rats.length;
+            
+            for (let w = minAge; w <= targetMaxAge; w++) { 
+                survLabels.push(`${w}주령`); 
+                if (deathByAge[w]) currentAlive -= deathByAge[w]; 
+                survData.push((currentAlive / rats.length) * 100); 
+            }
+            
+            new Chart(document.getElementById(sChartId), { type: 'line', data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] }, options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
             const codCounts = {}; deadRats.forEach(r => { const cod = r.cod || extractLegacyCod(r.codFull) || 'Unknown'; codCounts[cod] = (codCounts[cod] || 0) + 1; });
             const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; rats.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; });
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
@@ -1264,10 +1273,21 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 if(endAge < minAge) minAge = Math.floor(endAge); if(endAge > maxAge) maxAge = Math.ceil(endAge);
             });
             if(minAge === 999) minAge = 6;
-            const survLabels = [], survData = []; let currentAlive = ratDataList.length;
-            for (let w = minAge; w <= maxAge; w++) { survLabels.push(`${w}주령`); if (deathByAge[w]) currentAlive -= deathByAge[w]; survData.push((currentAlive / ratDataList.length) * 100); }
-            new Chart(document.getElementById(sChartId), { type: 'line', data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] }, options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
+            
+            // 👇 전체 비교군 중 가장 긴 주령(fixedOptions.maxAge)을 목표로 설정
+            const targetMaxAge = (fixedOptions && fixedOptions.maxAge) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
 
+            const survLabels = [], survData = []; 
+            let currentAlive = ratDataList.length;
+            
+            // 내 그룹의 데이터가 끝나도, targetMaxAge까지 그래프를 평평하게 계속 그림
+            for (let w = minAge; w <= targetMaxAge; w++) { 
+                survLabels.push(`${w}주령`); 
+                if (deathByAge[w]) currentAlive -= deathByAge[w]; 
+                survData.push((currentAlive / ratDataList.length) * 100); 
+            }
+            
+            new Chart(document.getElementById(sChartId), { type: 'line', data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] }, options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
             const codCounts = {}; deadRats.forEach(r => { const cod = r.cod || extractLegacyCod(r.codFull) || 'Unknown'; codCounts[cod] = (codCounts[cod] || 0) + 1; });
             const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; ratDataList.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; });
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
@@ -1301,6 +1321,11 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
     } catch (e) { console.error(e); resDiv.innerHTML = headerHtml + `<p style="color:red">오류 발생: ${e.message}</p>`; }
 }
 
+let globalLabels = [];
+let globalMaxSbp = 0;
+let globalMaxWt = 0;
+let globalMaxPod = 0;
+let globalMaxAge = 0; // 👈 이거 추가!
 
 // [2] 그룹 비교 로딩 함수 (전역변수 초기화 추가)
 async function loadGroupComparison() {
@@ -1347,6 +1372,17 @@ async function loadGroupComparison() {
                 const r = d.data();
                 allRatsObj.push(r);
                 allRatIds.push(r.ratId);
+                if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
+                // 👇 주령 계산 추가
+                const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+                let endAge = arrAge;
+                if(r.status === '사망' && r.deathDate && r.arrivalDate) {
+                    endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
+                } else if(r.arrivalDate) {
+                    endAge = arrAge + ((new Date() - new Date(r.arrivalDate))/(1000*60*60*24*7));
+                }
+                if(endAge > globalMaxAge) globalMaxAge = endAge;
+
                 if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
                 if(r.surgeryDate && r.deathDate) {
                     const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24));
@@ -1415,7 +1451,8 @@ async function loadGroupComparison() {
             labels: globalLabels,
             maxSbp: globalMaxSbp,
             maxWt: globalMaxWt,
-            maxPod: globalMaxPod
+            maxPod: globalMaxPod,
+            maxAge: globalMaxAge
         }, title);
     }
 }
@@ -1474,9 +1511,24 @@ async function analyzeTrend() {
         const stdPodMap = globalPodMap, tempColumns = [], labelSet = new Set();
         const showAll = document.getElementById('trend-show-all')?.checked;
         const measMap = {}; 
+        // 👇 전체 최대 주령 계산용 변수 추가
+        let globalMaxAge = 0;
 
         measSnaps.forEach((snap, idx) => {
             const rid = allRatIds[idx];
+            // 랫드 정보 찾기 (allRats 배열에서)
+            const rInfo = allRats.find(r => r.ratId === rid);
+            if(rInfo) {
+                const arrAge = rInfo.arrivalAge ? Number(rInfo.arrivalAge) : 6;
+                let endAge = arrAge;
+                if(rInfo.status === '사망' && rInfo.deathDate && rInfo.arrivalDate) {
+                    endAge = arrAge + ((new Date(rInfo.deathDate) - new Date(rInfo.arrivalDate)) / (1000*60*60*24*7));
+                } else if (rInfo.arrivalDate) {
+                    endAge = arrAge + ((new Date() - new Date(rInfo.arrivalDate)) / (1000*60*60*24*7));
+                }
+                if(endAge > globalMaxAge) globalMaxAge = endAge;
+            }
+            
             const surgDate = surgeryMap[rid];
             if(!measMap[rid]) measMap[rid] = {};
 
@@ -1512,7 +1564,7 @@ async function analyzeTrend() {
         if (mode === 'cod') {
             allRats.forEach(r => {
                 const myCod = r.cod || extractLegacyCod(r.codFull);
-                const myAre = r.are ? `ARE: ${r.are.split(' ')[0]}` : '';
+                const myAre = r.are ? `ARE: ${r.are}` : '';
 
                 // 선택된 키워드 중 COD와 ARE 중 하나라도 정확히 일치하면 포함
                 const hasCause = selectedCods.some(key => {
@@ -1550,7 +1602,8 @@ async function analyzeTrend() {
         const divA = document.createElement('div'); divA.className = 'trend-half'; divA.id = 'trend-res-low'; splitBox.appendChild(divA);
         const divB = document.createElement('div'); divB.className = 'trend-half'; divB.id = 'trend-res-high'; splitBox.appendChild(divB);
 
-        const fixedOptions = { labels: globalLabels, maxSbp: globalMaxSbp, maxWt: globalMaxWt, maxPod: globalMaxPod, mode: mode };
+        // 👇 maxAge 옵션 추가
+        const fixedOptions = { labels: globalLabels, maxSbp: globalMaxSbp, maxWt: globalMaxWt, maxPod: globalMaxPod, maxAge: globalMaxAge, mode: mode };
 
         let titleA = '', titleB = '';
         if(mode === 'cod') {
@@ -1977,7 +2030,22 @@ async function loadCohortComparison() {
         const ratSnaps = await Promise.all(ratPromises);
         
         let allRats = [];
-        ratSnaps.forEach(snap => snap.forEach(d => allRats.push(d.data())));
+        let globalMaxAge = 0; // 👈 신규 추가: 전체 코호트의 최대 주령 변수
+
+        ratSnaps.forEach(snap => snap.forEach(d => {
+            const r = d.data();
+            allRats.push(r);
+            
+            // 👈 신규 추가: 각 쥐의 주령을 계산해서 가장 큰 값을 globalMaxAge에 저장
+            const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+            let endAge = arrAge;
+            if(r.status === '사망' && r.deathDate && r.arrivalDate) {
+                endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
+            } else if(r.arrivalDate) {
+                endAge = arrAge + ((new Date() - new Date(r.arrivalDate))/(1000*60*60*24*7));
+            }
+            if(endAge > globalMaxAge) globalMaxAge = endAge;
+        }));
 
         const measPromises = allRats.map(r => db.collection("measurements").where("ratId", "==", r.ratId).get());
         const measSnaps = await Promise.all(measPromises);
@@ -2009,6 +2077,7 @@ async function loadCohortComparison() {
             maxX: globalMaxX + 2,
             maxSbp: globalMaxSbp,
             maxWt: globalMaxWt,
+            maxAge: globalMaxAge, // 👈 신규 추가: 계산된 최대 주령 옵션을 하위 차트로 넘김
             standardTicks: Array.from(unionStandardTicks)
         };
 
@@ -2079,7 +2148,8 @@ async function loadTrendCodList() {
                 const r = doc.data();
                 if(r.status === '사망') {
                     const c = r.cod || extractLegacyCod(r.codFull);
-                    const a = r.are ? `ARE: ${r.are.split(' ')[0]}` : null;
+                    // 기존 코드: const a = r.are ? `ARE: ${r.are.split(' ')[0]}` : null;
+                    const a = r.are ? `ARE: ${r.are}` : null;
                     if(c && c !== "Unknown") codSet.add(c);
                     if(a && a !== "ARE: 미확인") areSet.add(a);
                 }
@@ -2120,7 +2190,7 @@ async function loadTrendCodList() {
     }
 }
 
-// 👇 [최종 기능] 그룹 통합 타임라인 (주령 6~30 고정 & 차선 분리 정렬 방식) 👇
+// 👇 [최종 기능] 그룹 통합 타임라인 (노란 점선 꿰매기 & 알파벳 마커 & Sham MR 표시) 👇
 function renderUnifiedTimeline(groupsData, container) {
     const existing = document.getElementById('unified-timeline-wrapper');
     if (existing) existing.remove();
@@ -2142,8 +2212,8 @@ function renderUnifiedTimeline(groupsData, container) {
     wrapper.innerHTML = `
         <h4 style="margin:0 0 5px 0; color:var(--navy); text-align:center;">⏳ 비교군 통합 이벤트 타임라인</h4>
         <div style="text-align:center; font-size:0.85rem; color:#666; margin-bottom:10px; background:#f8f9fa; padding:5px; border-radius:4px;">
-            <b>도형 의미:</b> 🔵 MR 촬영 &nbsp;|&nbsp; 🟩 Histology 샘플 &nbsp;|&nbsp; 🔺 Cast 샘플 <br>
-            <span style="font-size:0.75rem;">(차선 분리: 같은 세로선상에 위치한 도형들은 완벽히 같은 주령에 진행된 이벤트입니다)</span>
+            <b>도형 의미:</b> 🔵 MR 촬영 &nbsp;|&nbsp; <b>H</b> Histology 샘플 &nbsp;|&nbsp; <b>C</b> Cast 샘플 <br>
+            <span style="font-size:0.75rem;">(노란 점선: 각 비교군에서 진행된 <b>'동일한 시점(이벤트)'의 가장 앞선 기준점</b>을 연결한 선입니다)</span>
         </div>
         <div style="position:relative; height:150px; width:100%;">
             <canvas id="${canvasId}"></canvas>
@@ -2155,13 +2225,10 @@ function renderUnifiedTimeline(groupsData, container) {
     const datasets = [];
     let minAge = 999;
     let maxAge = 0;
-
-    // Y축에 띄워줄 그룹 이름 목록
     const groupNames = groupsData.map(g => g.name);
 
     groupsData.forEach((g, groupIndex) => {
         const dataPoints = [];
-        // 맨 위부터 Group A가 나오도록 Y축 높이(차선) 계산
         const laneY = groupNames.length - 1 - groupIndex; 
 
         g.rats.forEach(r => {
@@ -2169,18 +2236,19 @@ function renderUnifiedTimeline(groupsData, container) {
             const arrDate = r.arrivalDate ? new Date(r.arrivalDate) : null;
             if(!arrDate) return;
 
-            // 1. MR 촬영 시점 (무작위 흩뿌리기 제거 -> 정확한 Y축(차선)에 고정)
             if(r.mrDates && r.mrDates.length > 0) {
                 r.mrDates.forEach(mr => {
+                    // 👇 [수정됨] mr.timepoint !== '-' 차단벽 제거! Sham 쥐 MR도 통과시킵니다.
                     if(mr.date && mr.timepoint !== 'Death') {
                         const age = arrAge + (new Date(mr.date) - arrDate) / (1000*60*60*24*7);
-                        dataPoints.push({ x: age, y: laneY, rId: r.ratId, event: 'MR ('+mr.timepoint+')', type: 'MR' });
+                        const evtLabel = mr.timepoint === '-' ? 'MR (시점 무관)' : 'MR ('+mr.timepoint+')';
+                        // isShamMr: true 꼬리표를 달아서 노란 점선 긋기에서는 빠지도록 설정
+                        dataPoints.push({ x: age, y: laneY, rId: r.ratId, event: evtLabel, type: 'MR', isShamMr: mr.timepoint === '-' });
                         if(age < minAge) minAge = age; if(age > maxAge) maxAge = age;
                     }
                 });
             }
 
-            // 2. 샘플 채취 시점
             if(r.sampleDate && r.sampleType && r.sampleType !== 'Fail') {
                 const age = arrAge + (new Date(r.sampleDate) - arrDate) / (1000*60*60*24*7);
                 dataPoints.push({ x: age, y: laneY, rId: r.ratId, event: 'Sample ('+r.sampleType+')', type: r.sampleType });
@@ -2191,65 +2259,140 @@ function renderUnifiedTimeline(groupsData, container) {
         datasets.push({
             label: g.name,
             data: dataPoints,
-            // 투명도를 60(헥사코드) 정도 주어서 여러 점이 겹치면 색이 진해지도록 설정
             backgroundColor: g.color + '90', 
             borderColor: g.color,
             pointStyle: (ctx) => {
                 const type = ctx.raw?.type;
-                if(type === 'MR') return 'circle';
-                if(type === 'Histology') return 'rect';
-                if(type === 'Cast') return 'triangle';
-                return 'cross';
+                return type === 'MR' ? 'circle' : 'cross';
             },
-            pointRadius: 8,         // 점 크기 키움
-            pointHoverRadius: 12,   // 올렸을 때 더 커지게
+            pointRadius: (ctx) => {
+                const t = ctx.raw?.type;
+                if (t === 'Cast' || t === 'Histology') return 0; // 샘플은 글자로 띄울 거라 도형 숨김
+                return t === 'MR' ? 5 : 8; // MR 크기 5로 축소
+            },
+            pointHoverRadius: (ctx) => {
+                const t = ctx.raw?.type;
+                if (t === 'Cast' || t === 'Histology') return 0;
+                return t === 'MR' ? 8 : 12;
+            },
+            hitRadius: 10,
             borderWidth: 1
         });
     });
 
-    // 가로축 동적 범위 설정 (최소 6, 최대 30 유지하되 넘어가면 확장)
     const finalMinX = Math.min(6, Math.floor(minAge));
     const finalMaxX = Math.max(30, Math.ceil(maxAge));
+
+    // 👇 [플러그인 1] 알파벳 마커 그리기
+    const textPlugin = {
+        id: 'textPoints',
+        afterDatasetsDraw: (chart) => {
+            const ctx = chart.ctx;
+            chart.data.datasets.forEach((meta, i) => {
+                const ds = chart.getDatasetMeta(i);
+                ds.data.forEach((point, index) => {
+                    const raw = chart.data.datasets[i].data[index];
+                    if (raw && (raw.type === 'Cast' || raw.type === 'Histology')) {
+                        ctx.save();
+                        ctx.fillStyle = chart.data.datasets[i].borderColor;
+                        ctx.font = 'bold 15px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.fillText(raw.type === 'Cast' ? 'C' : 'H', point.x, point.y);
+                        ctx.restore();
+                    }
+                });
+            });
+        }
+    };
+
+    // 👇 [플러그인 2] 같은 시점 가장 앞선 점들 노란 점선 꿰매기 (Sham MR 제외)
+    const connectLinePlugin = {
+        id: 'connectTimepoints',
+        beforeDatasetsDraw: (chart) => {
+            const ctx = chart.ctx;
+            const metaList = chart.data.datasets.map((ds, i) => chart.getDatasetMeta(i));
+            
+            const eventMap = {}; 
+            chart.data.datasets.forEach((ds, i) => {
+                ds.data.forEach((pt, j) => {
+                    const raw = chart.data.datasets[i].data[j];
+                    // 🌟 [수정됨] isShamMr(시점 무관)인 데이터는 노란 점선 연결에서 완벽하게 패스!
+                    if (!raw || raw.type !== 'MR' || raw.isShamMr) return; 
+
+                    const ev = raw.event; 
+                    if (!ev || ev.includes('None')) return;
+                    if (!eventMap[ev]) eventMap[ev] = [];
+                    
+                    const chartPt = metaList[i].data[j];
+                    if(chartPt) {
+                        eventMap[ev].push({ x: chartPt.x, y: chartPt.y, rawX: raw.x, dsIndex: i });
+                    }
+                });
+            });
+
+            ctx.save();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#fbc02d'; // 눈에 띄는 노란색
+            ctx.setLineDash([5, 5]);
+
+            Object.keys(eventMap).forEach(ev => {
+                const pts = eventMap[ev];
+                const minPtsByGroup = {};
+                
+                pts.forEach(p => {
+                    if (!minPtsByGroup[p.dsIndex] || p.rawX < minPtsByGroup[p.dsIndex].rawX) {
+                        minPtsByGroup[p.dsIndex] = p;
+                    }
+                });
+
+                const connectPts = Object.values(minPtsByGroup).sort((a, b) => a.y - b.y);
+                
+                if (connectPts.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(connectPts[0].x, connectPts[0].y);
+                    for (let k = 1; k < connectPts.length; k++) {
+                        ctx.lineTo(connectPts[k].x, connectPts[k].y);
+                    }
+                    ctx.stroke();
+                }
+            });
+            ctx.restore();
+        }
+    };
 
     setTimeout(() => {
         new Chart(document.getElementById(canvasId), {
             type: 'scatter',
             data: { datasets: datasets },
+            plugins: [textPlugin, connectLinePlugin],
             options: {
                 maintainAspectRatio: false,
                 scales: {
                     y: { 
-                        min: -0.5, 
-                        max: groupsData.length - 0.5,
-                        ticks: {
-                            stepSize: 1,
-                            // 숫자가 아닌 그룹 이름을 Y축 라벨로 출력
-                            callback: function(value) { return groupNames[groupNames.length - 1 - value] || ''; },
-                            font: { weight: 'bold', size: 12 },
-                            color: '#1a237e'
-                        },
-                        // 세로 정렬을 돋보이게 하기 위해 Y축(가로선) 그리드는 숨김
+                        min: -0.5, max: groupsData.length - 0.5,
+                        ticks: { stepSize: 1, callback: function(value) { return groupNames[groupNames.length - 1 - value] || ''; }, font: { weight: 'bold', size: 12 }, color: '#1a237e' },
                         grid: { display: false, drawBorder: false } 
                     },
                     x: { 
                         title: { display: true, text: 'Age (Weeks / 주령)', color: '#333', font: { weight: 'bold', size: 14 } },
-                        min: finalMinX,
-                        max: finalMaxX,
-                        // 같은 주령(세로선)을 확인하기 쉽게 세로 그리드 선을 선명하게 그림
+                        min: finalMinX, max: finalMaxX,
                         grid: { color: '#e0e0e0', tickLength: 10 }, 
-                        ticks: { stepSize: 1, font: { size: 12 } } // 1주 단위로 눈금 표시
+                        ticks: { stepSize: 1, font: { size: 12 } }
                     }
                 },
                 plugins: {
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => {
-                                const d = ctx.raw;
-                                return ` [${d.rId}] ${d.event} : ${d.x.toFixed(1)}주령`;
-                            }
+                    tooltip: { callbacks: { label: (ctx) => ` [${ctx.raw.rId}] ${ctx.raw.event} : ${ctx.raw.x.toFixed(1)}주령` } },
+                    legend: { 
+                        display: true,
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            usePointStyle: true,
+                            boxWidth: 8,
+                            font: { size: 11, weight: 'bold' }
                         }
-                    },
-                    legend: { display: false } // Y축에 이미 그룹 이름이 있으므로 상단 범례는 숨김
+                    }
                 }
             }
         });
