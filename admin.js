@@ -1087,6 +1087,9 @@ async function exportForAI() {
         aiText += `당신은 최고 수준의 신경외과 및 기초의학 연구원입니다. 아래 제공되는 데이터는 뇌동맥류(Cerebral Aneurysm, ARE) 동물 모델(Rat)의 Raw Data입니다.\n`;
         aiText += `각 개체별 타임라인(수술, 사망, MR 촬영, 샘플 획득)과 해당 시점의 정확한 '주령(Age in weeks)'이 명시되어 있습니다.\n`;
         aiText += `혈압(SBP/DBP/Mean), 체중(WT), 매일의 상태 점수(Daily Score), 약물 투여량 및 연구자의 특이사항 메모(Photo/Sample Memos)까지 모두 활용하여 SCI급 논문 분석 및 초안 작성을 수행하십시오.\n\n`;
+        aiText += `[🚨 중요: Sham/Naïve 대조군 데이터 해석 주의사항]\n`;
+        aiText += `일부 개체는 'Ligation 안 함(Sham/Naïve)' 상태의 대조군입니다. 이 개체들의 타임라인에 표시되는 'Reference Date (Sham/Naïve, NO Ligation)'는 실제 수술을 받은 날짜가 아닙니다.\n`;
+        aiText += `이 날짜는 수술군(평균 9주령 수술)과 동일한 기준점(Day 0)을 맞추기 위해, 해당 개체가 9주령이 되는 시점을 수학적으로 역산하여 부여한 '가상의 기준일'일 뿐입니다. 분석 시 이 개체들을 절대 수술을 받은 개체로 착각하지 말고, 완벽한 비수술 대조군으로 분리해서 분석하십시오.\n\n`;
         aiText += `=================================================\n\n`;
         
         aiText += `[1. COHORT EXPERIMENTAL CONDITIONS (코호트별 실험 조건)]\n`;
@@ -1126,10 +1129,16 @@ async function exportForAI() {
                 aiText += `  - Aneurysm (ARE): ${r.are || '-'}\n`;
 
                 aiText += `  - Timeline Events:\n`;
-                aiText += `    * Arrival: ${r.arrivalDate || '-'} (Age: ${arrAge.toFixed(1)} weeks old)\n`;
+                aiText += `    * Arrival: ${r.arrivalDate || '-'} (Age: ${arrAge.toFixed(1)}w)\n`;
                 if (r.ovxDate) aiText += `    * OVX Surgery: ${r.ovxDate}${getAgeStr(r.ovxDate)}\n`;
-                aiText += `    * Ligation Surgery (Day 0): ${r.surgeryDate || '-'}${getAgeStr(r.surgeryDate)}\n`;
                 
+                // 🔥 AI에게 수술 여부 명확히 알리기
+                if (r.isNonInduction) {
+                    aiText += `    * Reference Date (Sham/Naïve, NO Ligation): ${r.surgeryDate || '-'}${getAgeStr(r.surgeryDate)}  <- 가상의 비교 기준점\n`;
+                } else {
+                    aiText += `    * Ligation Surgery (Day 0): ${r.surgeryDate || '-'}${getAgeStr(r.surgeryDate)}\n`;
+                }
+
                 if (r.mrDates && r.mrDates.length > 0) {
                     const mrStr = r.mrDates.sort((a,b) => new Date(a.date) - new Date(b.date))
                                     .map(m => `${m.timepoint} on ${m.date}${getAgeStr(m.date)}`).join(' | ');
