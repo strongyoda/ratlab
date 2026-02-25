@@ -388,17 +388,32 @@ async function loadDetailData() {
                             <input type="date" id="ovx-d" value="${rat.ovxDate||''}" style="width:130px; padding:4px 6px;">
                             <button class="btn-small" onclick="upOvx('${docId}')">저장</button>
                         </div>
-                    </div>
-                    <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">수술일자</label>
-                            <input type="date" id="surg-d" value="${rat.surgeryDate||''}" style="width:130px; padding:4px 6px;">
-                            <button class="btn-small" onclick="upSurg('${docId}')">저장</button>
-                        </div>
                         <div style="display:flex; align-items:center; gap:6px;">
                             <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">투약시작</label>
                             <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" style="width:130px; padding:4px 6px;">
                             <button class="btn-small" onclick="upDoseStart('${docId}')">저장</button>
+                        </div>
+                    </div>
+                    
+                    <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center; width:100%;">
+                        <div style="display:flex; align-items:center; gap:15px; background:#fff3e0; padding:8px; border-radius:6px; border:1px solid #ffcc80; flex-wrap:wrap; flex:1;">
+                            <label style="cursor:pointer; font-size:0.85rem; color:var(--red); font-weight:bold; display:flex; align-items:center;">
+                                <input type="checkbox" id="chk-sham" ${rat.isNonInduction ? 'checked' : ''} 
+                                    onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none';" style="transform:scale(1.2); margin-right:6px;">
+                                Ligation 안 함 (Sham/Naïve)
+                            </label>
+                            
+                            <div id="surg-date-wrapper" style="display:${rat.isNonInduction ? 'none' : 'flex'}; align-items:center; gap:6px;">
+                                <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">수술일자</label>
+                                <input type="date" id="surg-d" value="${rat.surgeryDate||''}" style="width:130px; padding:4px;">
+                            </div>
+                            
+                            <div id="sham-ref-wrapper" style="display:${rat.isNonInduction ? 'flex' : 'none'}; align-items:center; gap:6px;">
+                                <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--red);">비교 기준 주령</label>
+                                <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" style="width:70px; padding:4px;"> <span style="font-size:0.8rem; color:var(--red); font-weight:bold;">주</span>
+                            </div>
+                            
+                            <button class="btn-small btn-red" onclick="saveSurgAndSham('${docId}', '${rat.arrivalDate || ''}', ${arrivalAgeNum})" style="margin-left:auto;">저장</button>
                         </div>
                     </div>
                     
@@ -422,11 +437,11 @@ async function loadDetailData() {
                                 const mrArr = rat.mrDates || [];
                                 if(mrArr.length === 0) return '<span style="font-size:0.8rem; color:#888;">기록된 MR이 없습니다.</span>';
                                 
-                                // 진짜 순서(DB 인덱스)를 기억한 상태로, 보여줄 때만 주령(timepoint) 순서대로 예쁘게 자동 정렬
                                 return mrArr.map((mr, idx) => ({ ...mr, originalIdx: idx }))
                                     .sort((a, b) => {
                                         const wA = tpWeight[a.timepoint] !== undefined ? tpWeight[a.timepoint] : 9999;
                                         const wB = tpWeight[b.timepoint] !== undefined ? tpWeight[b.timepoint] : 9999;
+                                        if (wA === wB) return new Date(a.date) - new Date(b.date); // 시점이 같거나 없으면 날짜순서대로 예쁘게 정렬
                                         return wA - wB;
                                     })
                                     .map(mr => `
@@ -438,13 +453,17 @@ async function loadDetailData() {
                             })()}
                         </div>
                         <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed #eee; padding-top:8px;">
-                            <select id="new-mr-tp" style="width:90px; padding:4px; font-size:0.85rem;">
-                                ${mrOpts.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
-                            </select>
+                            ${rat.isNonInduction ? 
+                                `<input type="hidden" id="new-mr-tp" value="-">
+                                 <div style="font-size:0.85rem; font-weight:bold; color:var(--red); background:#ffebee; padding:4px 8px; border-radius:4px; text-align:center; width:90px; box-sizing:border-box;">시점 무관</div>` 
+                            : 
+                                `<select id="new-mr-tp" style="width:90px; padding:4px; font-size:0.85rem;">
+                                    ${mrOpts.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+                                </select>`
+                            }
                             <input type="date" id="new-mr-d" value="${getTodayStr()}" style="width:130px; padding:4px; font-size:0.85rem;">
                             <button class="btn-small btn-green" onclick="addMrDate('${docId}')" style="padding:4px 10px; font-size:0.85rem;">+ 추가</button>
                         </div>
-                    </div>
                 </div>
             </div>
 
@@ -2236,3 +2255,39 @@ function renderUnifiedTimeline(groupsData, container) {
         });
     }, 50);
 }
+
+// 👇 [신규 추가] Sham 대조군 가상 기준일 자동 계산 및 저장 👇
+window.saveSurgAndSham = async function(docId, arrDateStr, arrAgeNum) {
+    const isSham = document.getElementById('chk-sham').checked;
+    let updateData = { isNonInduction: isSham };
+    
+    if (isSham) {
+        const refAge = Number(document.getElementById('sham-ref-age').value) || 9;
+        updateData.refAge = refAge;
+        
+        if (arrDateStr) {
+            // 가상 수술일 계산: 반입일 + (기준주령 - 반입주령)*7 일
+            const arrDate = new Date(arrDateStr);
+            const diffDays = (refAge - arrAgeNum) * 7;
+            arrDate.setDate(arrDate.getDate() + diffDays);
+            const virtualDateStr = arrDate.toISOString().split('T')[0];
+            updateData.surgeryDate = virtualDateStr; // 차트를 속이기 위한 가상 날짜 (그래프 동기화용)
+        } else {
+            alert("가상 기준일을 계산하려면 반입일(Arrival Date)이 먼저 입력되어 있어야 합니다.");
+            return;
+        }
+    } else {
+        updateData.surgeryDate = document.getElementById('surg-d').value;
+        updateData.refAge = firebase.firestore.FieldValue.delete();
+    }
+    
+    try {
+        await db.collection("rats").doc(docId).update(updateData);
+        alert("저장되었습니다.");
+        clearRatsCache();
+        loadDetailData();
+    } catch(e) {
+        console.error(e);
+        alert("저장 실패: " + e.message);
+    }
+};
