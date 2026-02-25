@@ -42,7 +42,7 @@ let sharedYValue = null; // 공유 데이터 수치(Y)
 let sourceSyncType = null; // sbp 또는 wt
 let activeChartId = null;
 // [전역 상태] 개별 데이터 표시 여부
-let isIndividualVisible = true;
+let isIndividualVisible = false;
 let activeCodRatId = null;
 let stagedPhotos = [];
 // 전역 변수: 차트/데이터 캐시 및 필터 상태 관리
