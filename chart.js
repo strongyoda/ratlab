@@ -656,8 +656,8 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         const rangeSbpX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksSbp);
 
         const calcYRange = (minVal, maxVal, defaultMin, defaultMax) => { if (minVal === 9999) return { min: defaultMin, max: defaultMax }; const diff = maxVal - minVal; const padding = diff === 0 ? 50 : diff * 0.3; let finalMin = minVal - padding; let finalMax = maxVal + padding; if (finalMin < 0) finalMin = 0; return { min: finalMin, max: finalMax }; };
-        const rangeWtY = calcYRange(minWt, maxWt, 0, 500);
-        const rangeSbpY = calcYRange(minSbp, maxSbp, 0, 250);
+        const rangeWtY = (fixedOptions && fixedOptions.maxWt !== undefined) ? calcYRange(fixedOptions.minWt !== undefined ? fixedOptions.minWt : minWt, fixedOptions.maxWt, 0, 500) : calcYRange(minWt, maxWt, 0, 500);
+        const rangeSbpY = (fixedOptions && fixedOptions.maxSbp !== undefined) ? calcYRange(fixedOptions.minSbp !== undefined ? fixedOptions.minSbp : minSbp, fixedOptions.maxSbp, 0, 250) : calcYRange(minSbp, maxSbp, 0, 250);
 
         const avgsWt = {}, avgsSbp = {};
         const calcAvg = (dataset, targetObj, isInt) => { const map = {}; dataset.forEach(p => { const roundedX = Math.round(p.x); if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 }; map[roundedX].sum += p.y; map[roundedX].cnt++; }); Object.keys(map).forEach(x => { targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1); }); };
@@ -877,17 +877,28 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         const chartHeight = "500px";
 
         if (deadRats.length > 0) {
+            // 👇 코호트 및 쥐 번호(ID) 순으로 오름차순 정렬
+            deadRats.sort((a, b) => {
+                const cA = Number(a.cohort) || 0;
+                const cB = Number(b.cohort) || 0;
+                if (cA !== cB) return cA - cB; 
+                return a.ratId.localeCompare(b.ratId); 
+            });
+
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
+            let totalPod = 0, validPodCnt = 0;
             deadRats.forEach(r => {
                 const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?';
+                if (pod !== '?') { totalPod += pod; validPodCnt++; } // 유효한 POD 누적
                 const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록';
                 survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`;
             });
             survTable += `</table>`;
+            const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; // 평균 계산
             
             finalHtml += `
             <div class="card" style="border-left:5px solid var(--red)">
-                <h4>⚰️ 사망 분석 (${deadRats.length}) - 생존율 (주령 기준)</h4>
+                <h4>⚰️ 사망 분석 (${deadRats.length}) - 생존율 (주령 기준) <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;">[사망개체 평균 생존: POD ${avgPodStr}]</span></h4>
                 <div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div>
                 <button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button>
                 <div id="${sTableId}" class="data-detail-box">${survTable}</div>
@@ -935,12 +946,13 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
             if(minAge === 999) minAge = 6;
 
             // 👇 전체 비교군 통일 축 적용
-            const targetMaxAge = (fixedOptions && fixedOptions.maxAge) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
+            const targetMinAge = (fixedOptions && fixedOptions.minAge !== undefined) ? Math.floor(fixedOptions.minAge) : (minAge === 999 ? 6 : minAge);
+            const targetMaxAge = (fixedOptions && fixedOptions.maxAge !== undefined) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
 
             const survLabels = [], survData = []; 
             let currentAlive = rats.length;
-            
-            for (let w = minAge; w <= targetMaxAge; w++) { 
+
+            for (let w = targetMinAge; w <= targetMaxAge; w++) { 
                 survLabels.push(`${w}주령`); 
                 if (deathByAge[w]) currentAlive -= deathByAge[w]; 
                 survData.push((currentAlive / rats.length) * 100); 
@@ -1028,8 +1040,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: arrivalPod, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < arrivalPod) ? (arr[0] - 2) : arrivalPod; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
         const rangeWtX = getRangeX(existTicksWt); const rangeSbpX = getRangeX(existTicksSbp);
         const calcYRange = (minVal, maxVal, defaultMin, defaultMax) => { if (minVal === 9999) return { min: defaultMin, max: defaultMax }; const diff = maxVal - minVal; const padding = diff === 0 ? 50 : diff * 0.3; let finalMin = minVal - padding; let finalMax = maxVal + padding; if (finalMin < 0) finalMin = 0; return { min: finalMin, max: finalMax }; };
-        const rangeWtY = (fixedOptions && fixedOptions.maxWt) ? { min: 0, max: fixedOptions.maxWt + 50 } : calcYRange(minWt, maxWt, 0, 500);
-        const rangeSbpY = (fixedOptions && fixedOptions.maxSbp) ? { min: 0, max: fixedOptions.maxSbp + 20 } : calcYRange(minSbp, maxSbp, 0, 250);
+        const rangeWtY = (fixedOptions && fixedOptions.maxWt !== undefined) ? calcYRange(fixedOptions.minWt !== undefined ? fixedOptions.minWt : minWt, fixedOptions.maxWt, 0, 500) : calcYRange(minWt, maxWt, 0, 500);
+        const rangeSbpY = (fixedOptions && fixedOptions.maxSbp !== undefined) ? calcYRange(fixedOptions.minSbp !== undefined ? fixedOptions.minSbp : minSbp, fixedOptions.maxSbp, 0, 250) : calcYRange(minSbp, maxSbp, 0, 250);
 
         const avgsWt = {}, avgsSbp = {};
         const calcAvg = (dataset, targetObj, isInt) => { const map = {}; dataset.forEach(p => { const roundedX = Math.round(p.x); if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 }; map[roundedX].sum += p.y; map[roundedX].cnt++; }); Object.keys(map).forEach(x => { targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1); }); };
@@ -1239,10 +1251,26 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const chartHeight = "500px";
 
         if (deadRats.length > 0) {
+            // 👇 코호트 및 쥐 번호(ID) 순으로 오름차순 정렬
+            deadRats.sort((a, b) => {
+                const cA = Number(a.cohort) || 0;
+                const cB = Number(b.cohort) || 0;
+                if (cA !== cB) return cA - cB; 
+                return a.ratId.localeCompare(b.ratId); 
+            });
+
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`;
-            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?'; const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`; });
+            let totalPod = 0, validPodCnt = 0;
+            deadRats.forEach(r => { 
+                const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?';
+                if (pod !== '?') { totalPod += pod; validPodCnt++; }
+                const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; 
+                survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`; 
+            });
             survTable += `</table>`;
-            finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}) - 생존율 (주령 기준)</h4><div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
+            const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-';
+            
+            finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}) - 생존율 (주령 기준) <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;">[사망개체 평균 생존: POD ${avgPodStr}]</span></h4><div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
         const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
@@ -1275,13 +1303,13 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             if(minAge === 999) minAge = 6;
             
             // 👇 전체 비교군 중 가장 긴 주령(fixedOptions.maxAge)을 목표로 설정
-            const targetMaxAge = (fixedOptions && fixedOptions.maxAge) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
+            const targetMinAge = (fixedOptions && fixedOptions.minAge !== undefined) ? Math.floor(fixedOptions.minAge) : (minAge === 999 ? 6 : minAge);
+            const targetMaxAge = (fixedOptions && fixedOptions.maxAge !== undefined) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
 
             const survLabels = [], survData = []; 
             let currentAlive = ratDataList.length;
-            
-            // 내 그룹의 데이터가 끝나도, targetMaxAge까지 그래프를 평평하게 계속 그림
-            for (let w = minAge; w <= targetMaxAge; w++) { 
+
+            for (let w = targetMinAge; w <= targetMaxAge; w++) {
                 survLabels.push(`${w}주령`); 
                 if (deathByAge[w]) currentAlive -= deathByAge[w]; 
                 survData.push((currentAlive / ratDataList.length) * 100); 
@@ -1350,13 +1378,13 @@ async function loadGroupComparison() {
     container.innerHTML = '<div class="loader"></div> 그룹 데이터 범위 계산 중...';
 
     let globalLabels = [];
-    let globalMaxSbp = 0;
-    let globalMaxWt = 0;
-    let globalMaxPod = 0;
-    
+    let globalMaxSbp = 0, globalMaxWt = 0, globalMaxPod = 0;
+    let globalMinSbp = 9999, globalMinWt = 9999;
+
     let allRatIds = [];
     let allRatsObj = [];
     let surgeryMap = {};
+    let globalMaxAge = 0, globalMinAge = 999;
 
     try {
         const allCohorts = [];
@@ -1375,6 +1403,8 @@ async function loadGroupComparison() {
                 if(r.surgeryDate) surgeryMap[r.ratId] = r.surgeryDate;
                 // 👇 주령 계산 추가
                 const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+                if(arrAge < globalMinAge) globalMinAge = arrAge;
+                
                 let endAge = arrAge;
                 if(r.status === '사망' && r.deathDate && r.arrivalDate) {
                     endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
@@ -1404,8 +1434,16 @@ async function loadGroupComparison() {
             const surgDate = surgeryMap[rid];
             snap.forEach(doc => {
                 const d = doc.data();
-                if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
-                if(d.weight && d.weight > globalMaxWt) globalMaxWt = d.weight;
+                if(d.sbp) {
+                    const s = Number(d.sbp);
+                    if(s > globalMaxSbp) globalMaxSbp = s;
+                    if(s < globalMinSbp) globalMinSbp = s;
+                }
+                if(d.weight) {
+                    const w = Number(d.weight);
+                    if(w > globalMaxWt) globalMaxWt = w;
+                    if(w < globalMinWt) globalMinWt = w;
+                }
                 
                 if (d.timepoint && stdPodMap.hasOwnProperty(d.timepoint)) {
                     if (!labelSet.has(d.timepoint)) {
@@ -1449,10 +1487,10 @@ async function loadGroupComparison() {
         const title = `${g.name} : Cohort ${g.cohorts.join(', ')}`;
         await runCohortAnalysis(g.cohorts, `comp-res-grp-${i}`, `_grp_${i}`, {
             labels: globalLabels,
-            maxSbp: globalMaxSbp,
-            maxWt: globalMaxWt,
+            minSbp: globalMinSbp, maxSbp: globalMaxSbp,
+            minWt: globalMinWt, maxWt: globalMaxWt,
             maxPod: globalMaxPod,
-            maxAge: globalMaxAge
+            minAge: globalMinAge, maxAge: globalMaxAge
         }, title);
     }
 }
@@ -1508,11 +1546,11 @@ async function analyzeTrend() {
         const measSnaps = await Promise.all(measPromises);
 
         let globalMaxSbp = 0, globalMaxWt = 0, globalMaxPod = 0;
+        let globalMinSbp = 9999, globalMinWt = 9999; // 추가
         const stdPodMap = globalPodMap, tempColumns = [], labelSet = new Set();
         const showAll = document.getElementById('trend-show-all')?.checked;
         const measMap = {}; 
-        // 👇 전체 최대 주령 계산용 변수 추가
-        let globalMaxAge = 0;
+        let globalMaxAge = 0, globalMinAge = 999; // 최소 주령 동기화용 변수 추가
 
         measSnaps.forEach((snap, idx) => {
             const rid = allRatIds[idx];
@@ -1520,6 +1558,7 @@ async function analyzeTrend() {
             const rInfo = allRats.find(r => r.ratId === rid);
             if(rInfo) {
                 const arrAge = rInfo.arrivalAge ? Number(rInfo.arrivalAge) : 6;
+                if(arrAge < globalMinAge) globalMinAge = arrAge; // 추가
                 let endAge = arrAge;
                 if(rInfo.status === '사망' && rInfo.deathDate && rInfo.arrivalDate) {
                     endAge = arrAge + ((new Date(rInfo.deathDate) - new Date(rInfo.arrivalDate)) / (1000*60*60*24*7));
@@ -1537,8 +1576,16 @@ async function analyzeTrend() {
                 if(d.timepoint) measMap[rid][d.timepoint] = d.weight;
                 measMap[rid][d.date] = d.weight; 
 
-                if(d.sbp && d.sbp > globalMaxSbp) globalMaxSbp = d.sbp;
-                if(d.weight && d.weight > globalMaxWt) globalMaxWt = d.weight;
+                if(d.sbp) {
+                    const s = Number(d.sbp);
+                    if(s > globalMaxSbp) globalMaxSbp = s;
+                    if(s < globalMinSbp) globalMinSbp = s;
+                }
+                if(d.weight) {
+                    const w = Number(d.weight);
+                    if(w > globalMaxWt) globalMaxWt = w;
+                    if(w < globalMinWt) globalMinWt = w;
+                }
                 if(surgDate && d.date) {
                         const p = Math.floor((new Date(d.date) - new Date(surgDate))/(1000*60*60*24));
                         if(p > globalMaxPod) globalMaxPod = p;
@@ -1603,7 +1650,14 @@ async function analyzeTrend() {
         const divB = document.createElement('div'); divB.className = 'trend-half'; divB.id = 'trend-res-high'; splitBox.appendChild(divB);
 
         // 👇 maxAge 옵션 추가
-        const fixedOptions = { labels: globalLabels, maxSbp: globalMaxSbp, maxWt: globalMaxWt, maxPod: globalMaxPod, maxAge: globalMaxAge, mode: mode };
+        const fixedOptions = { 
+            labels: globalLabels, 
+            minSbp: globalMinSbp, maxSbp: globalMaxSbp, 
+            minWt: globalMinWt, maxWt: globalMaxWt, 
+            maxPod: globalMaxPod, 
+            minAge: globalMinAge, maxAge: globalMaxAge, 
+            mode: mode 
+        };
 
         let titleA = '', titleB = '';
         if(mode === 'cod') {
@@ -2030,14 +2084,15 @@ async function loadCohortComparison() {
         const ratSnaps = await Promise.all(ratPromises);
         
         let allRats = [];
-        let globalMaxAge = 0; // 👈 신규 추가: 전체 코호트의 최대 주령 변수
+        let globalMaxAge = 0, globalMinAge = 999; 
 
         ratSnaps.forEach(snap => snap.forEach(d => {
             const r = d.data();
             allRats.push(r);
             
-            // 👈 신규 추가: 각 쥐의 주령을 계산해서 가장 큰 값을 globalMaxAge에 저장
             const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+            if(arrAge < globalMinAge) globalMinAge = arrAge;
+
             let endAge = arrAge;
             if(r.status === '사망' && r.deathDate && r.arrivalDate) {
                 endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
@@ -2051,6 +2106,7 @@ async function loadCohortComparison() {
         const measSnaps = await Promise.all(measPromises);
 
         let globalMinX = 0, globalMaxX = 0, globalMaxSbp = 0, globalMaxWt = 0;
+        let globalMinSbp = 9999, globalMinWt = 9999; 
         const unionStandardTicks = new Set(); 
 
         measSnaps.forEach((snap, i) => {
@@ -2063,8 +2119,16 @@ async function loadCohortComparison() {
                     if (pod < globalMinX) globalMinX = pod;
                     if (pod > globalMaxX) globalMaxX = pod;
                 }
-                if (v.sbp && v.sbp > globalMaxSbp) globalMaxSbp = v.sbp;
-                if (v.weight && v.weight > globalMaxWt) globalMaxWt = v.weight;
+                if (v.sbp) {
+                    const s = Number(v.sbp);
+                    if (s > globalMaxSbp) globalMaxSbp = s;
+                    if (s < globalMinSbp) globalMinSbp = s;
+                }
+                if (v.weight) {
+                    const w = Number(v.weight);
+                    if (w > globalMaxWt) globalMaxWt = w;
+                    if (w < globalMinWt) globalMinWt = w;
+                }
 
                 if (v.timepoint && globalPodMap.hasOwnProperty(v.timepoint)) {
                     unionStandardTicks.add(v.timepoint);
@@ -2075,12 +2139,11 @@ async function loadCohortComparison() {
         const fixedOptions = {
             minX: globalMinX - 2,
             maxX: globalMaxX + 2,
-            maxSbp: globalMaxSbp,
-            maxWt: globalMaxWt,
-            maxAge: globalMaxAge, // 👈 신규 추가: 계산된 최대 주령 옵션을 하위 차트로 넘김
+            minSbp: globalMinSbp, maxSbp: globalMaxSbp,
+            minWt: globalMinWt, maxWt: globalMaxWt,
+            minAge: globalMinAge, maxAge: globalMaxAge,
             standardTicks: Array.from(unionStandardTicks)
         };
-
         container.innerHTML = ''; 
         const colors = ['#E6194B', '#3CB44B', '#4363D8', '#F58231', '#911EB4', '#46F0F0'];
         const groupsData = selectedCohorts.map((c, i) => ({
