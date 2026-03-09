@@ -121,18 +121,20 @@ async function upSampleInfo(did) {
     } catch(e) { console.error(e); alert("오류: " + e.message); }
 }
 
+// [교체] MR 추가 함수
 async function addMrDate(did) {
     const tp = document.getElementById('new-mr-tp').value;
     const dt = document.getElementById('new-mr-d').value;
+    const size = document.getElementById('new-mr-infarct-size').value;
+    const loc = document.getElementById('new-mr-infarct-loc').value;
     if(!dt) return alert("날짜를 선택하세요.");
     
     try {
         const docRef = db.collection("rats").doc(did);
         const doc = await docRef.get();
         const arr = doc.data().mrDates || [];
-        arr.push({ timepoint: tp, date: dt });
+        arr.push({ timepoint: tp, date: dt, infarctSize: size, infarctLoc: loc }); // 데이터 속성 추가
         
-        // 시간 순서 정렬(선택 사항이지만 보기 편하게)
         arr.sort((a,b) => new Date(a.date) - new Date(b.date));
         
         await docRef.update({ mrDates: arr });
