@@ -21,7 +21,19 @@ async function searchForEdit() {
         const currentCod = rData.cod || extractLegacyCod(rData.codFull);
         const currentAre = rData.are || '';
         let areMain = currentAre.split(' ')[0] || '';
-        let areSub = currentAre.split(' ')[1] ? currentAre.split(' ')[1].replace(/[()]/g, '') : '';
+        
+        // [추가] 갯수 데이터 파싱 (구형 데이터 호환 처리 포함)
+        let cMicro = 0, cMacro = 0, cUnk = 0;
+        if (rData.areCounts) {
+            cMicro = rData.areCounts.micro || 0;
+            cMacro = rData.areCounts.macro || 0;
+            cUnk = rData.areCounts.unk || 0;
+        } else {
+            let areSub = currentAre.split(' ')[1] ? currentAre.split(' ')[1].replace(/[()]/g, '') : '';
+            if(areSub === 'micro') cMicro = 1;
+            else if(areSub === 'macro') cMacro = 1;
+            else if(areSub === '미확인') cUnk = 1;
+        }
         const mrOpts = ['-','D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','Death'];
 
         let html = `
@@ -38,18 +50,18 @@ async function searchForEdit() {
                     </select>
                 </div>
                 <div class="input-group">
-                    <label>ARE 유무</label>
-                    <div style="display:flex; gap:5px;">
-                        <select id="ed-are-main" style="padding:5px; flex:1;" onchange="document.getElementById('ed-are-sub').style.display = this.value==='O' ? 'block' : 'none';">
+                    <label>ARE 유무 및 갯수</label>
+                    <div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
+                        <select id="ed-are-main" style="padding:5px; width:60px;" onchange="document.getElementById('ed-are-counts').style.display = this.value==='O' ? 'flex' : 'none';">
                             <option value="">-</option>
                             <option value="O" ${areMain==='O'?'selected':''}>O</option>
                             <option value="X" ${areMain==='X'?'selected':''}>X</option>
                         </select>
-                        <select id="ed-are-sub" style="padding:5px; flex:1; display:${areMain==='O'?'block':'none'};">
-                            <option value="미확인" ${areSub==='미확인'?'selected':''}>미확인</option>
-                            <option value="micro" ${areSub==='micro'?'selected':''}>micro</option>
-                            <option value="macro" ${areSub==='macro'?'selected':''}>macro</option>
-                        </select>
+                        <div id="ed-are-counts" style="display:${areMain==='O'?'flex':'none'}; gap:8px; align-items:center; background:#f1f3f5; padding:4px 8px; border-radius:4px;">
+                            <label style="font-size:0.8rem; display:flex; align-items:center; margin:0;">mi <input type="number" id="ed-are-micro" value="${cMicro}" style="width:40px; margin-left:4px; padding:2px;"></label>
+                            <label style="font-size:0.8rem; display:flex; align-items:center; margin:0;">ma <input type="number" id="ed-are-macro" value="${cMacro}" style="width:40px; margin-left:4px; padding:2px;"></label>
+                            <label style="font-size:0.8rem; display:flex; align-items:center; margin:0;">미확인 <input type="number" id="ed-are-unk" value="${cUnk}" style="width:40px; margin-left:4px; padding:2px;"></label>
+                        </div>
                     </div>
                 </div>
                 <div class="input-group"><label>사망일</label><input type="date" id="ed-death" value="${rData.deathDate||''}"></div>
@@ -79,14 +91,25 @@ async function searchForEdit() {
                 </div>
                 
                 <div class="input-group" style="grid-column: span 2;">
-                    <label>MR 촬영 이력</label>
+                    <label>MR 촬영 이력 (Infarction 관찰 포함)</label>
                     <div id="ed-mr-list" style="background:#f8f9fa; padding:10px; border-radius:6px; border:1px solid #ddd;">
                         ${(rData.mrDates || []).map(mr => `
                             <div class="ed-mr-row" style="display:flex; gap:5px; margin-bottom:5px;">
-                                <select class="ed-mr-tp" style="width:100px; padding:5px;">
+                                <select class="ed-mr-tp" style="width:90px; padding:5px;">
                                     ${mrOpts.map(opt => `<option value="${opt}" ${mr.timepoint===opt?'selected':''}>${opt}</option>`).join('')}
                                 </select>
                                 <input type="date" class="ed-mr-dt" value="${mr.date}" style="padding:5px;">
+                                <select class="ed-mr-sz" style="width:80px; padding:5px;">
+                                    <option value="None" ${mr.infarctSize==='None'||!mr.infarctSize?'selected':''}>None</option>
+                                    <option value="Small" ${mr.infarctSize==='Small'?'selected':''}>Small</option>
+                                    <option value="Large" ${mr.infarctSize==='Large'?'selected':''}>Large</option>
+                                </select>
+                                <select class="ed-mr-loc" style="width:60px; padding:5px;">
+                                    <option value="-" ${mr.infarctLoc==='-'||!mr.infarctLoc?'selected':''}>-</option>
+                                    <option value="R" ${mr.infarctLoc==='R'?'selected':''}>R</option>
+                                    <option value="L" ${mr.infarctLoc==='L'?'selected':''}>L</option>
+                                    <option value="Both" ${mr.infarctLoc==='Both'?'selected':''}>Both</option>
+                                </select>
                                 <button class="btn-red btn-small" onclick="this.parentElement.remove()">X</button>
                             </div>
                         `).join('')}
@@ -125,18 +148,30 @@ async function saveTotalEdit(ratDocId) {
     mrRows.forEach(row => {
         const tp = row.querySelector('.ed-mr-tp').value;
         const dt = row.querySelector('.ed-mr-dt').value;
-        if(tp && dt) mrDatesArr.push({ timepoint: tp, date: dt });
+        const sz = row.querySelector('.ed-mr-sz').value;
+        const loc = row.querySelector('.ed-mr-loc').value;
+        if(tp && dt) mrDatesArr.push({ timepoint: tp, date: dt, infarctSize: sz, infarctLoc: loc });
     });
 
     const codVal = document.getElementById('ed-cod').value;
     const areMain = document.getElementById('ed-are-main').value;
-    const areSub = document.getElementById('ed-are-sub').value;
-    const areVal = areMain === 'O' ? `O (${areSub})` : (areMain === 'X' ? 'X' : '');
+    
+    let areVal = '';
+    let areCounts = { micro: 0, macro: 0, unk: 0 };
+    if (areMain === 'O') {
+        areCounts.micro = Number(document.getElementById('ed-are-micro').value) || 0;
+        areCounts.macro = Number(document.getElementById('ed-are-macro').value) || 0;
+        areCounts.unk = Number(document.getElementById('ed-are-unk').value) || 0;
+        areVal = `O (micro:${areCounts.micro}, macro:${areCounts.macro}, 미확인:${areCounts.unk})`;
+    } else if (areMain === 'X') {
+        areVal = 'X';
+    }
 
     batch.update(ratRef, {
         status: document.getElementById('ed-status').value,
         cod: codVal,
         are: areVal,
+        areCounts: areCounts, // 핵심: 갯수 DB 저장
         codFull: `${codVal} / ARE: ${areVal}`, 
         arrivalDate: document.getElementById('ed-arrival').value,
         surgeryDate: document.getElementById('ed-surgery').value,
@@ -1008,17 +1043,85 @@ function openSimpleCod(docId, currentCod, currentAre, currentDeathDate = '') {
     activeCodRatId = docId;
     document.getElementById('modal-cod').value = currentCod && currentCod !== '미기록' ? currentCod : '';
     
-    let main = '', sub = '미확인';
+    let main = '', cMicro = 0, cMacro = 0, cUnk = 0;
     if(currentAre && currentAre !== '미기록') {
         main = currentAre.split(' ')[0];
-        const s = currentAre.split(' ')[1];
-        if(s) sub = s.replace(/[()]/g, '');
+        // 정규식으로 갯수 추출 (신형 포맷)
+        if (currentAre.includes('micro:')) {
+            const matchMicro = currentAre.match(/micro:(\d+)/);
+            const matchMacro = currentAre.match(/macro:(\d+)/);
+            const matchUnk = currentAre.match(/미확인:(\d+)/);
+            if(matchMicro) cMicro = Number(matchMicro[1]);
+            if(matchMacro) cMacro = Number(matchMacro[1]);
+            if(matchUnk) cUnk = Number(matchUnk[1]);
+        } else {
+            // 구형 데이터 추출
+            const s = currentAre.split(' ')[1];
+            let sub = s ? s.replace(/[()]/g, '') : '';
+            if(sub === 'micro') cMicro = 1;
+            else if(sub === 'macro') cMacro = 1;
+            else if(sub === '미확인') cUnk = 1;
+        }
     }
-    document.getElementById('modal-are-main').value = main;
-    document.getElementById('modal-are-sub').value = sub;
-    document.getElementById('modal-are-sub').style.display = main === 'O' ? 'block' : 'none';
     
-    // 👇 사망일 필드 동적 생성 👇
+    const mainSel = document.getElementById('modal-are-main');
+    
+    // 🌟 [핵심 1] HTML에 하드코딩된 원효대사 해골물 같은 이벤트를 강제로 무력화!
+    mainSel.onchange = null;
+    
+    // 🌟 [핵심 2] 구형 드롭다운은 숨기는 게 아니라 화면(DOM)에서 아예 파괴해버림!
+    const oldSub = document.getElementById('modal-are-sub');
+    if(oldSub) {
+        oldSub.remove();
+    }
+
+    mainSel.value = main;
+    
+    // UI 강제 교정 (세로 찌그러짐 방지 및 가로 정렬)
+    mainSel.style.flex = 'none'; // 멋대로 늘어나는 HTML 설정 해제
+    mainSel.style.width = '100px'; 
+    mainSel.style.height = '38px';
+    mainSel.style.padding = '5px';
+    
+    const parentWrap = mainSel.parentElement;
+    parentWrap.style.display = 'flex';
+    parentWrap.style.flexWrap = 'wrap';
+    parentWrap.style.gap = '10px';
+    
+    // 갯수 입력칸 생성 및 꽉 차게 위치 조정
+    let countsBox = document.getElementById('modal-are-counts-box');
+    if(!countsBox) {
+        countsBox = document.createElement('div');
+        countsBox.id = 'modal-are-counts-box';
+        countsBox.style.width = '100%'; // 밑에 줄에 꽉 차게
+        countsBox.style.display = 'flex';
+        countsBox.style.gap = '10px';
+        countsBox.style.background = '#f8f9fa';
+        countsBox.style.padding = '10px 15px';
+        countsBox.style.borderRadius = '8px';
+        countsBox.style.border = '1px solid #ddd';
+        countsBox.style.boxSizing = 'border-box';
+        
+        countsBox.innerHTML = `
+            <label style="font-size:0.85rem; display:flex; flex-direction:column; align-items:center; flex:1; margin:0;"><b>Micro</b> <input type="number" id="modal-are-micro" style="width:100%; box-sizing:border-box; min-width:55px; padding:6px; text-align:center; border:1px solid #ccc; border-radius:4px; margin-top:6px;" min="0"></label>
+            <label style="font-size:0.85rem; display:flex; flex-direction:column; align-items:center; flex:1; margin:0;"><b>Macro</b> <input type="number" id="modal-are-macro" style="width:100%; box-sizing:border-box; min-width:55px; padding:6px; text-align:center; border:1px solid #ccc; border-radius:4px; margin-top:6px;" min="0"></label>
+            <label style="font-size:0.85rem; display:flex; flex-direction:column; align-items:center; flex:1; margin:0;"><b>미확인</b> <input type="number" id="modal-are-unk" style="width:100%; box-sizing:border-box; min-width:55px; padding:6px; text-align:center; border:1px solid #ccc; border-radius:4px; margin-top:6px;" min="0"></label>
+        `;
+        // mainSel의 부모(parentWrap) 안에 삽입
+        parentWrap.appendChild(countsBox);
+        
+        // 새로 만든 깔끔한 이벤트 리스너 등록
+        mainSel.addEventListener('change', function() {
+            document.getElementById('modal-are-counts-box').style.display = this.value === 'O' ? 'flex' : 'none';
+        });
+    }
+    
+    document.getElementById('modal-are-micro').value = cMicro;
+    document.getElementById('modal-are-macro').value = cMacro;
+    document.getElementById('modal-are-unk').value = cUnk;
+    countsBox.style.display = main === 'O' ? 'flex' : 'none';
+
+    // 사망일 필드 동적 생성 (기존 유지)
     let deathInputBox = document.getElementById('modal-death-date-box');
     if (!deathInputBox) {
         const modalContent = document.querySelector('#simple-cod-modal > div');
@@ -1029,7 +1132,7 @@ function openSimpleCod(docId, currentCod, currentAre, currentDeathDate = '') {
             deathInputBox.style.marginBottom = '15px';
             deathInputBox.innerHTML = `
                 <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">사망일 (선택)</label>
-                <input type="date" id="modal-death-date" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+                <input type="date" id="modal-death-date" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
             `;
             modalContent.insertBefore(deathInputBox, btnDiv);
         }
@@ -1044,16 +1147,27 @@ function openSimpleCod(docId, currentCod, currentAre, currentDeathDate = '') {
 async function saveSimpleCod() {
     const cod = document.getElementById('modal-cod').value;
     const areMain = document.getElementById('modal-are-main').value;
-    const areSub = document.getElementById('modal-are-sub').value;
     const deathDateEl = document.getElementById('modal-death-date');
     
     if(!cod || !areMain) return alert("COD와 ARE를 모두 선택해주세요.");
     
-    const areStr = areMain === 'O' ? `O (${areSub})` : (areMain === 'X' ? 'X' : '');
+    let areStr = '';
+    let areCounts = { micro: 0, macro: 0, unk: 0 };
+    
+    if (areMain === 'O') {
+        const micro = Number(document.getElementById('modal-are-micro').value) || 0;
+        const macro = Number(document.getElementById('modal-are-macro').value) || 0;
+        const unk = Number(document.getElementById('modal-are-unk').value) || 0;
+        areCounts = { micro, macro, unk };
+        areStr = `O (micro:${micro}, macro:${macro}, 미확인:${unk})`;
+    } else if (areMain === 'X') {
+        areStr = 'X';
+    }
     
     const updateData = {
         cod: cod,
         are: areStr,
+        areCounts: areCounts, // 핵심 추가
         codFull: `${cod} / ARE: ${areStr}`
     };
     
@@ -1108,13 +1222,14 @@ async function exportForAI() {
         const doseData = {};
         doseSnap.forEach(doc => { const d = doc.data(); if (!doseData[d.ratId]) doseData[d.ratId] = []; doseData[d.ratId].push(d); });
 
-        // 🔥 AI 지시문(System Prompt) 대폭 강화
+        // 🔥 AI 지시문(System Prompt) 대폭 강화 (데이터 환각 금지 조항 추가)
         let aiText = `[SYSTEM PROMPT & STRICT CONTEXT]\n`;
         aiText += `당신은 세계 최고 수준의 신경외과 및 기초의학(Animal Model) 연구원입니다. 아래 제공되는 데이터는 뇌동맥류(Cerebral Aneurysm, ARE) 동물 모델(Rat)의 Raw Data입니다.\n\n`;
         aiText += `[🚨 매우 중요한 분석 지침 - 반드시 준수할 것]\n`;
         aiText += `1. **주령(Age in weeks, w)의 절대적 중요성**: 쥐의 주령은 뇌동맥류 발생 및 파열(사망)에 결정적인 생리학적 요인입니다. 단순히 W1, W2 같은 시점만 보지 말고, 각 측정 데이터에 함께 각인된 '주령(예: 10.2w)'을 집중적으로 추적하십시오. 특정 주령 구간대에서 급격히 발생하는 체중 감소, 혈압 변화, 증상 악화를 면밀히 분석해야 합니다.\n`;
         aiText += `2. **시간축의 이중 이해 (Age & POD)**: 모든 개별 데이터에는 '(주령, POD/Ref.D)' 형태의 시간표표가 붙어있습니다. POD(수술 후 경과일)를 통해 질병 유도 후의 시간을 파악하고, 동시에 Age(주령)를 통해 개체의 물리적 노화 상태를 함께 교차 분석하십시오.\n`;
-        aiText += `3. **대조군(Sham/Naïve) 해석 주의**: 타임라인에 'Reference Date (Sham/Naïve, NO Ligation)'가 기재된 개체는 수술을 받지 않은 대조군입니다. 이들의 타임라인에 적힌 'Ref.D'는 수술군과 시간축을 동기화하기 위해 설정된 가상의 기준일(Day 0)로부터 경과한 시간입니다. 이들을 절대 수술 개체로 착각하지 말고 대조군으로서 철저히 분리 비교하십시오.\n\n`;
+        aiText += `3. **대조군(Sham/Naïve) 해석 주의**: 타임라인에 'Reference Date (Sham/Naïve, NO Ligation)'가 기재된 개체는 수술을 받지 않은 대조군입니다. 이들의 타임라인에 적힌 'Ref.D'는 수술군과 시간축을 동기화하기 위해 설정된 가상의 기준일(Day 0)로부터 경과한 시간입니다. 이들을 절대 수술 개체로 착각하지 말고 대조군으로서 철저히 분리 비교하십시오.\n`;
+        aiText += `4. **데이터 환각(Hallucination) 절대 금지**: 특정 개체나 시점의 데이터(혈압, 체중, 샘플, MR 기록 등)가 누락되어 있거나 'No data', 'None', '-' 등으로 표기되어 있다면, **절대 주변의 다른 개체 값이나 평균값을 임의로 끌어다 채우거나 유추하여 표기하지 마십시오.** 데이터가 존재하지 않는 부분은 '분석 불가(누락됨)'로 엄격하게 명시해야 합니다.\n\n`;
         aiText += `=================================================\n\n`;
         
         aiText += `[1. COHORT EXPERIMENTAL CONDITIONS (코호트별 실험 조건)]\n`;
@@ -1138,13 +1253,12 @@ async function exportForAI() {
                 const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
                 const arrDate = r.arrivalDate;
                 
-                // 👇 핵심: 측정치마다 주령과 POD를 콤보로 묶어주는 헬퍼 함수
+                // 측정치마다 주령과 POD를 콤보로 묶어주는 헬퍼 함수
                 const getTemporalStr = (targetDateStr) => {
                     if(!targetDateStr) return '';
                     let res = [];
                     const target = new Date(targetDateStr);
                     
-                    // 주령 계산
                     if(arrDate) {
                         const baseArr = new Date(arrDate);
                         if(!isNaN(target) && !isNaN(baseArr)) {
@@ -1153,7 +1267,6 @@ async function exportForAI() {
                         }
                     }
                     
-                    // POD 계산
                     if(r.surgeryDate) {
                         const baseSurg = new Date(r.surgeryDate);
                         if(!isNaN(target) && !isNaN(baseSurg)) {
@@ -1170,7 +1283,13 @@ async function exportForAI() {
                 const deathTempStr = r.deathDate ? getTemporalStr(r.deathDate) : '';
                 aiText += `  - Status: ${r.status} ${r.deathDate ? `(Death Date: ${r.deathDate}${deathTempStr})` : ''}\n`;
                 aiText += `  - Cause of Death (COD): ${cod}\n`;
-                aiText += `  - Aneurysm (ARE): ${r.are || '-'}\n`;
+                
+                // ✅ ARE 갯수 데이터 추출 로직 추가
+                let areStr = r.are || '-';
+                if (r.areCounts) {
+                    areStr += ` (Micro: ${r.areCounts.micro || 0}, Macro: ${r.areCounts.macro || 0}, Unknown: ${r.areCounts.unk || 0})`;
+                }
+                aiText += `  - Aneurysm (ARE): ${areStr}\n`;
 
                 aiText += `  - Timeline Events:\n`;
                 aiText += `    * Arrival: ${r.arrivalDate || '-'} (Age: ${arrAge.toFixed(1)}w)\n`;
@@ -1186,9 +1305,16 @@ async function exportForAI() {
                     aiText += `    * Dose Started: ${r.doseStartDate}${getTemporalStr(r.doseStartDate)}\n`;
                 }
 
+                // ✅ MR Infarction(뇌경색) 데이터 추출 로직 추가
                 if (r.mrDates && r.mrDates.length > 0) {
                     const mrStr = r.mrDates.sort((a,b) => new Date(a.date) - new Date(b.date))
-                                    .map(m => `${m.timepoint} on ${m.date}${getTemporalStr(m.date)}`).join(' | ');
+                                    .map(m => {
+                                        let infInfo = '';
+                                        if(m.infarctSize && m.infarctSize !== 'None') {
+                                            infInfo = ` [Infarct: ${m.infarctSize}(${m.infarctLoc||'-'})]`;
+                                        }
+                                        return `${m.timepoint} on ${m.date}${getTemporalStr(m.date)}${infInfo}`;
+                                    }).join(' | ');
                     aiText += `    * MR Scans: ${mrStr}\n`;
                 } else { aiText += `    * MR Scans: None\n`; }
 
@@ -1196,7 +1322,6 @@ async function exportForAI() {
                     aiText += `    * Sample Acquired: ${r.sampleType} on ${r.sampleDate || '-'}${getTemporalStr(r.sampleDate)} (Memo: ${r.sampleMemo || 'None'})\n`;
                 } else if (r.sampleType === 'Fail') { aiText += `    * Sample Acquired: Failed\n`; }
 
-                // 🔥 1. 혈압/체중 데이터 (모든 측정치에 시간축 완벽 각인)
                 const ratMeas = measData[r.ratId] || [];
                 if (ratMeas.length > 0) {
                     ratMeas.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1212,7 +1337,6 @@ async function exportForAI() {
                     aiText += `  - Measurements (BP/WT): ${measStrArr.join(' | ')}\n`;
                 } else { aiText += `  - Measurements (BP/WT): No data\n`; }
 
-                // 🔥 2. 데일리 체크
                 const ratDaily = dailyData[r.ratId] || [];
                 if (ratDaily.length > 0) {
                     ratDaily.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1225,7 +1349,6 @@ async function exportForAI() {
                     aiText += `  - Daily Checks: ${dailyStrArr.join(' | ')}\n`;
                 }
 
-                // 🔥 3. 투약 기록
                 const ratDose = doseData[r.ratId] || [];
                 if (ratDose.length > 0) {
                     ratDose.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1235,7 +1358,6 @@ async function exportForAI() {
                     aiText += `  - Dosing History: ${doseStrArr.join(' | ')}\n`;
                 }
 
-                // 🔥 4. 사진 메모 기록
                 if (r.photos && r.photos.length > 0) {
                     const photoStrs = r.photos.map(p => {
                         let photoTemp = p.photoDate ? getTemporalStr(p.photoDate) : '';
@@ -1271,6 +1393,7 @@ async function exportForAI() {
     }
 }
 
+
 function toggleAllLogs(source, targetClass) {
     const checkboxes = document.querySelectorAll('.' + targetClass);
     checkboxes.forEach(cb => cb.checked = source.checked);
@@ -1281,3 +1404,34 @@ function uploadDailyLogs() {
     alert("CSV 업로드 기능은 현재 준비중입니다.");
 }
 
+// 관리자 페이지 - MR 입력 줄 추가 함수
+function addEdMrRow() {
+    const list = document.getElementById('ed-mr-list');
+    const mrOpts = ['-','D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','Death'];
+    
+    const div = document.createElement('div');
+    div.className = 'ed-mr-row';
+    div.style.display = 'flex';
+    div.style.gap = '5px';
+    div.style.marginBottom = '5px';
+    
+    div.innerHTML = `
+        <select class="ed-mr-tp" style="width:90px; padding:5px;">
+            ${mrOpts.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+        </select>
+        <input type="date" class="ed-mr-dt" style="padding:5px;">
+        <select class="ed-mr-sz" style="width:80px; padding:5px;">
+            <option value="None" selected>None</option>
+            <option value="Small">Small</option>
+            <option value="Large">Large</option>
+        </select>
+        <select class="ed-mr-loc" style="width:60px; padding:5px;">
+            <option value="-" selected>-</option>
+            <option value="R">R</option>
+            <option value="L">L</option>
+            <option value="Both">Both</option>
+        </select>
+        <button class="btn-red btn-small" onclick="this.parentElement.remove()">X</button>
+    `;
+    list.appendChild(div);
+}
