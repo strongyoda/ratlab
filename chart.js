@@ -269,11 +269,23 @@ function updateRatList(preSelectId = null) {
 }
 
 
-async function loadDetailData() {
-    const id = document.getElementById('dt-rat-sel').value;
-    const view = document.getElementById('detail-view');
-    if(!id) return; 
-    view.innerHTML = "로딩 중...";
+async function loadDetailData(forceId = null) {
+    let id = forceId;
+    let view = document.getElementById('detail-view');
+
+    // 💡 팝업 모달창이 켜져 있는지 확인하여 타겟(그릴 위치)을 변경
+    const modal = document.getElementById('rat-detail-modal-overlay');
+    if (modal && modal.style.display === 'flex') {
+        id = id || document.getElementById('rdm-title').innerText;
+        view = document.getElementById('rdm-content');
+    } else {
+        // 일반 상세보기 페이지일 경우
+        const sel = document.getElementById('dt-rat-sel');
+        if (sel) id = id || sel.value;
+    }
+
+    if(!id || !view) return; 
+    view.innerHTML = '<div style="text-align:center; padding:50px; color:#666;"><div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...</div>';
     
     try {
         const rSnap = await db.collection("rats").where("ratId", "==", id).get();
@@ -431,7 +443,7 @@ async function loadDetailData() {
                     </div>
 
                     <div style="background:#fff; border:1px solid #ddd; padding:10px; border-radius:6px;">
-                        <div style="font-size:0.85rem; font-weight:bold; color:var(--navy); margin-bottom:8px;">📷 MR 촬영 이력</div>
+                        <div style="font-size:0.85rem; font-weight:bold; color:var(--navy); margin-bottom:8px;">📷 MR 촬영 이력 (Infarction 관찰)</div>
                         <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
                             ${(() => {
                                 const mrArr = rat.mrDates || [];
@@ -441,15 +453,25 @@ async function loadDetailData() {
                                     .sort((a, b) => {
                                         const wA = tpWeight[a.timepoint] !== undefined ? tpWeight[a.timepoint] : 9999;
                                         const wB = tpWeight[b.timepoint] !== undefined ? tpWeight[b.timepoint] : 9999;
-                                        if (wA === wB) return new Date(a.date) - new Date(b.date); // 시점이 같거나 없으면 날짜순서대로 예쁘게 정렬
+                                        if (wA === wB) return new Date(a.date) - new Date(b.date);
                                         return wA - wB;
                                     })
-                                    .map(mr => `
+                                    .map(mr => {
+                                        // ✅ [+] 버튼으로 심플하게 변경
+                                        let infStr = '';
+                                        if(mr.infarctSize && mr.infarctSize !== 'None') {
+                                            infStr = `<span style="color:#e65100; font-weight:bold; margin-left:4px; cursor:pointer;" title="수정하기" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, '${mr.infarctSize}', '${mr.infarctLoc||'-'}')">[${mr.infarctSize}(${mr.infarctLoc||'-'})]</span>`;
+                                        } else {
+                                            infStr = `<span style="color:#2196F3; font-weight:bold; font-size:1rem; margin-left:4px; cursor:pointer;" title="Infarct 기록 추가" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, 'None', '-')">[+]</span>`;
+                                        }
+
+                                        return `
                                         <span style="background:#f1f3f5; border:1px solid #ccc; padding:3px 8px; border-radius:4px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px;">
-                                            <b>${mr.timepoint}</b>: ${mr.date} 
+                                            <b>${mr.timepoint}</b>: ${mr.date} ${infStr}
                                             <i class="material-icons" style="font-size:1.1rem; color:var(--red); cursor:pointer;" onclick="removeMrDate('${docId}', ${mr.originalIdx})">cancel</i>
                                         </span>
-                                    `).join('');
+                                        `;
+                                    }).join('');
                             })()}
                         </div>
                         <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed #eee; padding-top:8px;">
@@ -462,8 +484,52 @@ async function loadDetailData() {
                                 </select>`
                             }
                             <input type="date" id="new-mr-d" value="${getTodayStr()}" style="width:130px; padding:4px; font-size:0.85rem;">
-                            <button class="btn-small btn-green" onclick="addMrDate('${docId}')" style="padding:4px 10px; font-size:0.85rem;">+ 추가</button>
+                            <button class="btn-small btn-green" onclick="addMrDate('${docId}')" style="padding:4px 10px; font-size:0.85rem;">+ 새 MR 추가</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card" style="border-top: 4px solid #fbc02d;">
+                <h4 style="margin-top:0; color:var(--navy);">⏳ 개체 라이프사이클 타임라인 (주령 기준)</h4>
+                <div style="font-size:0.8rem; color:#666; margin-bottom:10px; display:flex; gap:12px; flex-wrap:wrap; background:#f8f9fa; padding:8px; border-radius:6px;">
+                    <span>🟩 <b>반입</b></span> 
+                    <span>🔺 <b style="color:#9C27B0;">OVX</b></span> 
+                    <span>♦️ <b style="color:#E91E63;">수술(Ligation)</b></span> 
+                    <span>🔵 <b>MR</b></span> 
+                    <span>🚨 <b style="color:#d32f2f;">Infarction 발생</b></span> 
+                    <span>🟦 <b style="color:#009688;">샘플</b></span> 
+                    <span>❌ <b style="color:#d32f2f;">사망</b></span>
+                </div>
+                <div style="height:150px; width:100%;"><canvas id="indiv-timeline-${docId}"></canvas></div>
+            </div>
+
+            <div id="infarct-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+                <div style="background:white; padding:20px; border-radius:8px; width:300px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+                    <h4 style="margin-top:0; color:var(--navy); border-bottom:2px solid var(--navy); padding-bottom:8px;">🧠 Infarction 기록 추가</h4>
+                    <input type="hidden" id="infarct-doc-id">
+                    <input type="hidden" id="infarct-mr-idx">
+                    <div style="margin-bottom:10px;">
+                        <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:4px;">크기 (Size)</label>
+                        <select id="infarct-size-sel" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                            <option value="None">None (없음)</option>
+                            <option value="Small">Small</option>
+                            <option value="Large">Large</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:20px;">
+                        <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:4px;">위치 (Location)</label>
+                        <select id="infarct-loc-sel" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                            <option value="-">-</option>
+                            <option value="R">R (우측)</option>
+                            <option value="L">L (좌측)</option>
+                            <option value="Both">Both (양측)</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:10px;">
+                        <button class="btn-red btn-small" onclick="document.getElementById('infarct-modal').style.display='none'">취소</button>
+                        <button class="btn-green btn-small" onclick="saveInfarctData()">저장</button>
+                    </div>
                 </div>
             </div>
 
@@ -581,6 +647,147 @@ async function loadDetailData() {
         sortedMs.slice(0,5).forEach(v=>{rHtml+=`<tr><td>${v.date}</td><td>${v.timepoint||'-'}</td><td>${v.sbp||'-'}</td><td>${v.weight||'-'}</td></tr>`;});
         document.getElementById('rec-logs').innerHTML = rHtml+'</table>';
 
+        // ==========================================
+        //  개체 전용 타임라인 차트 데이터 구성 및 렌더링
+        // ==========================================
+        // ==========================================
+        //  개체 전용 타임라인 차트 데이터 구성 및 렌더링
+        // ==========================================
+        const tlData = [];
+        const arrDateObj = rat.arrivalDate ? new Date(rat.arrivalDate) : null;
+        
+        if (arrDateObj) {
+            tlData.push({ x: arrivalAgeNum, y: 0, event: 'Arrival', type: 'Arrival' });
+
+            if (rat.ovxDate) {
+                const age = arrivalAgeNum + (new Date(rat.ovxDate) - arrDateObj) / (1000*60*60*24*7);
+                tlData.push({ x: age, y: 0, event: 'OVX', type: 'OVX' });
+            }
+            if (rat.surgeryDate) {
+                const age = arrivalAgeNum + (new Date(rat.surgeryDate) - arrDateObj) / (1000*60*60*24*7);
+                tlData.push({ x: age, y: 0, event: rat.isNonInduction ? 'Ref.Day' : 'Surgery', type: 'Surgery' });
+            }
+            if (rat.mrDates) {
+                rat.mrDates.forEach(mr => {
+                    if(mr.date) {
+                        const age = arrivalAgeNum + (new Date(mr.date) - arrDateObj) / (1000*60*60*24*7);
+                        const hasInfarct = (mr.infarctSize && mr.infarctSize !== 'None');
+                        tlData.push({
+                            x: age, y: 0,
+                            event: mr.timepoint === '-' ? 'MR' : `MR (${mr.timepoint})`,
+                            type: 'MR',
+                            hasInfarct: hasInfarct,
+                            infarctText: hasInfarct ? `${mr.infarctSize}(${mr.infarctLoc})` : ''
+                        });
+                    }
+                });
+            }
+            if (rat.sampleDate && rat.sampleType !== 'Fail') {
+                const age = arrivalAgeNum + (new Date(rat.sampleDate) - arrDateObj) / (1000*60*60*24*7);
+                tlData.push({ x: age, y: 0, event: `Sample (${rat.sampleType})`, type: 'Sample' });
+            }
+            if (rat.status === '사망' && rat.deathDate) {
+                const age = arrivalAgeNum + (new Date(rat.deathDate) - arrDateObj) / (1000*60*60*24*7);
+                tlData.push({ x: age, y: 0, event: 'Death', type: 'Death' });
+            }
+
+            tlData.sort((a, b) => a.x - b.x);
+
+            // ✅ Infarction 위치 위쪽에 싸이렌 이모지를 띄우는 커스텀 플러그인
+            const sirenPlugin = {
+                id: 'sirenInfarct',
+                afterDatasetsDraw: (chart) => {
+                    const ctx = chart.ctx;
+                    chart.data.datasets.forEach((meta, i) => {
+                        const ds = chart.getDatasetMeta(i);
+                        ds.data.forEach((point, index) => {
+                            const raw = chart.data.datasets[i].data[index];
+                            if (raw && raw.hasInfarct) {
+                                ctx.save();
+                                ctx.font = '16px Arial';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'bottom';
+                                // 점보다 살짝(-6px) 위쪽에 싸이렌 아이콘 렌더링
+                                ctx.fillText('🚨', point.x, point.y - 6);
+                                ctx.restore();
+                            }
+                        });
+                    });
+                }
+            };
+
+            new Chart(document.getElementById(`indiv-timeline-${docId}`), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Timeline',
+                        data: tlData,
+                        borderColor: '#9e9e9e',
+                        borderWidth: 2,
+                        showLine: true,
+                        backgroundColor: (ctx) => {
+                            const raw = ctx.raw;
+                            if(!raw) return '#1a237e';
+                            if(raw.type === 'Arrival') return '#4CAF50'; 
+                            if(raw.type === 'OVX') return '#9C27B0'; 
+                            if(raw.type === 'Surgery') return '#E91E63'; 
+                            if(raw.type === 'MR') return '#2196F3'; // MR은 무조건 파란색 유지
+                            if(raw.type === 'Sample') return '#009688'; 
+                            if(raw.type === 'Death') return '#d32f2f'; 
+                            return '#1a237e';
+                        },
+                        pointStyle: (ctx) => {
+                            const raw = ctx.raw;
+                            if(!raw) return 'circle';
+                            if(raw.type === 'Arrival') return 'rect'; 
+                            if(raw.type === 'OVX') return 'triangle'; 
+                            if(raw.type === 'Surgery') return 'rectRot'; 
+                            if(raw.type === 'MR') return 'circle'; // MR은 무조건 동그라미 유지
+                            if(raw.type === 'Sample') return 'rectRounded'; 
+                            if(raw.type === 'Death') return 'crossRot'; 
+                            return 'circle';
+                        },
+                        pointRadius: (ctx) => {
+                            const raw = ctx.raw;
+                            if(!raw) return 7;
+                            if(raw.type === 'Surgery' || raw.type === 'OVX') return 9;
+                            if(raw.type === 'Death') return 8;
+                            return 7; // 크기도 튀지 않게 통일
+                        },
+                        pointHoverRadius: 14,
+                    }]
+                },
+                plugins: [sirenPlugin], // 👈 방금 만든 싸이렌 플러그인 장착
+                options: {
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'x', intersect: false }, 
+                    scales: {
+                        y: { display: false, min: -1, max: 1 },
+                        x: { 
+                            type: 'linear', 
+                            title: { display: true, text: 'Age (Weeks / 주령)', font: {weight: 'bold'} },
+                            grid: { color: '#eee' },
+                            ticks: { stepSize: 1 }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => {
+                                    const raw = ctx.raw;
+                                    let txt = `${raw.event} : ${raw.x.toFixed(1)}w`;
+                                    // 툴팁에는 텍스트로 정보 유지
+                                    if(raw.hasInfarct) txt += ` 🚨 [Infarct: ${raw.infarctText}]`;
+                                    return txt;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
     } catch(e) { console.error(e); }
 }
 
@@ -693,7 +900,7 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
             
             sampleModalRows += `
                 <tr style="border-bottom:1px solid #eee;">
-                    <td style="padding:8px; text-align:center;">${r.ratId} <span style="font-size:0.75rem; color:${r.status==='생존'?'green':'red'};">(${r.status})</span></td>
+                    <td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId} <span style="font-size:0.75rem; font-weight:normal; text-decoration:none; color:${r.status==='생존'?'green':'red'};">(${r.status})</span></td>
                     <td style="padding:8px; text-align:center;">
                         <span style="color:${r.sampleType==='Fail'?'red':'var(--navy)'}; font-weight:bold;">${r.sampleType||'-'}</span>
                     </td>
@@ -776,20 +983,52 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
             }
         }).join('');
 
-        let surgFailN = 0, areO = 0, areX = 0, areMicro = 0, areMacro = 0, areUnk = 0;
+        // ======== [수정 시작] ARE 통계 및 상세 데이터 추출 ========
+        let surgFailN = 0, areO = 0, areX = 0;
+        let totalMicro = 0, totalMacro = 0, totalUnk = 0; // 총 갯수 누적용
+        let areDetailRows = '';
+
         rats.forEach(r => {
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
             
+            let myMicro = 0, myMacro = 0, myUnk = 0;
+            let hasAre = false;
+
             if (r.are) {
                 if (r.are.startsWith('O')) {
-                    areO++;
-                    if(r.are.includes('micro')) areMicro++;
-                    else if(r.are.includes('macro')) areMacro++;
-                    else areUnk++;
+                    areO++; // ARE가 있는 '쥐 마리 수'
+                    hasAre = true;
+                    
+                    if (r.areCounts) {
+                        myMicro = Number(r.areCounts.micro) || 0;
+                        myMacro = Number(r.areCounts.macro) || 0;
+                        myUnk = Number(r.areCounts.unk) || 0;
+                    } else {
+                        if(r.are.includes('micro')) myMicro = 1;
+                        else if(r.are.includes('macro')) myMacro = 1;
+                        else myUnk = 1;
+                    }
+
+                    totalMicro += myMicro;
+                    totalMacro += myMacro;
+                    totalUnk += myUnk;
+
                 } else if (r.are === 'X') {
                     areX++;
                 }
+            }
+            
+            if (hasAre) {
+                const total = myMicro + myMacro + myUnk;
+                areDetailRows += `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td>
+                        <td style="padding:8px; text-align:center;">${myMicro}</td>
+                        <td style="padding:8px; text-align:center;">${myMacro}</td>
+                        <td style="padding:8px; text-align:center;">${myUnk}</td>
+                        <td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${total}개</td>
+                    </tr>`;
             }
         });
         
@@ -797,6 +1036,8 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         const validN = totalN - surgFailN;
         const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0;
         const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0;
+        const totalAreCount = totalMicro + totalMacro + totalUnk;
+        const areTableId = `areTable${uniqueSuffix}`;
 
         let finalHtml = headerHtml;
 
@@ -843,30 +1084,48 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
 
         finalHtml += `
         <div class="card" style="border-left:5px solid #9c27b0;">
-            <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률</h4>
-            <div id="are-data-wrap-${uniqueSuffix}" style="display:flex; justify-content:flex-end; gap:15px; margin-bottom:15px; font-size:0.9rem;"
-                data-total="${totalN}" data-valid="${validN}" data-micro="${areMicro}" data-macro="${areMacro}" data-unk="${areUnk}">
-                <label style="cursor:pointer;"><input type="checkbox" value="micro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> micro</label>
-                <label style="cursor:pointer;"><input type="checkbox" value="macro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> macro</label>
-                <label style="cursor:pointer;"><input type="checkbox" value="미확인" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> 미확인</label>
+            <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4>
+            
+            <div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;">
+                <b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> 
+                <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span>
             </div>
+
             <div style="margin-bottom: 15px;">
                 <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
                     <span>전체 기준 (Total N = ${totalN})</span>
-                    <span id="are-text-total-${uniqueSuffix}" style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span>
+                    <span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span>
                 </div>
                 <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
-                    <div id="are-bar-total-${uniqueSuffix}" style="width:${rateTotal}%; background:#1565C0; height:100%; transition: width 0.3s;"></div>
+                    <div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div>
                 </div>
             </div>
-            <div>
+            <div style="margin-bottom: 15px;">
                 <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
                     <span>Surgical Failure 제외 (Valid N = ${validN})</span>
-                    <span id="are-text-valid-${uniqueSuffix}" style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span>
+                    <span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span>
                 </div>
                 <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
-                    <div id="are-bar-valid-${uniqueSuffix}" style="width:${rateValid}%; background:#F57C00; height:100%; transition: width 0.3s;"></div>
+                    <div style="width:${rateValid}%; background:#F57C00; height:100%;"></div>
                 </div>
+            </div>
+            
+            <button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button>
+            <div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                    <thead>
+                        <tr style="background:#f5f5f5;">
+                            <th style="padding:8px;">Rat ID</th>
+                            <th style="padding:8px;">Micro 갯수</th>
+                            <th style="padding:8px;">Macro 갯수</th>
+                            <th style="padding:8px;">미확인 갯수</th>
+                            <th style="padding:8px; color:var(--red);">발견합계</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#777;">ARE 발생 개체가 없습니다.</td></tr>'}
+                    </tbody>
+                </table>
             </div>
         </div>`;
 
@@ -891,7 +1150,7 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                 const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?';
                 if (pod !== '?') { totalPod += pod; validPodCnt++; } // 유효한 POD 누적
                 const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록';
-                survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`;
+                survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`;
             });
             survTable += `</table>`;
             const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; // 평균 계산
@@ -1074,7 +1333,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             
             sampleModalRows += `
                 <tr style="border-bottom:1px solid #eee;">
-                    <td style="padding:8px; text-align:center;">${r.ratId} <span style="font-size:0.75rem; color:${r.status==='생존'?'green':'red'};">(${r.status})</span></td>
+                    <td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId} <span style="font-size:0.75rem; font-weight:normal; text-decoration:none; color:${r.status==='생존'?'green':'red'};">(${r.status})</span></td>
                     <td style="padding:8px; text-align:center;">
                         <span style="color:${r.sampleType==='Fail'?'red':'var(--navy)'}; font-weight:bold;">${r.sampleType||'-'}</span>
                     </td>
@@ -1157,20 +1416,60 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             }
         }).join('');
 
-        let surgFailN = 0, areO = 0, areX = 0, areMicro = 0, areMacro = 0, areUnk = 0;
-        ratDataList.forEach(r => {
+        let surgFailN = 0, areO = 0, areX = 0;
+        let totalMicro = 0, totalMacro = 0, totalUnk = 0; // 총 갯수 누적용
+        let areDetailRows = '';
+
+        rats.forEach(r => {
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
+            
+            let myMicro = 0, myMacro = 0, myUnk = 0;
+            let hasAre = false;
+
             if (r.are) {
-                if (r.are.startsWith('O')) { areO++; if(r.are.includes('micro')) areMicro++; else if(r.are.includes('macro')) areMacro++; else areUnk++; } 
-                else if (r.are === 'X') { areX++; }
+                if (r.are.startsWith('O')) {
+                    areO++; // ARE가 있는 '쥐 마리 수'
+                    hasAre = true;
+                    
+                    if (r.areCounts) {
+                        myMicro = Number(r.areCounts.micro) || 0;
+                        myMacro = Number(r.areCounts.macro) || 0;
+                        myUnk = Number(r.areCounts.unk) || 0;
+                    } else {
+                        if(r.are.includes('micro')) myMicro = 1;
+                        else if(r.are.includes('macro')) myMacro = 1;
+                        else myUnk = 1;
+                    }
+
+                    totalMicro += myMicro;
+                    totalMacro += myMacro;
+                    totalUnk += myUnk;
+
+                } else if (r.are === 'X') {
+                    areX++;
+                }
+            }
+            
+            if (hasAre) {
+                const total = myMicro + myMacro + myUnk;
+                areDetailRows += `
+                    <tr style="border-bottom:1px solid #eee;">
+                        <td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td>
+                        <td style="padding:8px; text-align:center;">${myMicro}</td>
+                        <td style="padding:8px; text-align:center;">${myMacro}</td>
+                        <td style="padding:8px; text-align:center;">${myUnk}</td>
+                        <td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${total}개</td>
+                    </tr>`;
             }
         });
         
-        const totalN = ratDataList.length;
+        const totalN = rats.length;
         const validN = totalN - surgFailN;
         const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0;
         const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0;
+        const totalAreCount = totalMicro + totalMacro + totalUnk;
+        const areTableId = `areTable${uniqueSuffix}`;
 
         let finalHtml = headerHtml;
 
@@ -1217,30 +1516,48 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         finalHtml += `
         <div class="card" style="border-left:5px solid #9c27b0;">
-            <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률</h4>
-            <div id="are-data-wrap-${uniqueSuffix}" style="display:flex; justify-content:flex-end; gap:15px; margin-bottom:15px; font-size:0.9rem;"
-                data-total="${totalN}" data-valid="${validN}" data-micro="${areMicro}" data-macro="${areMacro}" data-unk="${areUnk}">
-                <label style="cursor:pointer;"><input type="checkbox" value="micro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> micro</label>
-                <label style="cursor:pointer;"><input type="checkbox" value="macro" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> macro</label>
-                <label style="cursor:pointer;"><input type="checkbox" value="미확인" checked onchange="updateAreBarMulti('${uniqueSuffix}')" style="transform:scale(1.2); margin-right:5px;"> 미확인</label>
+            <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4>
+            
+            <div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;">
+                <b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> 
+                <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span>
             </div>
+
             <div style="margin-bottom: 15px;">
                 <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
                     <span>전체 기준 (Total N = ${totalN})</span>
-                    <span id="are-text-total-${uniqueSuffix}" style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span>
+                    <span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span>
                 </div>
                 <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
-                    <div id="are-bar-total-${uniqueSuffix}" style="width:${rateTotal}%; background:#1565C0; height:100%; transition: width 0.3s;"></div>
+                    <div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div>
                 </div>
             </div>
-            <div>
+            <div style="margin-bottom: 15px;">
                 <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;">
                     <span>Surgical Failure 제외 (Valid N = ${validN})</span>
-                    <span id="are-text-valid-${uniqueSuffix}" style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span>
+                    <span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span>
                 </div>
                 <div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;">
-                    <div id="are-bar-valid-${uniqueSuffix}" style="width:${rateValid}%; background:#F57C00; height:100%; transition: width 0.3s;"></div>
+                    <div style="width:${rateValid}%; background:#F57C00; height:100%;"></div>
                 </div>
+            </div>
+            
+            <button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button>
+            <div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                    <thead>
+                        <tr style="background:#f5f5f5;">
+                            <th style="padding:8px;">Rat ID</th>
+                            <th style="padding:8px;">Micro 갯수</th>
+                            <th style="padding:8px;">Macro 갯수</th>
+                            <th style="padding:8px;">미확인 갯수</th>
+                            <th style="padding:8px; color:var(--red);">발견합계</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#777;">ARE 발생 개체가 없습니다.</td></tr>'}
+                    </tbody>
+                </table>
             </div>
         </div>`;
 
@@ -1265,7 +1582,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?';
                 if (pod !== '?') { totalPod += pod; validPodCnt++; }
                 const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; 
-                survTable += `<tr><td>${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`; 
+                survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`;
             });
             survTable += `</table>`;
             const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-';
@@ -2497,3 +2814,98 @@ window.saveSurgAndSham = async function(docId, arrDateStr, arrAgeNum) {
         alert("저장 실패: " + e.message);
     }
 };
+
+// ====== Infarction 팝업 관련 신규 함수들 ======
+
+// 1. 기존 MR 추가 함수 원상복구 (순수하게 날짜만 추가)
+async function addMrDate(did) {
+    const tp = document.getElementById('new-mr-tp').value;
+    const dt = document.getElementById('new-mr-d').value;
+    if(!dt) return alert("날짜를 선택하세요.");
+    
+    try {
+        const docRef = db.collection("rats").doc(did);
+        const doc = await docRef.get();
+        const arr = doc.data().mrDates || [];
+        arr.push({ timepoint: tp, date: dt }); // 기본 추가 시에는 사이즈/위치 없음
+        
+        arr.sort((a,b) => new Date(a.date) - new Date(b.date));
+        
+        await docRef.update({ mrDates: arr });
+        clearRatsCache(); 
+        loadDetailData();
+    } catch(e) { console.error(e); alert("오류: " + e.message); }
+}
+
+// 2. [+ Infarct] 버튼 누르면 팝업 열기
+function openInfarctModal(docId, mrIdx, currentSize, currentLoc) {
+    document.getElementById('infarct-doc-id').value = docId;
+    document.getElementById('infarct-mr-idx').value = mrIdx;
+    document.getElementById('infarct-size-sel').value = currentSize || 'None';
+    document.getElementById('infarct-loc-sel').value = currentLoc || '-';
+    
+    document.getElementById('infarct-modal').style.display = 'flex';
+}
+
+// 3. 팝업에서 [저장] 누르면 해당 MR에 내용 덮어쓰기
+async function saveInfarctData() {
+    const docId = document.getElementById('infarct-doc-id').value;
+    const mrIdx = Number(document.getElementById('infarct-mr-idx').value);
+    const size = document.getElementById('infarct-size-sel').value;
+    const loc = document.getElementById('infarct-loc-sel').value;
+
+    try {
+        const docRef = db.collection("rats").doc(docId);
+        const doc = await docRef.get();
+        const arr = doc.data().mrDates || [];
+
+        // 선택한 인덱스의 MR 데이터에 Infarction 정보 업데이트
+        if(arr[mrIdx]) {
+            arr[mrIdx].infarctSize = size;
+            arr[mrIdx].infarctLoc = loc;
+        }
+
+        await docRef.update({ mrDates: arr });
+        
+        document.getElementById('infarct-modal').style.display = 'none';
+        clearRatsCache(); 
+        loadDetailData(); // 화면 새로고침 (타임라인 즉시 업데이트)
+    } catch(e) {
+        console.error(e);
+        alert("저장 중 오류가 발생했습니다: " + e.message);
+    }
+}
+
+// ====== 개체 상세보기 팝업창(모달) 생성 함수 ======
+function openRatModal(ratId) {
+    // 1. 모달 배경(Overlay)과 창이 없으면 동적으로 생성
+    let modal = document.getElementById('rat-detail-modal-overlay');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'rat-detail-modal-overlay';
+        modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;';
+        
+        modal.innerHTML = `
+            <div style="background:#f4f6f8; width:95%; max-width:1100px; height:90%; border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
+                <div style="background:var(--navy, #1a237e); color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
+                    <h3 style="margin:0; font-size:1.2rem;">🐁 개체 상세보기 - <span id="rdm-title"></span></h3>
+                    <button onclick="document.getElementById('rat-detail-modal-overlay').style.display='none'" style="background:none; border:none; color:white; font-size:1.8rem; cursor:pointer; line-height:1;">&times;</button>
+                </div>
+                <div id="rdm-content" style="flex:1; padding:20px; overflow-y:auto; position:relative; background:#f4f6f8;">
+                    <div style="text-align:center; padding:50px; color:#666;">
+                        <div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // 2. 모달 열기 및 제목 설정
+    document.getElementById('rdm-title').innerText = ratId;
+    modal.style.display = 'flex';
+    document.getElementById('rdm-content').innerHTML = '<div style="text-align:center; padding:50px; color:#666;"><div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...</div>';
+
+    // 3. 실제 데이터 로드 및 렌더링 호출
+    loadDetailData(ratId);
+}
