@@ -988,7 +988,7 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         let totalMicro = 0, totalMacro = 0, totalUnk = 0; // 총 갯수 누적용
         let areDetailRows = '';
 
-        rats.forEach(r => {
+        ratDataList.forEach(r => {
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
             
@@ -1032,7 +1032,7 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
             }
         });
         
-        const totalN = rats.length;
+        const totalN = ratDataList.length;
         const validN = totalN - surgFailN;
         const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0;
         const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0;
@@ -1420,7 +1420,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         let totalMicro = 0, totalMacro = 0, totalUnk = 0; // 총 갯수 누적용
         let areDetailRows = '';
 
-        rats.forEach(r => {
+        ratDataList.forEach(r => {
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
             
@@ -1464,7 +1464,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             }
         });
         
-        const totalN = rats.length;
+        const totalN = ratDataList.length;
         const validN = totalN - surgFailN;
         const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0;
         const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0;
