@@ -2221,7 +2221,8 @@ async function analyzeTrend() {
     const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
 
     const mode = document.querySelector('input[name="trend-crit"]:checked').value;
-    let criteriaVal = 0, criteriaTp = '', selectedCods = [];
+    let criteriaVal = 0, criteriaTp = '';
+    let selectedCodsInc = [], selectedCodsExc = [];
 
     if (mode === 'weight') {
         criteriaTp = document.getElementById('trend-wt-tp').value;
@@ -2233,9 +2234,11 @@ async function analyzeTrend() {
         if (!val) return alert("POD 기준값(일)을 입력하세요.");
         criteriaVal = Number(val);
     } else if (mode === 'cod') {
-        const codChks = document.querySelectorAll('.trend-cod-chk:checked');
-        if(codChks.length === 0) return alert("하나 이상의 조건을 선택해주세요.");
-        selectedCods = Array.from(codChks).map(c => c.value);
+        const incChks = document.querySelectorAll('.trend-cod-chk-inc:checked');
+        const excChks = document.querySelectorAll('.trend-cod-chk-exc:checked');
+        if(incChks.length === 0 && excChks.length === 0) return alert("포함할 기준이나 제외할 기준을 하나 이상 선택해주세요.");
+        selectedCodsInc = Array.from(incChks).map(c => c.value);
+        selectedCodsExc = Array.from(excChks).map(c => c.value);
     }
 
     const container = document.getElementById('trend-res-area');
@@ -2332,13 +2335,28 @@ async function analyzeTrend() {
                 const myCod = r.cod || extractLegacyCod(r.codFull);
                 const myAre = r.are ? `ARE: ${r.are}` : '';
 
-                // 선택된 키워드 중 COD와 ARE 중 하나라도 정확히 일치하면 포함
-                const hasCause = selectedCods.some(key => {
-                    if(key.startsWith('ARE:')) return myAre === key;
-                    return myCod === key;
-                });
+                // 1. 제외 조건 (배제): 제외 기준에 하나라도 맞으면 아예 분석 데이터에서 소멸시킴
+                if (selectedCodsExc.length > 0) {
+                    const isExcluded = selectedCodsExc.some(key => {
+                        if(key.startsWith('ARE:')) return myAre === key;
+                        return myCod === key;
+                    });
+                    if (isExcluded) return; 
+                }
+
+                // 2. 포함 조건 (타겟/대조군 분류)
+                let isIncluded = false;
+                if (selectedCodsInc.length > 0) {
+                    isIncluded = selectedCodsInc.some(key => {
+                        if(key.startsWith('ARE:')) return myAre === key;
+                        return myCod === key;
+                    });
+                } else {
+                    // 포함 기준 없이 제외 기준만 골랐다면, 살아남은 나머지를 모두 타겟으로 지정
+                    isIncluded = true;
+                }
                 
-                if (hasCause) groupTarget.push(r);
+                if (isIncluded) groupTarget.push(r);
                 else groupControl.push(r);
             });
         } else if (mode === 'pod') {
@@ -2417,9 +2435,10 @@ async function analyzeTrend() {
 
         let titleA = '', titleB = '';
         if(mode === 'cod') {
-            const keysStr = selectedCods.length > 3 ? `${selectedCods.slice(0,3).join(', ')}...` : selectedCods.join(', ');
-            titleA = `Condition: [${keysStr}] (n=${groupTarget.length})`;
-            titleB = `Control: 미포함 (n=${groupControl.length})`;
+            const incStr = selectedCodsInc.length > 2 ? `${selectedCodsInc.slice(0,2).join(', ')}...` : (selectedCodsInc.join(', ') || '전체');
+            const excStr = selectedCodsExc.length > 0 ? ` (제외: ${selectedCodsExc.length}종)` : '';
+            titleA = `Condition: [${incStr}]${excStr} (n=${groupTarget.length})`;
+            titleB = `Control: 조건 미충족 (n=${groupControl.length})`;
         } else {
             const critText = mode === 'weight' ? `${criteriaTp} 체중` : `POD`;
             titleA = `${critText} < ${criteriaVal} (n=${groupTarget.length})`;
@@ -2983,7 +3002,6 @@ function toggleTrendInputs() {
     }
 }
 
-
 async function loadTrendCodList() {
     const checkboxes = document.querySelectorAll('#trend-cohort-list .co-checkbox:checked');
     if (checkboxes.length === 0) return alert("분석할 코호트를 먼저 선택해주세요.");
@@ -3004,7 +3022,6 @@ async function loadTrendCodList() {
                 const r = doc.data();
                 if(r.status === '사망') {
                     const c = r.cod || extractLegacyCod(r.codFull);
-                    // 기존 코드: const a = r.are ? `ARE: ${r.are.split(' ')[0]}` : null;
                     const a = r.are ? `ARE: ${r.are}` : null;
                     if(c && c !== "Unknown") codSet.add(c);
                     if(a && a !== "ARE: 미확인") areSet.add(a);
@@ -3018,27 +3035,60 @@ async function loadTrendCodList() {
             return;
         }
 
-        const createSection = (title, set, color) => {
+        // 나란히 배치하기 위한 레이아웃 (공간 활용)
+        const flexWrap = document.createElement('div');
+        flexWrap.style.display = 'flex';
+        flexWrap.style.gap = '20px';
+        flexWrap.style.flexWrap = 'wrap';
+        flexWrap.style.alignItems = 'flex-start';
+
+        const incBox = document.createElement('div');
+        incBox.style.flex = '1';
+        incBox.style.minWidth = '300px';
+        incBox.style.background = '#e3f2fd';
+        incBox.style.padding = '15px';
+        incBox.style.borderRadius = '8px';
+        incBox.style.border = '1px solid #90caf9';
+        incBox.innerHTML = '<h5 style="margin-top:0; color:#1565C0; margin-bottom:10px;">✅ 포함할 기준 (Target Group)</h5>';
+
+        const excBox = document.createElement('div');
+        excBox.style.flex = '1';
+        excBox.style.minWidth = '300px';
+        excBox.style.background = '#ffebee';
+        excBox.style.padding = '15px';
+        excBox.style.borderRadius = '8px';
+        excBox.style.border = '1px solid #ef9a9a';
+        excBox.innerHTML = '<h5 style="margin-top:0; color:#c62828; margin-bottom:10px;">❌ 제외할 기준 (분석에서 완전 배제)</h5>';
+
+        const createList = (title, set, targetBox, isExc) => {
             if(set.size === 0) return;
             const wrap = document.createElement('div');
-            wrap.style.marginBottom = "10px"; wrap.style.padding = "5px"; wrap.style.borderBottom = "1px dashed #eee";
-            wrap.innerHTML = `<div><span style="font-size:0.8rem; font-weight:bold; color:${color}; margin-right:5px;">● ${title}</span></div>`;
+            wrap.style.marginBottom = "10px";
+            wrap.innerHTML = `<div><span style="font-size:0.85rem; font-weight:bold; color:#333;">● ${title}</span></div>`;
 
             const box = document.createElement('div');
             box.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;';
 
             Array.from(set).sort().forEach(val => {
                 const label = document.createElement('label');
-                label.style.cssText = 'display:flex; align-items:center; font-size:0.85rem; cursor:pointer; background:#fff; padding:2px 6px; border-radius:4px; border:1px solid #ddd;';
-                label.innerHTML = `<input type="checkbox" class="trend-cod-chk" value="${val}" style="margin-right:4px;"> ${val}`;
+                label.style.cssText = 'display:flex; align-items:center; font-size:0.85rem; cursor:pointer; background:#fff; padding:4px 8px; border-radius:4px; border:1px solid #ddd; transition:0.2s;';
+                const chkClass = isExc ? 'trend-cod-chk-exc' : 'trend-cod-chk-inc';
+                label.innerHTML = `<input type="checkbox" class="${chkClass}" value="${val}" style="margin-right:6px; transform:scale(1.1);"> <span style="word-break:keep-all;">${val}</span>`;
                 box.appendChild(label);
             });
             wrap.appendChild(box);
-            container.appendChild(wrap);
+            targetBox.appendChild(wrap);
         };
 
-        createSection("사망 원인 (COD)", codSet, "var(--navy)");
-        createSection("ARE 발생 여부", areSet, "var(--red)");
+        createList("사망 원인 (COD)", codSet, incBox, false);
+        createList("ARE 발생 여부", areSet, incBox, false);
+        
+        createList("사망 원인 (COD)", codSet, excBox, true);
+        createList("ARE 발생 여부", areSet, excBox, true);
+
+        flexWrap.appendChild(incBox);
+        flexWrap.appendChild(excBox);
+        container.appendChild(flexWrap);
 
     } catch(e) {
         console.error(e);
