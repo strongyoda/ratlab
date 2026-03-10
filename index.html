@@ -38,40 +38,46 @@
         </div>
     </div>
 
-    <div id="main-app">
-        <header style="display:flex; align-items:flex-end; padding-bottom:0;">
-            <div style="display:flex; align-items:center; height:100%; padding-bottom:15px;">
-                <div class="menu-btn-box" onclick="toggleMenu()" style="margin-right:15px;">
+    <div id="main-app" style="display:flex; flex-direction:column; height:100vh; overflow:hidden;">
+        
+        <header style="display:flex; align-items:flex-end; padding:10px 20px 0 20px; background:#fff; z-index:1000; position:relative; border-bottom:1px solid #ddd; flex-shrink:0;">
+            <div style="display:flex; align-items:center; height:100%; padding-bottom:10px;">
+                <div class="menu-btn-box" onclick="toggleMenu()" style="margin-right:15px; cursor:pointer;">
                     <i class="material-icons" style="color:var(--navy)">menu</i>
                     <span class="menu-btn-text">MENU</span>
                 </div>
                 <span style="font-weight:900; color:var(--navy); font-size:1.2rem; margin-right:20px; white-space:nowrap;">RLM Pro</span>
             </div>
             
-            <div id="app-tabs-container" style="display:flex; flex:1; overflow-x:auto; gap:5px;">
-                </div>
-            
-            <button onclick="createNewTab('blank')" style="background:none; border:none; color:var(--navy); cursor:pointer; font-weight:900; font-size:1.5rem; padding:10px 15px; line-height:1; margin-bottom:5px;" title="새 탭 열기">+</button>
+            <div style="display:flex; flex:1; overflow-x:auto; align-items:flex-end; gap:2px;">
+                <div id="app-tabs-container" style="display:flex; gap:2px;">
+                    </div>
+                <button onclick="createNewTab('blank')" style="background:none; border:none; color:var(--navy); cursor:pointer; font-weight:900; font-size:1.5rem; padding:8px 12px; line-height:1; margin-bottom:2px;" title="새 탭 열기">+</button>
+            </div>
         </header>
-        <div id="overlay" onclick="toggleMenu()"></div>
 
-        <nav id="sidebar">
-           <div class="nav-item" onclick="go('dash')"><i class="material-icons">dashboard</i>대시보드</div>
-            <div class="nav-item" onclick="go('detail')"><i class="material-icons">search</i>랫드 상세보기</div>
-            <div class="nav-item" onclick="go('cohort')"><i class="material-icons">bar_chart</i>코호트 분석</div>
-            <div class="nav-item" onclick="go('compare')"><i class="material-icons">compare_arrows</i>코호트 비교</div>
-            <div class="nav-item" onclick="go('trend')"><i class="material-icons">trending_up</i>조건분석</div>
-            <div class="nav-item" onclick="openPptSetup()"><i class="material-icons">slideshow</i>프레젠테이션</div>
-            <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>데일리 체크</div>
-            <div class="nav-item" onclick="go('add')"><i class="material-icons">add_circle</i>신규 등록</div>
-            <div class="nav-item" onclick="go('dose')"><i class="material-icons">science</i>투약 계산기</div>
-            <div class="nav-item" onclick="go('rec')"><i class="material-icons">monitor_weight</i>혈압/체중 기록</div>
-            <div class="nav-item" onclick="go('bp')"><i class="material-icons">analytics</i>BP 계산기</div>
-            <div class="nav-item" onclick="go('admin')"><i class="material-icons">admin_panel_settings</i>데이터 관리</div>
-            <div class="nav-item" onclick="location.reload()" style="margin-top:auto"><i class="material-icons">logout</i>로그아웃</div>
-        </nav>
+        <div style="position:relative; flex:1; display:flex; overflow:hidden;">
+            
+            <nav id="sidebar" style="position:absolute; top:0; left:0; height:100%; z-index:900; margin:0;">
+                <div class="nav-item" onclick="go('dash')"><i class="material-icons">dashboard</i>대시보드</div>
+                <div class="nav-item" onclick="go('detail')"><i class="material-icons">search</i>랫드 상세보기</div>
+                <div class="nav-item" onclick="go('cohort')"><i class="material-icons">bar_chart</i>코호트 분석</div>
+                <div class="nav-item" onclick="go('compare')"><i class="material-icons">compare_arrows</i>코호트 비교</div>
+                <div class="nav-item" onclick="go('trend')"><i class="material-icons">trending_up</i>조건분석</div>
+                <div class="nav-item" onclick="openPptSetup()"><i class="material-icons">slideshow</i>프레젠테이션</div>
+                <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>데일리 체크</div>
+                <div class="nav-item" onclick="go('add')"><i class="material-icons">add_circle</i>신규 등록</div>
+                <div class="nav-item" onclick="go('dose')"><i class="material-icons">science</i>투약 계산기</div>
+                <div class="nav-item" onclick="go('rec')"><i class="material-icons">monitor_weight</i>혈압/체중 기록</div>
+                <div class="nav-item" onclick="go('bp')"><i class="material-icons">analytics</i>BP 계산기</div>
+                <div class="nav-item" onclick="go('admin')"><i class="material-icons">admin_panel_settings</i>데이터 관리</div>
+                <div class="nav-item" onclick="location.reload()" style="margin-top:auto"><i class="material-icons">logout</i>로그아웃</div>
+            </nav>
+            
+            <div id="overlay" onclick="toggleMenu()" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:800; display:none; background:rgba(0,0,0,0.5);"></div>
 
-        <main id="tab-views-container" style="position:relative; width:100%; height:calc(100vh - 60px); overflow-y:auto; overflow-x:hidden; background:#f4f6f8;"></main>
+            <main id="tab-views-container" style="flex:1; width:100%; height:100%; overflow-y:auto; overflow-x:hidden; background:#f4f6f8;"></main>
+        </div>
     </div>
 
     <div id="cod-modal">
