@@ -2221,24 +2221,42 @@ async function analyzeTrend() {
     const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
 
     const mode = document.querySelector('input[name="trend-crit"]:checked').value;
+    // ==========================================
+    // 1. 설정된 기준값(포함/제외) 모두 읽어오기
+    // ==========================================
     let criteriaVal = 0, criteriaTp = '';
-    let selectedCodsInc = [], selectedCodsExc = [];
+    let selectedCodsInc = [];
 
     if (mode === 'weight') {
         criteriaTp = document.getElementById('trend-wt-tp').value;
         const val = document.getElementById('trend-wt-val').value;
-        if (!val) return alert("체중 기준값(g)을 입력하세요.");
+        if (!val) return alert("포함 기준: 체중 기준값(g)을 입력하세요.");
         criteriaVal = Number(val);
     } else if (mode === 'pod') {
         const val = document.getElementById('trend-pod-val').value;
-        if (!val) return alert("POD 기준값(일)을 입력하세요.");
+        if (!val) return alert("포함 기준: POD 기준값(일)을 입력하세요.");
         criteriaVal = Number(val);
     } else if (mode === 'cod') {
         const incChks = document.querySelectorAll('.trend-cod-chk-inc:checked');
-        const excChks = document.querySelectorAll('.trend-cod-chk-exc:checked');
-        if(incChks.length === 0 && excChks.length === 0) return alert("포함할 기준이나 제외할 기준을 하나 이상 선택해주세요.");
         selectedCodsInc = Array.from(incChks).map(c => c.value);
+    }
+
+    const useExcWt = document.getElementById('exc-use-wt').checked;
+    const excWtTp = document.getElementById('exc-wt-tp').value;
+    const excWtVal = Number(document.getElementById('exc-wt-val').value) || 0;
+
+    const useExcPod = document.getElementById('exc-use-pod').checked;
+    const excPodVal = Number(document.getElementById('exc-pod-val').value) || 0;
+
+    const useExcCod = document.getElementById('exc-use-cod').checked;
+    let selectedCodsExc = [];
+    if (useExcCod) {
+        const excChks = document.querySelectorAll('.trend-cod-chk-exc:checked');
         selectedCodsExc = Array.from(excChks).map(c => c.value);
+    }
+
+    if (mode === 'cod' && selectedCodsInc.length === 0 && selectedCodsExc.length === 0) {
+        return alert("포함할 기준이나 제외할 기준을 하나 이상 선택해주세요.");
     }
 
     const container = document.getElementById('trend-res-area');
@@ -2268,19 +2286,18 @@ async function analyzeTrend() {
         const measSnaps = await Promise.all(measPromises);
 
         let globalMaxSbp = 0, globalMaxWt = 0, globalMaxPod = 0;
-        let globalMinSbp = 9999, globalMinWt = 9999; // 추가
+        let globalMinSbp = 9999, globalMinWt = 9999; 
         const stdPodMap = globalPodMap, tempColumns = [], labelSet = new Set();
         const showAll = document.getElementById('trend-show-all')?.checked;
         const measMap = {}; 
-        let globalMaxAge = 0, globalMinAge = 999; // 최소 주령 동기화용 변수 추가
+        let globalMaxAge = 0, globalMinAge = 999;
 
         measSnaps.forEach((snap, idx) => {
             const rid = allRatIds[idx];
-            // 랫드 정보 찾기 (allRats 배열에서)
             const rInfo = allRats.find(r => r.ratId === rid);
             if(rInfo) {
                 const arrAge = rInfo.arrivalAge ? Number(rInfo.arrivalAge) : 6;
-                if(arrAge < globalMinAge) globalMinAge = arrAge; // 추가
+                if(arrAge < globalMinAge) globalMinAge = arrAge;
                 let endAge = arrAge;
                 if(rInfo.status === '사망' && rInfo.deathDate && rInfo.arrivalDate) {
                     endAge = arrAge + ((new Date(rInfo.deathDate) - new Date(rInfo.arrivalDate)) / (1000*60*60*24*7));
@@ -2328,55 +2345,67 @@ async function analyzeTrend() {
         const globalLabels = tempColumns.map(c => c.label);
         trendTimepointsCache = globalLabels;
 
+        // ==========================================
+        // 2. 포함/제외 필터 적용하여 그룹(Target/Control) 분류
+        // ==========================================
         let groupTarget = [], groupControl = [];
-        
-        if (mode === 'cod') {
-            allRats.forEach(r => {
+        let excCount = 0;
+
+        allRats.forEach(r => {
+            // [1단계] 제외 조건 검사 (배제)
+            let isExcluded = false;
+
+            if (useExcWt) {
+                const w = measMap[r.ratId]?.[excWtTp];
+                if (w !== undefined && w < excWtVal) isExcluded = true;
+            }
+            if (useExcPod && !isExcluded && r.surgeryDate) {
+                const endDate = r.deathDate ? new Date(r.deathDate) : new Date();
+                const pod = Math.floor((endDate - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24));
+                if (pod < excPodVal) isExcluded = true;
+            }
+            if (useExcCod && !isExcluded && selectedCodsExc.length > 0) {
                 const myCod = r.cod || extractLegacyCod(r.codFull);
                 const myAre = r.are ? `ARE: ${r.are}` : '';
+                isExcluded = selectedCodsExc.some(key => {
+                    if(key.startsWith('ARE:')) return myAre === key;
+                    return myCod === key;
+                });
+            }
 
-                // 1. 제외 조건 (배제): 제외 기준에 하나라도 맞으면 아예 분석 데이터에서 소멸시킴
-                if (selectedCodsExc.length > 0) {
-                    const isExcluded = selectedCodsExc.some(key => {
-                        if(key.startsWith('ARE:')) return myAre === key;
-                        return myCod === key;
-                    });
-                    if (isExcluded) return; 
+            if (isExcluded) {
+                excCount++;
+                return; 
+            }
+
+            // [2단계] 포함 조건 검사 (Target/Control 분류)
+            let isTarget = false;
+            
+            if (mode === 'weight') {
+                const w = measMap[r.ratId]?.[criteriaTp];
+                if (w !== undefined && w < criteriaVal) isTarget = true;
+            } else if (mode === 'pod') {
+                if (r.surgeryDate) {
+                    const endDate = r.deathDate ? new Date(r.deathDate) : new Date();
+                    const pod = Math.floor((endDate - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24));
+                    if (pod < criteriaVal) isTarget = true;
                 }
-
-                // 2. 포함 조건 (타겟/대조군 분류)
-                let isIncluded = false;
+            } else if (mode === 'cod') {
+                const myCod = r.cod || extractLegacyCod(r.codFull);
+                const myAre = r.are ? `ARE: ${r.are}` : '';
                 if (selectedCodsInc.length > 0) {
-                    isIncluded = selectedCodsInc.some(key => {
+                    isTarget = selectedCodsInc.some(key => {
                         if(key.startsWith('ARE:')) return myAre === key;
                         return myCod === key;
                     });
                 } else {
-                    // 포함 기준 없이 제외 기준만 골랐다면, 살아남은 나머지를 모두 타겟으로 지정
-                    isIncluded = true;
+                    isTarget = true; // 제외 기준만 설정한 경우 남은 건 모두 타겟
                 }
-                
-                if (isIncluded) groupTarget.push(r);
-                else groupControl.push(r);
-            });
-        } else if (mode === 'pod') {
-            allRats.forEach(r => {
-                if (r.surgeryDate) {
-                    const endDate = r.deathDate ? new Date(r.deathDate) : new Date();
-                    const pod = Math.floor((endDate - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24));
-                    if (pod < criteriaVal) groupTarget.push(r);
-                    else groupControl.push(r);
-                }
-            });
-        } else { 
-            allRats.forEach(r => {
-                let w = measMap[r.ratId]?.[criteriaTp];
-                if (w !== undefined) {
-                    if (w < criteriaVal) groupTarget.push(r);
-                    else groupControl.push(r);
-                }
-            });
-        }
+            }
+
+            if (isTarget) groupTarget.push(r);
+            else groupControl.push(r);
+        });
 
         container.innerHTML = '';
         const splitBox = document.createElement('div');
@@ -2435,18 +2464,21 @@ async function analyzeTrend() {
 
         let titleA = '', titleB = '';
         if(mode === 'cod') {
-            const incStr = selectedCodsInc.length > 2 ? `${selectedCodsInc.slice(0,2).join(', ')}...` : (selectedCodsInc.join(', ') || '전체');
-            const excStr = selectedCodsExc.length > 0 ? ` (제외: ${selectedCodsExc.length}종)` : '';
-            titleA = `Condition: [${incStr}]${excStr} (n=${groupTarget.length})`;
+            const incStr = selectedCodsInc.length > 2 ? `${selectedCodsInc.slice(0,2).join(', ')}...` : (selectedCodsInc.join(', ') || '조건 없음');
+            titleA = `Condition: [${incStr}] (n=${groupTarget.length})`;
             titleB = `Control: 조건 미충족 (n=${groupControl.length})`;
         } else {
             const critText = mode === 'weight' ? `${criteriaTp} 체중` : `POD`;
             titleA = `${critText} < ${criteriaVal} (n=${groupTarget.length})`;
             titleB = `${critText} ≥ ${criteriaVal} (n=${groupControl.length})`;
         }
+        
+        if (excCount > 0) {
+            titleA += ` (분석 제외: ${excCount}마리)`; 
+        }
 
-        const titleAFull = `${titleA} (n=${groupTarget.length})`;
-        const titleBFull = `${titleB} (n=${groupControl.length})`;
+        const titleAFull = titleA;
+        const titleBFull = titleB;
 
         // 👇 신규 추가: 조건 분석에도 비교군 통합 타임라인 렌더링 👇
         const groupsData = [
@@ -3002,13 +3034,35 @@ function toggleTrendInputs() {
     }
 }
 
+function toggleTrendInputs() {
+    const mode = document.querySelector('input[name="trend-crit"]:checked').value;
+    const isWt = (mode === 'weight');
+    document.getElementById('trend-wt-tp').disabled = !isWt;
+    document.getElementById('trend-wt-val').disabled = !isWt;
+    document.getElementById('trend-pod-val').disabled = (mode !== 'pod');
+    document.getElementById('trend-cod-area').style.display = (mode === 'cod') ? 'block' : 'none';
+
+    const useExcWt = document.getElementById('exc-use-wt').checked;
+    document.getElementById('exc-wt-tp').disabled = !useExcWt;
+    document.getElementById('exc-wt-val').disabled = !useExcWt;
+
+    const useExcPod = document.getElementById('exc-use-pod').checked;
+    document.getElementById('exc-pod-val').disabled = !useExcPod;
+
+    const useExcCod = document.getElementById('exc-use-cod').checked;
+    document.getElementById('exc-cod-area').style.display = useExcCod ? 'block' : 'none';
+}
+
 async function loadTrendCodList() {
     const checkboxes = document.querySelectorAll('#trend-cohort-list .co-checkbox:checked');
     if (checkboxes.length === 0) return alert("분석할 코호트를 먼저 선택해주세요.");
     const selectedCohorts = Array.from(checkboxes).map(cb => cb.value);
 
-    const container = document.getElementById('trend-cod-list');
-    container.innerHTML = '<div class="loader"></div> 데이터 분석 중...';
+    const containerInc = document.getElementById('trend-cod-list-inc');
+    const containerExc = document.getElementById('trend-cod-list-exc');
+    
+    if(containerInc) containerInc.innerHTML = '<div class="loader"></div> 로딩 중...';
+    if(containerExc) containerExc.innerHTML = '<div class="loader"></div> 로딩 중...';
 
     try {
         const promises = selectedCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
@@ -3029,39 +3083,12 @@ async function loadTrendCodList() {
             });
         });
 
-        container.innerHTML = '';
-        if(codSet.size === 0 && areSet.size === 0) {
-            container.innerHTML = '<span style="padding:10px; color:#999;">기록된 사망 원인이 없습니다.</span>';
-            return;
-        }
-
-        // 나란히 배치하기 위한 레이아웃 (공간 활용)
-        const flexWrap = document.createElement('div');
-        flexWrap.style.display = 'flex';
-        flexWrap.style.gap = '20px';
-        flexWrap.style.flexWrap = 'wrap';
-        flexWrap.style.alignItems = 'flex-start';
-
-        const incBox = document.createElement('div');
-        incBox.style.flex = '1';
-        incBox.style.minWidth = '300px';
-        incBox.style.background = '#e3f2fd';
-        incBox.style.padding = '15px';
-        incBox.style.borderRadius = '8px';
-        incBox.style.border = '1px solid #90caf9';
-        incBox.innerHTML = '<h5 style="margin-top:0; color:#1565C0; margin-bottom:10px;">✅ 포함할 기준 (Target Group)</h5>';
-
-        const excBox = document.createElement('div');
-        excBox.style.flex = '1';
-        excBox.style.minWidth = '300px';
-        excBox.style.background = '#ffebee';
-        excBox.style.padding = '15px';
-        excBox.style.borderRadius = '8px';
-        excBox.style.border = '1px solid #ef9a9a';
-        excBox.innerHTML = '<h5 style="margin-top:0; color:#c62828; margin-bottom:10px;">❌ 제외할 기준 (분석에서 완전 배제)</h5>';
-
-        const createList = (title, set, targetBox, isExc) => {
-            if(set.size === 0) return;
+        const createList = (title, set, targetContainer, isExc) => {
+            if(!targetContainer) return;
+            if(set.size === 0) {
+                targetContainer.innerHTML = '<span style="color:#999; font-size:0.85rem;">기록 없음</span>';
+                return;
+            }
             const wrap = document.createElement('div');
             wrap.style.marginBottom = "10px";
             wrap.innerHTML = `<div><span style="font-size:0.85rem; font-weight:bold; color:#333;">● ${title}</span></div>`;
@@ -3071,28 +3098,28 @@ async function loadTrendCodList() {
 
             Array.from(set).sort().forEach(val => {
                 const label = document.createElement('label');
-                label.style.cssText = 'display:flex; align-items:center; font-size:0.85rem; cursor:pointer; background:#fff; padding:4px 8px; border-radius:4px; border:1px solid #ddd; transition:0.2s;';
+                label.style.cssText = 'display:flex; align-items:center; font-size:0.85rem; cursor:pointer; background:#fff; padding:4px 8px; border-radius:4px; border:1px solid #ddd; transition:0.2s; white-space:nowrap;';
                 const chkClass = isExc ? 'trend-cod-chk-exc' : 'trend-cod-chk-inc';
-                label.innerHTML = `<input type="checkbox" class="${chkClass}" value="${val}" style="margin-right:6px; transform:scale(1.1);"> <span style="word-break:keep-all;">${val}</span>`;
+                label.innerHTML = `<input type="checkbox" class="${chkClass}" value="${val}" style="margin-right:6px; transform:scale(1.1);"> ${val}`;
                 box.appendChild(label);
             });
             wrap.appendChild(box);
-            targetBox.appendChild(wrap);
+            targetContainer.appendChild(wrap);
         };
 
-        createList("사망 원인 (COD)", codSet, incBox, false);
-        createList("ARE 발생 여부", areSet, incBox, false);
-        
-        createList("사망 원인 (COD)", codSet, excBox, true);
-        createList("ARE 발생 여부", areSet, excBox, true);
+        if(containerInc) containerInc.innerHTML = '';
+        if(containerExc) containerExc.innerHTML = '';
 
-        flexWrap.appendChild(incBox);
-        flexWrap.appendChild(excBox);
-        container.appendChild(flexWrap);
+        createList("사망 원인 (COD)", codSet, containerInc, false);
+        createList("ARE 발생 여부", areSet, containerInc, false);
+        
+        createList("사망 원인 (COD)", codSet, containerExc, true);
+        createList("ARE 발생 여부", areSet, containerExc, true);
 
     } catch(e) {
         console.error(e);
-        container.innerHTML = '<span style="color:red">데이터 로드 실패</span>';
+        if(containerInc) containerInc.innerHTML = '<span style="color:red">데이터 로드 실패</span>';
+        if(containerExc) containerExc.innerHTML = '<span style="color:red">데이터 로드 실패</span>';
     }
 }
 
@@ -3435,4 +3462,3 @@ function openRatModal(ratId) {
     // 3. 실제 데이터 로드 및 렌더링 호출
     loadDetailData(ratId);
 }
-
