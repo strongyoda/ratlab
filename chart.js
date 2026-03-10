@@ -983,12 +983,44 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
             }
         }).join('');
 
+
+        // ======= Infarction 데이터 추출 =======
+        const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
+        const infStats = {};
+        infTps.forEach(tp => infStats[tp] = { validN: 0, hasData: 0, none: 0, small: 0, large: 0, locR: 0, locL: 0, locBoth: 0 });
+
+        rats.forEach(r => {
+            const isSurgFail = (r.cod || extractLegacyCod(r.codFull)) === 'Surgical Failure';
+            if (isSurgFail) return; // Surgical failure 제외 (validN 계산을 위함)
+            
+            // 현재 랫드가 해당 분석 그룹에 속하므로 분모(validN)는 일단 다 올림
+            infTps.forEach(tp => infStats[tp].validN++);
+
+            if (r.mrDates && Array.isArray(r.mrDates)) {
+                r.mrDates.forEach(mr => {
+                    if (infTps.includes(mr.timepoint) && mr.date) {
+                        infStats[mr.timepoint].hasData++;
+                        
+                        if (mr.infarctSize === 'Small') infStats[mr.timepoint].small++;
+                        else if (mr.infarctSize === 'Large') infStats[mr.timepoint].large++;
+                        else infStats[mr.timepoint].none++;
+
+                        if (mr.infarctLoc === 'R') infStats[mr.timepoint].locR++;
+                        else if (mr.infarctLoc === 'L') infStats[mr.timepoint].locL++;
+                        else if (mr.infarctLoc === 'Both') infStats[mr.timepoint].locBoth++;
+                    }
+                });
+            }
+        });
+        // ======================================
+
         // ======== [수정 시작] ARE 통계 및 상세 데이터 추출 ========
         let surgFailN = 0, areO = 0, areX = 0;
         let totalMicro = 0, totalMacro = 0, totalUnk = 0; // 총 갯수 누적용
         let areDetailRows = '';
+        const areLocStats = {}; // 👈 신규 추가: 부위별 카운트 저장용
 
-        rats.forEach(r => {
+        rats.forEach(r => { 
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
             
@@ -997,7 +1029,7 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
 
             if (r.are) {
                 if (r.are.startsWith('O')) {
-                    areO++; // ARE가 있는 '쥐 마리 수'
+                    areO++; 
                     hasAre = true;
                     
                     if (r.areCounts) {
@@ -1013,6 +1045,21 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                     totalMicro += myMicro;
                     totalMacro += myMacro;
                     totalUnk += myUnk;
+
+                    // 👇 신규 추가: 부위별 데이터 누적
+                    if (r.areList && Array.isArray(r.areList)) {
+                        r.areList.forEach(loc => {
+                            let locStr = loc.side;
+                            if (loc.side !== 'BA' && loc.art && loc.art !== '-') {
+                                locStr += ' ' + loc.art;
+                            }
+                            if (!areLocStats[locStr]) areLocStats[locStr] = { micro: 0, macro: 0, unk: 0 };
+                            
+                            if (loc.type === 'micro') areLocStats[locStr].micro++;
+                            else if (loc.type === 'macro') areLocStats[locStr].macro++;
+                            else areLocStats[locStr].unk++;
+                        });
+                    }
 
                 } else if (r.are === 'X') {
                     areX++;
@@ -1038,6 +1085,7 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0;
         const totalAreCount = totalMicro + totalMacro + totalUnk;
         const areTableId = `areTable${uniqueSuffix}`;
+        const areLocChartId = `areLocChart${uniqueSuffix}`; // 👈 이거 추가
 
         let finalHtml = headerHtml;
 
@@ -1110,6 +1158,11 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                 </div>
             </div>
             
+            <div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;">
+                <h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5>
+                <div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div>
+            </div>
+            
             <button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button>
             <div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;">
                 <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
@@ -1126,6 +1179,27 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                         ${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#777;">ARE 발생 개체가 없습니다.</td></tr>'}
                     </tbody>
                 </table>
+            </div>
+        </div>`;
+
+        const infSizeChartId = `infSizeChart${uniqueSuffix}`;
+        const infLocChartId = `infLocChart${uniqueSuffix}`;
+
+        finalHtml += `
+        <div class="card" style="border-left:5px solid #ff9800;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">⚡ 시점별 뇌경색(Infarction) 현황</h4>
+            <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+                * Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.
+            </div>
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:300px;">
+                    <h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5>
+                    <div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div>
+                </div>
+                <div style="flex:1; min-width:300px;">
+                    <h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 위치</h5>
+                    <div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div>
+                </div>
             </div>
         </div>`;
 
@@ -1193,6 +1267,100 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
         resDiv.innerHTML = finalHtml;
+
+        const areLocLabels = Object.keys(areLocStats).sort();
+        if(areLocLabels.length > 0) {
+            const areLocMicro = areLocLabels.map(l => areLocStats[l].micro);
+            const areLocMacro = areLocLabels.map(l => areLocStats[l].macro);
+            const areLocUnk = areLocLabels.map(l => areLocStats[l].unk);
+            
+            new Chart(document.getElementById(areLocChartId), {
+                type: 'bar',
+                data: {
+                    labels: areLocLabels,
+                    datasets: [
+                        { label: 'Macro', data: areLocMacro, backgroundColor: '#d32f2f' },
+                        { label: 'Micro', data: areLocMicro, backgroundColor: '#1976d2' },
+                        { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' }
+                    ]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    scales: { 
+                        x: { stacked: true }, 
+                        y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 } } 
+                    }
+                }
+            });
+        } else {
+            // 위치 데이터가 하나도 없을 때 빈 공간 안내 메시지 처리
+            const canvasBox = document.getElementById(areLocChartId);
+            if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#999; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>';
+        }
+
+        // ======= Infarction 차트 렌더링 =======
+        const infLabels = infTps.map(tp => {
+            if(infStats[tp].hasData === 0) return `${tp}\n(No Data)`;
+            return `${tp}\n(n=${infStats[tp].validN})`;
+        });
+
+        // 1. 크기(비율) 차트 데이터
+        const sizeDataSmall = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].small / infStats[tp].validN * 100).toFixed(1) : 0);
+        const sizeDataLarge = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].large / infStats[tp].validN * 100).toFixed(1) : 0);
+        
+        new Chart(document.getElementById(infSizeChartId), {
+            type: 'bar',
+            data: {
+                labels: infLabels,
+                datasets: [
+                    { label: 'Large', data: sizeDataLarge, backgroundColor: '#d32f2f' },
+                    { label: 'Small', data: sizeDataSmall, backgroundColor: '#ff9800' }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: { 
+                    x: { stacked: true, ticks: { font: { size: 10 } } }, 
+                    y: { stacked: true, max: 100, title: { display: true, text: '발생률 (%)' } } 
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const tp = infTps[ctx.dataIndex];
+                                const count = ctx.datasetIndex === 0 ? infStats[tp].large : infStats[tp].small;
+                                return `${ctx.dataset.label}: ${ctx.raw}% (${count}마리)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // 2. 위치 차트 데이터 (퍼센트가 아닌 마리수로 간단히)
+        const locDataR = infTps.map(tp => infStats[tp].locR);
+        const locDataL = infTps.map(tp => infStats[tp].locL);
+        const locDataBoth = infTps.map(tp => infStats[tp].locBoth);
+
+        new Chart(document.getElementById(infLocChartId), {
+            type: 'bar',
+            data: {
+                labels: infLabels,
+                datasets: [
+                    { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' },
+                    { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' },
+                    { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: { 
+                    x: { stacked: true, ticks: { font: { size: 10 } } }, 
+                    y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 } } 
+                }
+            }
+        });
+        // ======================================
 
         if (deadRats.length > 0) {
             let minAge = 999, maxAge = 0; const deathByAge = {};
@@ -1416,11 +1584,44 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             }
         }).join('');
 
+
+        // ======= Infarction 데이터 추출 =======
+        const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
+        const infStats = {};
+        infTps.forEach(tp => infStats[tp] = { validN: 0, hasData: 0, none: 0, small: 0, large: 0, locR: 0, locL: 0, locBoth: 0 });
+
+        ratDataList.forEach(r => {
+            const isSurgFail = (r.cod || extractLegacyCod(r.codFull)) === 'Surgical Failure';
+            if (isSurgFail) return; // Surgical failure 제외 (validN 계산을 위함)
+            
+            // 현재 랫드가 해당 분석 그룹에 속하므로 분모(validN)는 일단 다 올림
+            infTps.forEach(tp => infStats[tp].validN++);
+
+            if (r.mrDates && Array.isArray(r.mrDates)) {
+                r.mrDates.forEach(mr => {
+                    if (infTps.includes(mr.timepoint) && mr.date) {
+                        infStats[mr.timepoint].hasData++;
+                        
+                        if (mr.infarctSize === 'Small') infStats[mr.timepoint].small++;
+                        else if (mr.infarctSize === 'Large') infStats[mr.timepoint].large++;
+                        else infStats[mr.timepoint].none++;
+
+                        if (mr.infarctLoc === 'R') infStats[mr.timepoint].locR++;
+                        else if (mr.infarctLoc === 'L') infStats[mr.timepoint].locL++;
+                        else if (mr.infarctLoc === 'Both') infStats[mr.timepoint].locBoth++;
+                    }
+                });
+            }
+        });
+        // ======================================
+
+
         let surgFailN = 0, areO = 0, areX = 0;
         let totalMicro = 0, totalMacro = 0, totalUnk = 0; // 총 갯수 누적용
         let areDetailRows = '';
+        const areLocStats = {}; // 👈 신규 추가: 부위별 카운트 저장용
 
-        ratDataList.forEach(r => {
+        ratDataList.forEach(r => { 
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
             
@@ -1429,7 +1630,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
             if (r.are) {
                 if (r.are.startsWith('O')) {
-                    areO++; // ARE가 있는 '쥐 마리 수'
+                    areO++; 
                     hasAre = true;
                     
                     if (r.areCounts) {
@@ -1445,6 +1646,21 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                     totalMicro += myMicro;
                     totalMacro += myMacro;
                     totalUnk += myUnk;
+
+                    // 👇 신규 추가: 부위별 데이터 누적
+                    if (r.areList && Array.isArray(r.areList)) {
+                        r.areList.forEach(loc => {
+                            let locStr = loc.side;
+                            if (loc.side !== 'BA' && loc.art && loc.art !== '-') {
+                                locStr += ' ' + loc.art;
+                            }
+                            if (!areLocStats[locStr]) areLocStats[locStr] = { micro: 0, macro: 0, unk: 0 };
+                            
+                            if (loc.type === 'micro') areLocStats[locStr].micro++;
+                            else if (loc.type === 'macro') areLocStats[locStr].macro++;
+                            else areLocStats[locStr].unk++;
+                        });
+                    }
 
                 } else if (r.are === 'X') {
                     areX++;
@@ -1470,6 +1686,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0;
         const totalAreCount = totalMicro + totalMacro + totalUnk;
         const areTableId = `areTable${uniqueSuffix}`;
+        const areLocChartId = `areLocChart${uniqueSuffix}`; // 👈 이거 추가
 
         let finalHtml = headerHtml;
 
@@ -1542,6 +1759,11 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 </div>
             </div>
             
+            <div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;">
+                <h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5>
+                <div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div>
+            </div>
+            
             <button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button>
             <div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;">
                 <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
@@ -1558,6 +1780,27 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                         ${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#777;">ARE 발생 개체가 없습니다.</td></tr>'}
                     </tbody>
                 </table>
+            </div>
+        </div>`;
+
+        const infSizeChartId = `infSizeChart${uniqueSuffix}`;
+        const infLocChartId = `infLocChart${uniqueSuffix}`;
+
+        finalHtml += `
+        <div class="card" style="border-left:5px solid #ff9800;">
+            <h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">⚡ 시점별 뇌경색(Infarction) 현황</h4>
+            <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+                * Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.
+            </div>
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:300px;">
+                    <h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5>
+                    <div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div>
+                </div>
+                <div style="flex:1; min-width:300px;">
+                    <h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 위치</h5>
+                    <div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div>
+                </div>
             </div>
         </div>`;
 
@@ -1608,6 +1851,100 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
         resDiv.innerHTML = finalHtml;
+
+        const areLocLabels = Object.keys(areLocStats).sort();
+        if(areLocLabels.length > 0) {
+            const areLocMicro = areLocLabels.map(l => areLocStats[l].micro);
+            const areLocMacro = areLocLabels.map(l => areLocStats[l].macro);
+            const areLocUnk = areLocLabels.map(l => areLocStats[l].unk);
+            
+            new Chart(document.getElementById(areLocChartId), {
+                type: 'bar',
+                data: {
+                    labels: areLocLabels,
+                    datasets: [
+                        { label: 'Macro', data: areLocMacro, backgroundColor: '#d32f2f' },
+                        { label: 'Micro', data: areLocMicro, backgroundColor: '#1976d2' },
+                        { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' }
+                    ]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    scales: { 
+                        x: { stacked: true }, 
+                        y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 } } 
+                    }
+                }
+            });
+        } else {
+            // 위치 데이터가 하나도 없을 때 빈 공간 안내 메시지 처리
+            const canvasBox = document.getElementById(areLocChartId);
+            if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#999; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>';
+        }
+
+        // ======= Infarction 차트 렌더링 =======
+        const infLabels = infTps.map(tp => {
+            if(infStats[tp].hasData === 0) return `${tp}\n(No Data)`;
+            return `${tp}\n(n=${infStats[tp].validN})`;
+        });
+
+        // 1. 크기(비율) 차트 데이터
+        const sizeDataSmall = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].small / infStats[tp].validN * 100).toFixed(1) : 0);
+        const sizeDataLarge = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].large / infStats[tp].validN * 100).toFixed(1) : 0);
+        
+        new Chart(document.getElementById(infSizeChartId), {
+            type: 'bar',
+            data: {
+                labels: infLabels,
+                datasets: [
+                    { label: 'Large', data: sizeDataLarge, backgroundColor: '#d32f2f' },
+                    { label: 'Small', data: sizeDataSmall, backgroundColor: '#ff9800' }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: { 
+                    x: { stacked: true, ticks: { font: { size: 10 } } }, 
+                    y: { stacked: true, max: 100, title: { display: true, text: '발생률 (%)' } } 
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const tp = infTps[ctx.dataIndex];
+                                const count = ctx.datasetIndex === 0 ? infStats[tp].large : infStats[tp].small;
+                                return `${ctx.dataset.label}: ${ctx.raw}% (${count}마리)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // 2. 위치 차트 데이터 (퍼센트가 아닌 마리수로 간단히)
+        const locDataR = infTps.map(tp => infStats[tp].locR);
+        const locDataL = infTps.map(tp => infStats[tp].locL);
+        const locDataBoth = infTps.map(tp => infStats[tp].locBoth);
+
+        new Chart(document.getElementById(infLocChartId), {
+            type: 'bar',
+            data: {
+                labels: infLabels,
+                datasets: [
+                    { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' },
+                    { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' },
+                    { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: { 
+                    x: { stacked: true, ticks: { font: { size: 10 } } }, 
+                    y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 } } 
+                }
+            }
+        });
+        // ======================================
 
         if (deadRats.length > 0) {
             let minAge = 999, maxAge = 0; const deathByAge = {};
