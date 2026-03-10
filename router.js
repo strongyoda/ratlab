@@ -27,6 +27,7 @@ async function go(view, targetId = null) {
     }
 
     // 1. Condition Analysis (조건 분석 - 구 Trend Analysis)
+    // 1. Condition Analysis (조건 분석 - 구 Trend Analysis)
     if (view === 'trend') {
         main.innerHTML = `
         <div class="card">
@@ -39,54 +40,54 @@ async function go(view, targetId = null) {
             <div class="trend-opt-box">
                 <div style="font-weight:bold; color:var(--navy); margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:5px;">2. 분류 기준 설정</div>
                 
-                <div style="display:flex; flex-direction:column; gap:12px;">
-                    
-                    <div class="trend-row" style="display:flex; align-items:center; flex-wrap:nowrap;">
-                        <label style="cursor:pointer; display:flex; align-items:center; margin-right:15px; min-width:140px;">
-                            <input type="radio" name="trend-crit" value="weight" checked onchange="toggleTrendInputs()" style="margin-right:8px;"> 
-                            <span style="font-weight:bold; white-space:nowrap;">체중(Weight) 기준</span>
-                        </label>
-                        <div style="display:flex; align-items:center; flex-wrap:nowrap;">
-                            <select id="trend-wt-tp" style="width:auto; padding:4px; margin-right:5px;">
-                                <option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option>
-                            </select>
-                            <input type="number" id="trend-wt-val" placeholder="기준값" style="width:80px; padding:4px; margin-right:5px;"> 
-                            <span>g</span>
-                        </div>
-                    </div>
-
-                    <div class="trend-row" style="display:flex; align-items:center; flex-wrap:nowrap;">
-                        <label style="cursor:pointer; display:flex; align-items:center; margin-right:15px; min-width:140px;">
-                            <input type="radio" name="trend-crit" value="pod" onchange="toggleTrendInputs()" style="margin-right:8px;"> 
-                            <span style="font-weight:bold; white-space:nowrap;">수명(POD) 기준</span>
-                        </label>
-                        <div style="display:flex; align-items:center; flex-wrap:nowrap;">
-                            <span style="margin-right:5px; color:#666; font-size:0.9rem; white-space:nowrap;">POD</span>
-                            <input type="number" id="trend-pod-val" placeholder="기준값" style="width:80px; padding:4px; margin-right:5px;" disabled> 
-                            <span>일</span>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div class="trend-row" style="display:flex; align-items:center; flex-wrap:nowrap;">
-                            <label style="cursor:pointer; display:flex; align-items:center; min-width:140px;">
-                                <input type="radio" name="trend-crit" value="cod" onchange="toggleTrendInputs()" style="margin-right:8px;"> 
-                                <span style="font-weight:bold; white-space:nowrap;">사망 원인(COD) 포함</span>
-                            </label>
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
+                    <div style="flex: 1; min-width: 300px; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; background: #e3f2fd;">
+                        <h5 style="margin-top:0; color:#1565C0; margin-bottom:15px;">✅ 그룹 분류 기준 (Target Group)</h5>
+                        
+                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
+                            <label style="font-weight:bold; cursor:pointer;"><input type="radio" name="trend-crit" value="weight" checked onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 체중</label>
+                            <select id="trend-wt-tp" style="padding:4px;"><option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option><option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
+                            <input type="number" id="trend-wt-val" placeholder="기준값" style="width:70px; padding:4px;"> g 미만
                         </div>
                         
-                        <div id="trend-cod-area" style="display:none; margin-top:8px; margin-left:24px; width:90%; background:#f8f9fa; border:1px solid #eee; padding:10px; border-radius:6px;">
-                            <div style="font-size:0.85rem; color:#555; margin-bottom:8px; line-height:1.4;">
-                                * 코호트를 먼저 선택하고 <b>[목록 갱신]</b>을 누르세요.<br>
-                                * 선택한 키워드가 <b>하나라도 포함된</b> 개체가 그룹 A로 분류됩니다.
-                            </div>
-                            <button class="btn btn-blue btn-small" onclick="loadTrendCodList()" style="width:auto; padding:4px 10px; margin-bottom:10px;">목록 갱신 (선택된 코호트)</button>
-                            <div id="trend-cod-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:8px; max-height:150px; overflow-y:auto; background:white; padding:5px; border:1px solid #ddd; border-radius:4px;">
-                                <span style="color:#aaa; padding:5px;">목록 갱신 필요</span>
-                            </div>
+                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
+                            <label style="font-weight:bold; cursor:pointer;"><input type="radio" name="trend-crit" value="pod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 생존기간</label>
+                            <input type="number" id="trend-pod-val" placeholder="기준일" style="width:70px; padding:4px;" disabled> 일 미만
+                        </div>
+
+                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
+                            <label style="font-weight:bold; cursor:pointer;"><input type="radio" name="trend-crit" value="cod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 사망원인/ARE</label>
+                        </div>
+                        
+                        <div id="trend-cod-area" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #90caf9;">
+                            <button type="button" class="btn-small btn-blue" onclick="loadTrendCodList()">목록 갱신</button>
+                            <div id="trend-cod-list-inc" style="margin-top:10px;"></div>
                         </div>
                     </div>
 
+                    <div style="flex: 1; min-width: 300px; border: 1px solid #ef9a9a; padding: 15px; border-radius: 8px; background: #ffebee;">
+                        <h5 style="margin-top:0; color:#c62828; margin-bottom:15px;">❌ 분석 제외 기준 (완전 배제)</h5>
+                        
+                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
+                            <label style="font-weight:bold; cursor:pointer; color:#c62828;"><input type="checkbox" id="exc-use-wt" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 체중</label>
+                            <select id="exc-wt-tp" style="padding:4px;" disabled><option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option><option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
+                            <input type="number" id="exc-wt-val" placeholder="기준값" style="width:70px; padding:4px;" disabled> g 미만 제외
+                        </div>
+                        
+                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
+                            <label style="font-weight:bold; cursor:pointer; color:#c62828;"><input type="checkbox" id="exc-use-pod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 생존기간</label>
+                            <input type="number" id="exc-pod-val" placeholder="기준일" style="width:70px; padding:4px;" disabled> 일 미만 제외
+                        </div>
+
+                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
+                            <label style="font-weight:bold; cursor:pointer; color:#c62828;"><input type="checkbox" id="exc-use-cod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 사망원인/ARE</label>
+                        </div>
+                        
+                        <div id="exc-cod-area" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #ef9a9a;">
+                            <button type="button" class="btn-small btn-red" onclick="loadTrendCodList()">목록 갱신</button>
+                            <div id="trend-cod-list-exc" style="margin-top:10px;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
@@ -367,4 +368,4 @@ function switchCompTab(mode) {
 
 
 function toggleDailyLog() { const t = document.getElementById('daily-detail-table'); t.style.display = t.style.display === 'none' ? 'block' : 'none'; }
-function toggleBpLog() { const t = document.getElementById('bp-detail-table'); t.style.display = t.style.display === 'none' ? 'block' : 'none'; }
+function toggleBpLog() { const t = document.getElementById('bp-detail-table'); t.style.display = t.style.display === 'none' ? 'block' : 'none'; }// JavaScript source code
