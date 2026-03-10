@@ -171,16 +171,11 @@ async function go(view, targetId = null, specificTabId = null) {
 
     if(document.getElementById('sidebar').classList.contains('open')) toggleMenu();
 
-    // 화면 너비 설정
-    if (view === 'compare' || view === 'trend') {
-        main.style.maxWidth = '98%';
-        main.style.margin = '0 auto';
-    } else {
-        main.style.maxWidth = '1100px';
-        main.style.margin = '0 auto';
-    }
+    // 🎯 가로 공간 제한 해제 (화면 전체 100% 사용)
+    main.style.maxWidth = '100%';
+    main.style.margin = '0';
 
-    // 1. Condition Analysis (조건 분석 - 구 Trend Analysis)
+    
     // 1. Condition Analysis (조건 분석 - 구 Trend Analysis)
     if (view === 'trend') {
         main.innerHTML = `
