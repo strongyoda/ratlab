@@ -1039,155 +1039,6 @@ async function saveCodFinal() {
     }
 }
 
-function openSimpleCod(docId, currentCod, currentAre, currentDeathDate = '') {
-    activeCodRatId = docId;
-    document.getElementById('modal-cod').value = currentCod && currentCod !== '미기록' ? currentCod : '';
-    
-    let main = '', cMicro = 0, cMacro = 0, cUnk = 0;
-    if(currentAre && currentAre !== '미기록') {
-        main = currentAre.split(' ')[0];
-        // 정규식으로 갯수 추출 (신형 포맷)
-        if (currentAre.includes('micro:')) {
-            const matchMicro = currentAre.match(/micro:(\d+)/);
-            const matchMacro = currentAre.match(/macro:(\d+)/);
-            const matchUnk = currentAre.match(/미확인:(\d+)/);
-            if(matchMicro) cMicro = Number(matchMicro[1]);
-            if(matchMacro) cMacro = Number(matchMacro[1]);
-            if(matchUnk) cUnk = Number(matchUnk[1]);
-        } else {
-            // 구형 데이터 추출
-            const s = currentAre.split(' ')[1];
-            let sub = s ? s.replace(/[()]/g, '') : '';
-            if(sub === 'micro') cMicro = 1;
-            else if(sub === 'macro') cMacro = 1;
-            else if(sub === '미확인') cUnk = 1;
-        }
-    }
-    
-    const mainSel = document.getElementById('modal-are-main');
-    
-    // 🌟 [핵심 1] HTML에 하드코딩된 원효대사 해골물 같은 이벤트를 강제로 무력화!
-    mainSel.onchange = null;
-    
-    // 🌟 [핵심 2] 구형 드롭다운은 숨기는 게 아니라 화면(DOM)에서 아예 파괴해버림!
-    const oldSub = document.getElementById('modal-are-sub');
-    if(oldSub) {
-        oldSub.remove();
-    }
-
-    mainSel.value = main;
-    
-    // UI 강제 교정 (세로 찌그러짐 방지 및 가로 정렬)
-    mainSel.style.flex = 'none'; // 멋대로 늘어나는 HTML 설정 해제
-    mainSel.style.width = '100px'; 
-    mainSel.style.height = '38px';
-    mainSel.style.padding = '5px';
-    
-    const parentWrap = mainSel.parentElement;
-    parentWrap.style.display = 'flex';
-    parentWrap.style.flexWrap = 'wrap';
-    parentWrap.style.gap = '10px';
-    
-    // 갯수 입력칸 생성 및 꽉 차게 위치 조정
-    let countsBox = document.getElementById('modal-are-counts-box');
-    if(!countsBox) {
-        countsBox = document.createElement('div');
-        countsBox.id = 'modal-are-counts-box';
-        countsBox.style.width = '100%'; // 밑에 줄에 꽉 차게
-        countsBox.style.display = 'flex';
-        countsBox.style.gap = '10px';
-        countsBox.style.background = '#f8f9fa';
-        countsBox.style.padding = '10px 15px';
-        countsBox.style.borderRadius = '8px';
-        countsBox.style.border = '1px solid #ddd';
-        countsBox.style.boxSizing = 'border-box';
-        
-        countsBox.innerHTML = `
-            <label style="font-size:0.85rem; display:flex; flex-direction:column; align-items:center; flex:1; margin:0;"><b>Micro</b> <input type="number" id="modal-are-micro" style="width:100%; box-sizing:border-box; min-width:55px; padding:6px; text-align:center; border:1px solid #ccc; border-radius:4px; margin-top:6px;" min="0"></label>
-            <label style="font-size:0.85rem; display:flex; flex-direction:column; align-items:center; flex:1; margin:0;"><b>Macro</b> <input type="number" id="modal-are-macro" style="width:100%; box-sizing:border-box; min-width:55px; padding:6px; text-align:center; border:1px solid #ccc; border-radius:4px; margin-top:6px;" min="0"></label>
-            <label style="font-size:0.85rem; display:flex; flex-direction:column; align-items:center; flex:1; margin:0;"><b>미확인</b> <input type="number" id="modal-are-unk" style="width:100%; box-sizing:border-box; min-width:55px; padding:6px; text-align:center; border:1px solid #ccc; border-radius:4px; margin-top:6px;" min="0"></label>
-        `;
-        // mainSel의 부모(parentWrap) 안에 삽입
-        parentWrap.appendChild(countsBox);
-        
-        // 새로 만든 깔끔한 이벤트 리스너 등록
-        mainSel.addEventListener('change', function() {
-            document.getElementById('modal-are-counts-box').style.display = this.value === 'O' ? 'flex' : 'none';
-        });
-    }
-    
-    document.getElementById('modal-are-micro').value = cMicro;
-    document.getElementById('modal-are-macro').value = cMacro;
-    document.getElementById('modal-are-unk').value = cUnk;
-    countsBox.style.display = main === 'O' ? 'flex' : 'none';
-
-    // 사망일 필드 동적 생성 (기존 유지)
-    let deathInputBox = document.getElementById('modal-death-date-box');
-    if (!deathInputBox) {
-        const modalContent = document.querySelector('#simple-cod-modal > div');
-        if(modalContent) {
-            const btnDiv = modalContent.querySelector('div[style*="justify-content: flex-end"]') || modalContent.lastElementChild;
-            deathInputBox = document.createElement('div');
-            deathInputBox.id = 'modal-death-date-box';
-            deathInputBox.style.marginBottom = '15px';
-            deathInputBox.innerHTML = `
-                <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">사망일 (선택)</label>
-                <input type="date" id="modal-death-date" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
-            `;
-            modalContent.insertBefore(deathInputBox, btnDiv);
-        }
-    }
-    if(document.getElementById('modal-death-date')) {
-        document.getElementById('modal-death-date').value = currentDeathDate || '';
-    }
-
-    document.getElementById('simple-cod-modal').style.display = 'flex';
-}
-
-async function saveSimpleCod() {
-    const cod = document.getElementById('modal-cod').value;
-    const areMain = document.getElementById('modal-are-main').value;
-    const deathDateEl = document.getElementById('modal-death-date');
-    
-    if(!cod || !areMain) return alert("COD와 ARE를 모두 선택해주세요.");
-    
-    let areStr = '';
-    let areCounts = { micro: 0, macro: 0, unk: 0 };
-    
-    if (areMain === 'O') {
-        const micro = Number(document.getElementById('modal-are-micro').value) || 0;
-        const macro = Number(document.getElementById('modal-are-macro').value) || 0;
-        const unk = Number(document.getElementById('modal-are-unk').value) || 0;
-        areCounts = { micro, macro, unk };
-        areStr = `O (micro:${micro}, macro:${macro}, 미확인:${unk})`;
-    } else if (areMain === 'X') {
-        areStr = 'X';
-    }
-    
-    const updateData = {
-        cod: cod,
-        are: areStr,
-        areCounts: areCounts, // 핵심 추가
-        codFull: `${cod} / ARE: ${areStr}`
-    };
-    
-    if (deathDateEl && deathDateEl.value) {
-        updateData.deathDate = deathDateEl.value;
-        updateData.status = '사망';
-    }
-
-    try {
-        await db.collection("rats").doc(activeCodRatId).update(updateData);
-        alert("저장되었습니다.");
-        document.getElementById('simple-cod-modal').style.display = 'none';
-        clearRatsCache();
-        loadDetailData();
-    } catch(e) {
-        console.error(e);
-        alert("오류: " + e.message);
-    }
-}
-
 // ============================================================
 //  AI 논문 작성용 풀-컨텍스트 데이터 추출 (주령/POD 초밀착 강제 주입 및 프롬프트 강화판)
 // ============================================================
@@ -1434,4 +1285,234 @@ function addEdMrRow() {
         <button class="btn-red btn-small" onclick="this.parentElement.remove()">X</button>
     `;
     list.appendChild(div);
+}
+
+// 1. 전역에 모달 행 추가 함수 정의 (A-com 추가 및 자동 보정)
+window.addModalAreRow = function(data = {}) {
+    const container = document.getElementById('modal-are-rows');
+    const row = document.createElement('div');
+    row.className = 'modal-are-row';
+    row.style.display = 'flex'; 
+    row.style.gap = '5px'; 
+    row.style.marginBottom = '5px';
+    row.style.alignItems = 'center';
+
+    // 기존에 A-com을 우측 동맥(art)에서 선택했던 데이터가 있다면 자동으로 좌측(side)으로 보정
+    if (data.art === 'A-com') {
+        data.side = 'A-com';
+        data.art = '-';
+    }
+
+    // BA 또는 A-com일 경우 두 번째 드롭다운(동맥) 비활성화
+    const isNoSide = (data.side === 'BA' || data.side === 'A-com');
+
+    row.innerHTML = `
+        <select class="are-tp" style="padding:4px;">
+            <option value="micro" ${data.type==='micro'?'selected':''}>Micro</option>
+            <option value="macro" ${data.type==='macro'?'selected':''}>Macro</option>
+            <option value="미확인" ${data.type==='미확인'?'selected':''}>미확인</option>
+        </select>
+        <select class="are-side" style="padding:4px;" onchange="this.nextElementSibling.disabled = (this.value === 'BA' || this.value === 'A-com'); if(this.value==='BA' || this.value === 'A-com') this.nextElementSibling.value='-';">
+            <option value="R" ${data.side==='R'?'selected':''}>R</option>
+            <option value="L" ${data.side==='L'?'selected':''}>L</option>
+            <option value="BA" ${data.side==='BA'?'selected':''}>BA</option>
+            <option value="A-com" ${data.side==='A-com'?'selected':''}>A-com</option>
+        </select>
+        <select class="are-art" style="padding:4px;" ${isNoSide ? 'disabled' : ''}>
+            <option value="-">-</option>
+            <option value="ACA" ${data.art==='ACA'?'selected':''}>ACA</option>
+            <option value="ICA" ${data.art==='ICA'?'selected':''}>ICA</option>
+            <option value="MCA" ${data.art==='MCA'?'selected':''}>MCA</option>
+            <option value="PCA" ${data.art==='PCA'?'selected':''}>PCA</option>
+            <option value="P-com" ${data.art==='P-com'?'selected':''}>P-com</option>
+        </select>
+        <button class="btn-red btn-small" onclick="this.parentElement.remove()" style="padding:2px 6px;">X</button>
+    `;
+    container.appendChild(row);
+};
+
+// 2. 모달 열기 함수 (저장된 리스트를 DB에서 다시 불러오도록 async 추가)
+window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeathDate = '') {
+    activeCodRatId = docId;
+    document.getElementById('modal-cod').value = currentCod && currentCod !== '미기록' ? currentCod : '';
+    
+    let main = '', cMicro = 0, cMacro = 0, cUnk = 0;
+    
+    if(currentAre && currentAre !== '미기록') {
+        main = currentAre.split(' ')[0];
+        if (currentAre.includes('micro:')) {
+            const matchMicro = currentAre.match(/micro:(\d+)/);
+            const matchMacro = currentAre.match(/macro:(\d+)/);
+            const matchUnk = currentAre.match(/미확인:(\d+)/);
+            if(matchMicro) cMicro = Number(matchMicro[1]);
+            if(matchMacro) cMacro = Number(matchMacro[1]);
+            if(matchUnk) cUnk = Number(matchUnk[1]);
+        } else {
+            const s = currentAre.split(' ')[1];
+            let sub = s ? s.replace(/[()]/g, '') : '';
+            if(sub === 'micro') cMicro = 1;
+            else if(sub === 'macro') cMacro = 1;
+            else if(sub === '미확인') cUnk = 1;
+        }
+    }
+    
+    const mainSel = document.getElementById('modal-are-main');
+    mainSel.onchange = null;
+    
+    const oldSub = document.getElementById('modal-are-sub');
+    if(oldSub) oldSub.remove();
+    const oldCountsBox = document.getElementById('modal-are-counts-box');
+    if(oldCountsBox) oldCountsBox.remove();
+
+    mainSel.value = main;
+    mainSel.style.flex = 'none'; 
+    mainSel.style.width = '100px'; 
+    mainSel.style.height = '38px';
+    mainSel.style.padding = '5px';
+    
+    const parentWrap = mainSel.parentElement;
+    parentWrap.style.display = 'flex';
+    parentWrap.style.flexWrap = 'wrap';
+    parentWrap.style.gap = '10px';
+    
+    let areListBox = document.getElementById('modal-are-list-box');
+    if(!areListBox) {
+        areListBox = document.createElement('div');
+        areListBox.id = 'modal-are-list-box';
+        areListBox.style.width = '100%'; 
+        areListBox.style.display = 'flex';
+        areListBox.style.flexDirection = 'column';
+        areListBox.style.gap = '10px';
+        areListBox.style.background = '#f8f9fa';
+        areListBox.style.padding = '10px 15px';
+        areListBox.style.borderRadius = '8px';
+        areListBox.style.border = '1px solid #ddd';
+        areListBox.style.boxSizing = 'border-box';
+        
+        areListBox.innerHTML = `
+            <div id="modal-are-rows"></div>
+            <button type="button" class="btn-small btn-blue" onclick="addModalAreRow()" style="width:auto; min-width:120px; white-space:nowrap; padding:8px 15px; margin:0 auto; font-weight:bold;">+ 위치 추가</button>
+        `;
+        parentWrap.appendChild(areListBox);
+        
+        mainSel.addEventListener('change', function() {
+            document.getElementById('modal-are-list-box').style.display = this.value === 'O' ? 'flex' : 'none';
+        });
+    }
+    
+    const rowContainer = document.getElementById('modal-are-rows');
+    rowContainer.innerHTML = '<span style="color:#666; font-size:0.85rem;">기록을 불러오는 중...</span>'; 
+    
+    // 👇 DB에서 최신 상세 위치 데이터(areList) 가져오기
+    let areList = [];
+    try {
+        const docSnap = await db.collection("rats").doc(docId).get();
+        if(docSnap.exists) {
+            const rData = docSnap.data();
+            if(rData.areList && Array.isArray(rData.areList)) {
+                areList = rData.areList;
+            }
+        }
+    } catch(e) { console.error("areList 로딩 실패", e); }
+
+    rowContainer.innerHTML = ''; 
+    
+    if (main === 'O') {
+        if (areList.length > 0) {
+            // 저장된 상세 정보가 있으면 화면에 쫙 깔아줌
+            areList.forEach(item => addModalAreRow(item));
+        } else {
+            // 상세 정보가 없고 예전 갯수만 있으면 빈 틀 생성
+            for(let i=0; i<cMicro; i++) addModalAreRow({type:'micro'});
+            for(let i=0; i<cMacro; i++) addModalAreRow({type:'macro'});
+            for(let i=0; i<cUnk; i++) addModalAreRow({type:'미확인'});
+        }
+    }
+    areListBox.style.display = main === 'O' ? 'flex' : 'none';
+
+    let deathInputBox = document.getElementById('modal-death-date-box');
+    if (!deathInputBox) {
+        const modalContent = document.querySelector('#simple-cod-modal > div');
+        if(modalContent) {
+            const btnDiv = modalContent.querySelector('div[style*="justify-content: flex-end"]') || modalContent.lastElementChild;
+            deathInputBox = document.createElement('div');
+            deathInputBox.id = 'modal-death-date-box';
+            deathInputBox.style.marginBottom = '15px';
+            deathInputBox.innerHTML = `
+                <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">사망일 (선택)</label>
+                <input type="date" id="modal-death-date" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+            `;
+            modalContent.insertBefore(deathInputBox, btnDiv);
+        }
+    }
+    if(document.getElementById('modal-death-date')) {
+        document.getElementById('modal-death-date').value = currentDeathDate || '';
+    }
+
+    const simpleCodModal = document.getElementById('simple-cod-modal');
+    simpleCodModal.style.display = 'flex';
+    simpleCodModal.style.zIndex = '1000000'; 
+}
+
+// 3. 데이터 저장 함수 (A-com 예외처리 반영)
+window.saveSimpleCod = async function() {
+    const cod = document.getElementById('modal-cod').value;
+    const areMain = document.getElementById('modal-are-main').value;
+    const deathDateEl = document.getElementById('modal-death-date');
+    
+    if(!cod || !areMain) return alert("COD와 ARE를 모두 선택해주세요.");
+    
+    let areStr = '';
+    let areCounts = { micro: 0, macro: 0, unk: 0 };
+    let areList = [];
+    
+    if (areMain === 'O') {
+        const rows = document.querySelectorAll('.modal-are-row');
+        let detailStrs = [];
+        
+        rows.forEach(row => {
+            const tp = row.querySelector('.are-tp').value;
+            const side = row.querySelector('.are-side').value;
+            const art = row.querySelector('.are-art').value;
+            
+            if(tp === 'micro') areCounts.micro++;
+            else if(tp === 'macro') areCounts.macro++;
+            else areCounts.unk++;
+            
+            // BA와 A-com은 방향 글자(R/L) 없이 그대로 저장
+            const locStr = (side === 'BA' || side === 'A-com') ? side : `${side} ${art !== '-' ? art : ''}`.trim();
+            areList.push({ type: tp, side: side, art: art });
+            detailStrs.push(`${tp} (${locStr})`);
+        });
+        
+        const joined = detailStrs.length > 0 ? detailStrs.join(', ') : `micro:${areCounts.micro}, macro:${areCounts.macro}, 미확인:${areCounts.unk}`;
+        areStr = `O [${joined}]`;
+        
+    } else if (areMain === 'X') {
+        areStr = 'X';
+    }
+    
+    const updateData = {
+        cod: cod,
+        are: areStr,
+        areCounts: areCounts,
+        areList: areList,
+        codFull: `${cod} / ARE: ${areStr}`
+    };
+    
+    if (deathDateEl && deathDateEl.value) {
+        updateData.deathDate = deathDateEl.value;
+        updateData.status = '사망';
+    }
+
+    try {
+        await db.collection("rats").doc(activeCodRatId).update(updateData);
+        alert("저장되었습니다.");
+        document.getElementById('simple-cod-modal').style.display = 'none';
+        clearRatsCache();
+        loadDetailData();
+    } catch(e) {
+        console.error(e);
+        alert("오류: " + e.message);
+    }
 }
