@@ -1,3 +1,129 @@
+// ==========================================
+// 🚀 브라우저 스타일 탭 시스템 (Tab System)
+// ==========================================
+let appTabs = [];
+let activeTabId = null;
+let tabCounter = 0;
+
+function initTabs() {
+    if(appTabs.length === 0) createNewTab('dash');
+}
+
+function createNewTab(view = 'blank') {
+    // 이미 띄워져 있는 메뉴를 새 탭으로 열려고 시도하면, 그 탭으로 포커스만 이동 (중복 방지)
+    if (view !== 'blank') {
+        const existing = appTabs.find(t => t.view === view);
+        if (existing) {
+            switchTab(existing.id);
+            return;
+        }
+    }
+
+    tabCounter++;
+    const tId = 'tab_' + tabCounter;
+    
+    // 빈 탭이면 제목을 '새 탭'으로 설정
+    const title = view === 'blank' ? '새 탭' : getTitleForView(view);
+    appTabs.push({ id: tId, view: view, title: title });
+    
+    const container = document.getElementById('tab-views-container');
+    const viewDiv = document.createElement('div');
+    viewDiv.id = 'view_' + tId;
+    viewDiv.className = 'tab-view-content';
+    viewDiv.style.display = 'none';
+    viewDiv.style.width = '100%';
+    viewDiv.style.minHeight = '100%';
+    viewDiv.style.padding = '20px';
+    viewDiv.style.boxSizing = 'border-box';
+    
+    // 👇 빈 탭일 경우 예쁜 안내 문구 표시
+    if (view === 'blank') {
+        viewDiv.innerHTML = `
+            <div style="display:flex; flex-direction:column; height:80vh; align-items:center; justify-content:center; color:#999;">
+                <i class="material-icons" style="font-size:4rem; margin-bottom:15px; color:#ccc;">touch_app</i>
+                <h2 style="margin:0 0 10px 0; color:#666;">새 탭이 열렸습니다</h2>
+                <p style="margin:0;">왼쪽(MENU) 메뉴에서 원하시는 작업을 선택해 주세요.</p>
+            </div>`;
+    }
+    
+    container.appendChild(viewDiv);
+    
+    renderTabs();
+    switchTab(tId);
+}
+
+function renderTabs() {
+    const tc = document.getElementById('app-tabs-container');
+    tc.innerHTML = '';
+    appTabs.forEach(t => {
+        const isActive = (t.id === activeTabId);
+        const tabEl = document.createElement('div');
+        tabEl.style.cssText = `
+            padding: 8px 15px; 
+            background: ${isActive ? '#f4f6f8' : '#d5d9e0'}; 
+            color: ${isActive ? 'var(--navy)' : '#555'}; 
+            border-radius: 8px 8px 0 0; 
+            font-size: 0.9rem; 
+            font-weight: ${isActive ? 'bold' : 'normal'};
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            gap: 8px;
+            border: 1px solid ${isActive ? '#ccc' : 'transparent'};
+            border-bottom: none;
+            white-space: nowrap;
+            box-shadow: ${isActive ? '0 -2px 5px rgba(0,0,0,0.05)' : 'none'};
+            margin-top: ${isActive ? '0' : '4px'};
+            transition: 0.2s;
+        `;
+        tabEl.innerHTML = `
+            <span onclick="switchTab('${t.id}')" style="flex:1;">${t.title}</span>
+            ${appTabs.length > 1 ? `<span onclick="closeTab('${t.id}', event)" style="color:#d32f2f; font-weight:bold; font-size:1.2rem; line-height:1; margin-left:5px; padding:0 3px;">&times;</span>` : ''}
+        `;
+        tc.appendChild(tabEl);
+    });
+}
+
+function switchTab(tId) {
+    activeTabId = tId;
+    document.querySelectorAll('.tab-view-content').forEach(el => el.style.display = 'none');
+    
+    const targetView = document.getElementById('view_' + tId);
+    if(targetView) targetView.style.display = 'block';
+    
+    renderTabs();
+    
+    // 내용이 비어있으면 초기 로드
+    const tab = appTabs.find(t => t.id === tId);
+    if (targetView && targetView.innerHTML.trim() === '') {
+        go(tab.view, null, tId);
+    }
+}
+
+function closeTab(tId, event) {
+    if(event) event.stopPropagation();
+    if(appTabs.length <= 1) return; 
+    
+    const idx = appTabs.findIndex(t => t.id === tId);
+    appTabs.splice(idx, 1);
+    
+    const viewDiv = document.getElementById('view_' + tId);
+    if(viewDiv) viewDiv.remove();
+    
+    if(activeTabId === tId) {
+        const nextTab = appTabs[Math.max(0, idx - 1)];
+        switchTab(nextTab.id);
+    } else {
+        renderTabs();
+    }
+}
+
+function getTitleForView(view) {
+    const map = { 'dash':'대시보드', 'detail':'랫드 상세', 'cohort':'코호트 분석', 'compare':'코호트 비교', 'trend':'조건분석', 'daily':'데일리', 'add':'신규등록', 'dose':'투약', 'rec':'혈압/체중', 'bp':'BP계산기', 'admin':'데이터관리' };
+    return map[view] || '새 탭';
+}
+// ==========================================
+
 async function login() {
     const id = document.getElementById('uid').value.trim();
     const pw = document.getElementById('upw').value;
@@ -7,7 +133,7 @@ async function login() {
 
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('main-app').style.display = 'block';
-        setTimeout(() => go('dash'), 50);
+        setTimeout(() => initTabs(), 50); 
     } catch (e) {
         console.error(e);
         alert('로그인 실패: ' + (e && e.message ? e.message : e));
@@ -15,15 +141,43 @@ async function login() {
 }
 
 
-async function go(view, targetId = null) {
-    const main = document.getElementById('content');
+async function go(view, targetId = null, specificTabId = null) {
+    // 🚨 1. 중복 탭 방지 로직 (이미 열린 메뉴를 누르면 거기로 점프)
+    if (!specificTabId) {
+        const existingTab = appTabs.find(t => t.view === view);
+        if (existingTab) {
+            // 이미 띄워진 탭이 있다면 포커스만 이동시키고 렌더링을 멈춤
+            if (activeTabId !== existingTab.id) {
+                switchTab(existingTab.id);
+            }
+            if(document.getElementById('sidebar').classList.contains('open')) toggleMenu();
+            return; 
+        }
+    }
+
+    // 🚨 2. 기존 화면(현재 탭) 내용 교체 (새로운 메뉴일 경우)
+    const tId = specificTabId || activeTabId;
+    if (!tId) return;
+    const main = document.getElementById('view_' + tId);
+    if (!main) return;
+    
+    // 탭 정보 업데이트
+    const tabObj = appTabs.find(t => t.id === tId);
+    if(tabObj) {
+        tabObj.view = view;
+        tabObj.title = getTitleForView(view);
+        renderTabs();
+    }
+
     if(document.getElementById('sidebar').classList.contains('open')) toggleMenu();
 
     // 화면 너비 설정
     if (view === 'compare' || view === 'trend') {
-        main.style.maxWidth = '95%';
+        main.style.maxWidth = '98%';
+        main.style.margin = '0 auto';
     } else {
-        main.style.maxWidth = '1000px';
+        main.style.maxWidth = '1100px';
+        main.style.margin = '0 auto';
     }
 
     // 1. Condition Analysis (조건 분석 - 구 Trend Analysis)
