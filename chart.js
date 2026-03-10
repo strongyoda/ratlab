@@ -1268,6 +1268,7 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
 
         resDiv.innerHTML = finalHtml;
 
+        const areMaxY = fixedOptions && fixedOptions.maxAreLoc !== undefined ? Math.max(5, fixedOptions.maxAreLoc + 1) : undefined;
         const areLocLabels = Object.keys(areLocStats).sort();
         if(areLocLabels.length > 0) {
             const areLocMicro = areLocLabels.map(l => areLocStats[l].micro);
@@ -1279,8 +1280,8 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                 data: {
                     labels: areLocLabels,
                     datasets: [
-                        { label: 'Macro', data: areLocMacro, backgroundColor: '#d32f2f' },
-                        { label: 'Micro', data: areLocMicro, backgroundColor: '#1976d2' },
+                        { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, // 보라색
+                        { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, // 청록색
                         { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' }
                     ]
                 },
@@ -1288,12 +1289,16 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                     maintainAspectRatio: false,
                     scales: { 
                         x: { stacked: true }, 
-                        y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 } } 
+                        y: { 
+                            stacked: true, 
+                            title: { display: true, text: '발생 갯수' }, 
+                            ticks: { stepSize: 1 },
+                            ...(areMaxY ? { max: areMaxY } : {}) // 축 동기화 적용
+                        } 
                     }
                 }
             });
         } else {
-            // 위치 데이터가 하나도 없을 때 빈 공간 안내 메시지 처리
             const canvasBox = document.getElementById(areLocChartId);
             if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#999; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>';
         }
@@ -1338,6 +1343,9 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
         });
 
         // 2. 위치 차트 데이터 (퍼센트가 아닌 마리수로 간단히)
+        // 2. 위치 차트 데이터 (퍼센트가 아닌 마리수로 간단히)
+        const infMaxY = fixedOptions && fixedOptions.maxInfLoc !== undefined ? Math.max(5, fixedOptions.maxInfLoc + 1) : undefined;
+        
         const locDataR = infTps.map(tp => infStats[tp].locR);
         const locDataL = infTps.map(tp => infStats[tp].locL);
         const locDataBoth = infTps.map(tp => infStats[tp].locBoth);
@@ -1356,10 +1364,16 @@ async function runCohortAnalysis(targetCohorts, targetDivId, uniqueSuffix = '', 
                 maintainAspectRatio: false,
                 scales: { 
                     x: { stacked: true, ticks: { font: { size: 10 } } }, 
-                    y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 } } 
+                    y: { 
+                        stacked: true, 
+                        title: { display: true, text: '발생 건수 (마리)' }, 
+                        ticks: { stepSize: 1 },
+                        ...(infMaxY ? { max: infMaxY } : {}) // 축 동기화 적용
+                    } 
                 }
             }
         });
+        // ======================================
         // ======================================
 
         if (deadRats.length > 0) {
@@ -1852,6 +1866,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         resDiv.innerHTML = finalHtml;
 
+        const areMaxY = fixedOptions && fixedOptions.maxAreLoc !== undefined ? Math.max(5, fixedOptions.maxAreLoc + 1) : undefined;
         const areLocLabels = Object.keys(areLocStats).sort();
         if(areLocLabels.length > 0) {
             const areLocMicro = areLocLabels.map(l => areLocStats[l].micro);
@@ -1863,8 +1878,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 data: {
                     labels: areLocLabels,
                     datasets: [
-                        { label: 'Macro', data: areLocMacro, backgroundColor: '#d32f2f' },
-                        { label: 'Micro', data: areLocMicro, backgroundColor: '#1976d2' },
+                        { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, // 보라색
+                        { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, // 청록색
                         { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' }
                     ]
                 },
@@ -1872,12 +1887,16 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                     maintainAspectRatio: false,
                     scales: { 
                         x: { stacked: true }, 
-                        y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 } } 
+                        y: { 
+                            stacked: true, 
+                            title: { display: true, text: '발생 갯수' }, 
+                            ticks: { stepSize: 1 },
+                            ...(areMaxY ? { max: areMaxY } : {}) // 축 동기화 적용
+                        } 
                     }
                 }
             });
         } else {
-            // 위치 데이터가 하나도 없을 때 빈 공간 안내 메시지 처리
             const canvasBox = document.getElementById(areLocChartId);
             if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#999; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>';
         }
@@ -1922,6 +1941,9 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         });
 
         // 2. 위치 차트 데이터 (퍼센트가 아닌 마리수로 간단히)
+        // 2. 위치 차트 데이터 (퍼센트가 아닌 마리수로 간단히)
+        const infMaxY = fixedOptions && fixedOptions.maxInfLoc !== undefined ? Math.max(5, fixedOptions.maxInfLoc + 1) : undefined;
+        
         const locDataR = infTps.map(tp => infStats[tp].locR);
         const locDataL = infTps.map(tp => infStats[tp].locL);
         const locDataBoth = infTps.map(tp => infStats[tp].locBoth);
@@ -1940,10 +1962,16 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 maintainAspectRatio: false,
                 scales: { 
                     x: { stacked: true, ticks: { font: { size: 10 } } }, 
-                    y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 } } 
+                    y: { 
+                        stacked: true, 
+                        title: { display: true, text: '발생 건수 (마리)' }, 
+                        ticks: { stepSize: 1 },
+                        ...(infMaxY ? { max: infMaxY } : {}) // 축 동기화 적용
+                    } 
                 }
             }
         });
+        // ======================================
         // ======================================
 
         if (deadRats.length > 0) {
@@ -2130,23 +2158,60 @@ async function loadGroupComparison() {
     }));
     renderUnifiedTimeline(groupsData, container);
 
-    for(let i=0; i<activeGroups.length; i++) {
-        const g = activeGroups[i];
-        const colDiv = document.createElement('div');
-        colDiv.className = 'comp-col';
-        colDiv.id = `comp-res-grp-${i}`;
-        colDiv.innerHTML = `<div class="loader"></div>`;
-        container.appendChild(colDiv);
-        
-        const title = `${g.name} : Cohort ${g.cohorts.join(', ')}`;
-        await runCohortAnalysis(g.cohorts, `comp-res-grp-${i}`, `_grp_${i}`, {
-            labels: globalLabels,
-            minSbp: globalMinSbp, maxSbp: globalMaxSbp,
-            minWt: globalMinWt, maxWt: globalMaxWt,
-            maxPod: globalMaxPod,
-            minAge: globalMinAge, maxAge: globalMaxAge
-        }, title);
-    }
+    // 👇 신규: ARE 부위 및 Infarction 건수 최댓값 계산 로직
+        let globalMaxAreLoc = 0;
+        let globalMaxInfLoc = 0;
+        const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
+
+        activeGroups.forEach(g => {
+            const ratsInGroup = allRatsObj.filter(r => g.cohorts.includes(r.cohort));
+            const locStats = {};
+            const infStats = {};
+            infTps.forEach(tp => infStats[tp] = 0);
+
+            ratsInGroup.forEach(r => {
+                if (r.areList && Array.isArray(r.areList)) {
+                    r.areList.forEach(loc => {
+                        let locStr = loc.side;
+                        if (loc.side !== 'BA' && loc.art && loc.art !== '-') locStr += ' ' + loc.art;
+                        if (!locStats[locStr]) locStats[locStr] = 0;
+                        locStats[locStr]++;
+                    });
+                }
+                const isSurgFail = (r.cod || extractLegacyCod(r.codFull)) === 'Surgical Failure';
+                if (!isSurgFail && r.mrDates && Array.isArray(r.mrDates)) {
+                    r.mrDates.forEach(mr => {
+                        if (infTps.includes(mr.timepoint) && mr.date && mr.infarctSize && mr.infarctSize !== 'None') {
+                            infStats[mr.timepoint]++;
+                        }
+                    });
+                }
+            });
+            const maxAre = Math.max(0, ...Object.values(locStats));
+            if (maxAre > globalMaxAreLoc) globalMaxAreLoc = maxAre;
+            const maxInf = Math.max(0, ...Object.values(infStats));
+            if (maxInf > globalMaxInfLoc) globalMaxInfLoc = maxInf;
+        });
+
+        for(let i=0; i<activeGroups.length; i++) {
+            const g = activeGroups[i];
+            const colDiv = document.createElement('div');
+            colDiv.className = 'comp-col';
+            colDiv.id = `comp-res-grp-${i}`;
+            colDiv.innerHTML = `<div class="loader"></div>`;
+            container.appendChild(colDiv);
+            
+            const title = `${g.name} : Cohort ${g.cohorts.join(', ')}`;
+            await runCohortAnalysis(g.cohorts, `comp-res-grp-${i}`, `_grp_${i}`, {
+                labels: globalLabels,
+                minSbp: globalMinSbp, maxSbp: globalMaxSbp,
+                minWt: globalMinWt, maxWt: globalMaxWt,
+                maxPod: globalMaxPod,
+                minAge: globalMinAge, maxAge: globalMaxAge,
+                maxAreLoc: globalMaxAreLoc, // 축 동기화용 전달
+                maxInfLoc: globalMaxInfLoc  // 축 동기화용 전달
+            }, title);
+        }
 }
 
 // [오류 완전 해결] 선택된 COD나 ARE가 실제 랫드의 데이터에 정확히 들어맞는지 판단합니다.
@@ -2304,13 +2369,50 @@ async function analyzeTrend() {
         const divB = document.createElement('div'); divB.className = 'trend-half'; divB.id = 'trend-res-high'; splitBox.appendChild(divB);
 
         // 👇 maxAge 옵션 추가
+        // 👇 신규: ARE 부위 및 Infarction 건수 최댓값 계산 로직
+        let globalMaxAreLoc = 0;
+        let globalMaxInfLoc = 0;
+        const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
+
+        [groupTarget, groupControl].forEach(grp => {
+            const locStats = {};
+            const infStats = {};
+            infTps.forEach(tp => infStats[tp] = 0);
+
+            grp.forEach(r => {
+                if (r.areList && Array.isArray(r.areList)) {
+                    r.areList.forEach(loc => {
+                        let locStr = loc.side;
+                        if (loc.side !== 'BA' && loc.art && loc.art !== '-') locStr += ' ' + loc.art;
+                        if (!locStats[locStr]) locStats[locStr] = 0;
+                        locStats[locStr]++;
+                    });
+                }
+                const isSurgFail = (r.cod || extractLegacyCod(r.codFull)) === 'Surgical Failure';
+                if (!isSurgFail && r.mrDates && Array.isArray(r.mrDates)) {
+                    r.mrDates.forEach(mr => {
+                        if (infTps.includes(mr.timepoint) && mr.date && mr.infarctSize && mr.infarctSize !== 'None') {
+                            infStats[mr.timepoint]++;
+                        }
+                    });
+                }
+            });
+            const maxAre = Math.max(0, ...Object.values(locStats));
+            if (maxAre > globalMaxAreLoc) globalMaxAreLoc = maxAre;
+            const maxInf = Math.max(0, ...Object.values(infStats));
+            if (maxInf > globalMaxInfLoc) globalMaxInfLoc = maxInf;
+        });
+
+        // 👇 maxAge 옵션 및 maxAreLoc, maxInfLoc 동기화
         const fixedOptions = { 
             labels: globalLabels, 
             minSbp: globalMinSbp, maxSbp: globalMaxSbp, 
             minWt: globalMinWt, maxWt: globalMaxWt, 
             maxPod: globalMaxPod, 
             minAge: globalMinAge, maxAge: globalMaxAge, 
-            mode: mode 
+            mode: mode,
+            maxAreLoc: globalMaxAreLoc, // 축 동기화
+            maxInfLoc: globalMaxInfLoc  // 축 동기화
         };
 
         let titleA = '', titleB = '';
@@ -2790,13 +2892,50 @@ async function loadCohortComparison() {
             });
         });
 
+        // 👇 신규: ARE 부위 및 Infarction 건수 최댓값 계산 로직
+        let globalMaxAreLoc = 0;
+        let globalMaxInfLoc = 0;
+        const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
+
+        selectedCohorts.forEach(c => {
+            const ratsInCohort = allRats.filter(r => r.cohort === c);
+            const locStats = {};
+            const infStats = {};
+            infTps.forEach(tp => infStats[tp] = 0);
+
+            ratsInCohort.forEach(r => {
+                if (r.areList && Array.isArray(r.areList)) {
+                    r.areList.forEach(loc => {
+                        let locStr = loc.side;
+                        if (loc.side !== 'BA' && loc.art && loc.art !== '-') locStr += ' ' + loc.art;
+                        if (!locStats[locStr]) locStats[locStr] = 0;
+                        locStats[locStr]++;
+                    });
+                }
+                const isSurgFail = (r.cod || extractLegacyCod(r.codFull)) === 'Surgical Failure';
+                if (!isSurgFail && r.mrDates && Array.isArray(r.mrDates)) {
+                    r.mrDates.forEach(mr => {
+                        if (infTps.includes(mr.timepoint) && mr.date && mr.infarctSize && mr.infarctSize !== 'None') {
+                            infStats[mr.timepoint]++;
+                        }
+                    });
+                }
+            });
+            const maxAre = Math.max(0, ...Object.values(locStats));
+            if (maxAre > globalMaxAreLoc) globalMaxAreLoc = maxAre;
+            const maxInf = Math.max(0, ...Object.values(infStats));
+            if (maxInf > globalMaxInfLoc) globalMaxInfLoc = maxInf;
+        });
+
         const fixedOptions = {
             minX: globalMinX - 2,
             maxX: globalMaxX + 2,
             minSbp: globalMinSbp, maxSbp: globalMaxSbp,
             minWt: globalMinWt, maxWt: globalMaxWt,
             minAge: globalMinAge, maxAge: globalMaxAge,
-            standardTicks: Array.from(unionStandardTicks)
+            standardTicks: Array.from(unionStandardTicks),
+            maxAreLoc: globalMaxAreLoc, // 축 동기화용 전달
+            maxInfLoc: globalMaxInfLoc  // 축 동기화용 전달
         };
         container.innerHTML = ''; 
         const colors = ['#E6194B', '#3CB44B', '#4363D8', '#F58231', '#911EB4', '#46F0F0'];
@@ -3246,3 +3385,4 @@ function openRatModal(ratId) {
     // 3. 실제 데이터 로드 및 렌더링 호출
     loadDetailData(ratId);
 }
+
