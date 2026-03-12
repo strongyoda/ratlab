@@ -1516,3 +1516,43 @@ window.saveSimpleCod = async function() {
         alert("오류: " + e.message);
     }
 }
+
+// ==========================================
+// 🚀 일회성 DB 마이그레이션 스크립트 (기존 쥐들 G1 그룹 부여)
+// ==========================================
+window.migrateToG1 = async function() {
+    if(!confirm("기존 쥐 데이터와 모든 측정 기록의 ID에 'G1' 그룹을 부여합니다. 진행하시겠습니까? (데이터양에 따라 1~2분 정도 소요될 수 있습니다.)")) return;
+    
+    console.log("🚀 마이그레이션 시작... 잠시만 기다려주세요.");
+    const collections = ["rats", "measurements", "dailyLogs", "doseLogs"];
+    
+    try {
+        for (const col of collections) {
+            const snap = await db.collection(col).get();
+            let count = 0;
+            
+            // Firebase 과부하 방지를 위해 하나씩 순차적으로 안전하게 업데이트 진행
+            for (const doc of snap.docs) {
+                const oldId = doc.data().ratId;
+                
+                // ratId가 존재하고, 이미 'G숫자'로 끝나지 않는 경우에만 G1을 붙임
+                // (실수로 두 번 실행해도 C0601G1G1이 되지 않도록 방지)
+                if (oldId && !/G\d+$/.test(oldId)) {
+                    await db.collection(col).doc(doc.id).update({ ratId: oldId + "G1" });
+                    count++;
+                }
+            }
+            console.log(`✅ [${col}] 컬렉션: ${count}개 데이터 업데이트 완료!`);
+        }
+        
+        // 캐시 초기화
+        if (typeof clearRatsCache === 'function') clearRatsCache();
+        
+        alert("🎉 모든 데이터에 G1 부여 마이그레이션이 완벽하게 끝났습니다!");
+        console.log("🚀 마이그레이션 전체 완료");
+        
+    } catch(e) {
+        console.error("에러 발생:", e);
+        alert("업데이트 중 에러가 발생했습니다. 콘솔 창을 확인해주세요.");
+    }
+};
