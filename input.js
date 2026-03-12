@@ -1,7 +1,21 @@
 function score(k, n, btn) { btn.parentElement.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentScores[k] = n; const t = currentScores.act+currentScores.fur+currentScores.eye; document.getElementById('score-res').innerText=`총점: ${t}점`; }
-function mkId(p) { const c=document.getElementById(`${p}-c`).value, r=document.getElementById(`${p}-r`).value; if(c&&r) document.getElementById(`${p}-id`).value = `C${c.padStart(2,'0')}${r.padStart(2,'0')}`; }
+function mkId(p) { const c=document.getElementById(`${p}-c`).value, r=document.getElementById(`${p}-r`).value, g=document.getElementById(`${p}-g`).value || '1'; if(c&&r) document.getElementById(`${p}-id`).value = `C${c.padStart(2,'0')}${r.padStart(2,'0')}G${g}`; }
 function calM() { const s=Number(document.getElementById('re-s').value), d=Number(document.getElementById('re-d').value); if(s&&d) document.getElementById('re-m').value = Math.round(d+(s-d)/3); }
-async function saveBulk() { const c=document.getElementById('add-c').value, s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; for(let i=s; i<=e; i++) { await db.collection("rats").add({ratId:`C${c.padStart(2,'0')}${String(i).padStart(2,'0')}`, cohort:c, num:String(i), arrivalDate:d, status:'생존'}); } clearRatsCache(); alert("완료"); }
+async function saveBulk() { 
+    const c=document.getElementById('add-c').value, g=document.getElementById('add-g').value || '1';
+    const s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; 
+    for(let i=s; i<=e; i++) { 
+        await db.collection("rats").add({
+            ratId:`C${c.padStart(2,'0')}${String(i).padStart(2,'0')}G${g}`, 
+            cohort:c, 
+            group:`G${g}`, 
+            num:String(i), 
+            arrivalDate:d, 
+            status:'생존'
+        }); 
+    } 
+    clearRatsCache(); alert("완료"); 
+}
 
 async function saveDaily() {
     const id = document.getElementById('dc-id').value;
@@ -47,8 +61,7 @@ async function saveDaily() {
     } catch(e) { console.error(e); alert("에러: " + e.message); }
 }
 
-function upDose() { const ns=document.getElementsByClassName('dn'), c=document.getElementById('ds-c').value; for(let i=0; i<ns.length; i++) document.getElementsByClassName('di')[i].innerText = (c&&ns[i].value)?`C${c.padStart(2,'0')}${ns[i].value.padStart(2,'0')}`:'-'; }
-
+function upDose() { const ns=document.getElementsByClassName('dn'), c=document.getElementById('ds-c').value, g=document.getElementById('ds-g').value || '1'; for(let i=0; i<ns.length; i++) document.getElementsByClassName('di')[i].innerText = (c&&ns[i].value)?`C${c.padStart(2,'0')}${ns[i].value.padStart(2,'0')}G${g}`:'-'; }
 
 async function saveDose() { 
     const c = document.getElementById('ds-c').value;
@@ -255,5 +268,80 @@ async function saveMrConfig(c) {
     } catch(e) { 
         console.error(e); 
         alert("저장 중 오류가 발생했습니다: " + e.message); 
+    }
+}
+
+// ==========================================
+// 그룹 메모 토글 및 저장 함수
+// ==========================================
+window.toggleGrpMemo = function(c, g) {
+    const txt = document.getElementById(`memo-txt-${c}-${g}`);
+    const area = document.getElementById(`memo-edit-area-${c}-${g}`);
+    if(area.style.display === 'none') { 
+        area.style.display = 'inline-flex'; 
+        txt.style.display = 'none'; 
+    } else { 
+        area.style.display = 'none'; 
+        txt.style.display = 'inline-block'; 
+    }
+}
+
+window.saveGrpMemo = async function(c, g) {
+    const val = document.getElementById(`memo-inp-${c}-${g}`).value;
+    const key = `memo_${g}`; // DB에 저장될 키값 (예: memo_G1)
+    try {
+        await db.collection("cohortNotes").doc(String(c)).set({ [key]: val }, { merge: true }); 
+        document.getElementById(`memo-txt-${c}-${g}`).innerText = val || '그룹 메모';
+        toggleGrpMemo(c, g);
+    } catch(e) { console.error(e); alert("메모 저장 실패"); }
+}
+
+// ==========================================
+// 랫드 그룹(G) 변경 및 연관 데이터 ID 마이그레이션 함수
+// ==========================================
+window.changeRatGroup = async function(docId, oldRatId, newGroupNum) {
+    const newGroup = "G" + newGroupNum;
+    const newRatId = oldRatId.replace(/G\d+$/, '') + newGroup; // 기존 ID에서 G숫자만 갈아끼움
+    if (oldRatId === newRatId) return;
+
+    if(!confirm(`[${oldRatId}] 개체를 [${newGroup}] 그룹으로 이동하시겠습니까?\n모든 관련 데이터(혈압/체중/투약/데일리)의 소유자 ID가 [${newRatId}](으)로 연동 변경됩니다.`)) {
+        loadDetailData(oldRatId); // 취소 시 셀렉트박스 원상복구를 위해 화면 새로고침
+        return;
+    }
+
+    try {
+        // 1. 쥐 본체 정보 업데이트
+        await db.collection("rats").doc(docId).update({
+            ratId: newRatId,
+            group: newGroup
+        });
+
+        // 2. 연관된 하위 기록들의 ID를 모두 새 ID로 갈아끼우는 작업
+        const collections = ["measurements", "dailyLogs", "doseLogs"];
+        for (const col of collections) {
+            const snap = await db.collection(col).where("ratId", "==", oldRatId).get();
+            const promises = snap.docs.map(d => d.ref.update({ ratId: newRatId }));
+            await Promise.all(promises);
+        }
+
+        alert("✅ 그룹 이동 및 모든 데이터 연동이 성공적으로 완료되었습니다!");
+        
+        clearRatsCache(); // 데이터가 바뀌었으니 캐시 날리기
+        
+        // 모달창이 열려있다면 모달 타이틀 업데이트
+        const modalTitle = document.getElementById('rdm-title');
+        if (modalTitle && modalTitle.innerText === oldRatId) {
+            modalTitle.innerText = newRatId;
+        }
+        
+        // 바뀐 ID로 상세 화면 다시 로드
+        loadDetailData(newRatId); 
+        
+        // 배경의 대시보드도 갱신 (열려있는 경우)
+        if (document.getElementById('dash-container')) loadDashboard();
+
+    } catch(e) {
+        console.error(e);
+        alert("변경 중 오류가 발생했습니다: " + e.message);
     }
 }
