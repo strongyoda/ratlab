@@ -133,6 +133,7 @@ async function login() {
 
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('main-app').style.display = 'block';
+        updateAiVisibility();
         setTimeout(() => initTabs(), 50); 
     } catch (e) {
         console.error(e);
@@ -140,6 +141,16 @@ async function login() {
     }
 }
 
+async function logout() {
+    try {
+        await firebase.auth().signOut();
+        updateAiVisibility();
+        location.reload();
+    } catch (e) {
+        console.error(e);
+        alert('로그아웃 실패: ' + (e && e.message ? e.message : e));
+    }
+}
 
 async function go(view, targetId = null, specificTabId = null) {
     // 🚨 1. 중복 탭 방지 로직 (이미 열린 메뉴를 누르면 거기로 점프)
@@ -175,74 +186,150 @@ async function go(view, targetId = null, specificTabId = null) {
     main.style.maxWidth = '100%';
     main.style.margin = '0';
 
-    
-    // 1. Condition Analysis (조건 분석 - 구 Trend Analysis)
+    // 1. Condition Analysis (조건 분석 다중 필터 & 교차 비교 적용)
     if (view === 'trend') {
+        // A와 B 탭의 HTML을 반복해서 쓰지 않도록 찍어내는 템플릿 함수
+        const buildFilterUI = (grp) => `
+            <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 10px;">
+                <div class="filter-box inc">
+                    <h5 class="filter-title">✅ Group ${grp.toUpperCase()} 포함 기준 (Target)</h5>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="inc-use-wt-${grp}" onchange="toggleTrendInputs('${grp}')"> 체중</label>
+                        <div class="filter-controls">
+                            <select id="inc-wt-tp-${grp}" disabled><option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option><option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
+                            <input type="number" id="inc-wt-val-${grp}" placeholder="기준값" disabled style="width:80px;">
+                            <select id="inc-wt-dir-${grp}" disabled style="font-weight:bold;"><option value="up">이상</option><option value="down">미만</option></select>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="inc-use-pod-${grp}" onchange="toggleTrendInputs('${grp}')"> 생존기간</label>
+                        <div class="filter-controls">
+                            <input type="number" id="inc-pod-val-${grp}" placeholder="기준일" disabled style="width:80px;">
+                            <select id="inc-pod-dir-${grp}" disabled style="font-weight:bold;"><option value="up">이상</option><option value="down">미만</option></select>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="inc-use-cod-${grp}" onchange="toggleTrendInputs('${grp}')"> 사망원인</label>
+                        <div style="flex:1; min-width:180px;">
+                            <div id="inc-cod-area-${grp}" style="display:none; padding-top:4px;">
+                                <button type="button" class="btn-small btn-blue" onclick="loadTrendCodList()">사망원인 로드</button>
+                                <div id="trend-cod-list-inc-${grp}" style="margin-top:10px; width:100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="inc-use-are-${grp}" onchange="toggleTrendInputs('${grp}')"> ARE 발생</label>
+                        <div style="flex:1; min-width:180px;">
+                            <div id="inc-are-area-${grp}" class="filter-controls" style="display:none; padding-top:4px;">
+                                <label class="chk-label"><input type="checkbox" class="inc-are-chk-${grp}" value="micro"> Micro</label>
+                                <label class="chk-label"><input type="checkbox" class="inc-are-chk-${grp}" value="macro"> Macro</label>
+                                <label class="chk-label"><input type="checkbox" class="inc-are-chk-${grp}" value="미확인"> 미확인</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="inc-use-inf-${grp}" onchange="toggleTrendInputs('${grp}')"> 뇌경색</label>
+                        <div style="flex:1; min-width:180px;">
+                            <div id="inc-inf-area-${grp}" class="filter-controls" style="display:none; padding-top:4px;">
+                                <select id="inc-inf-tp-${grp}"><option value="all">시점 전체</option><option value="D2">D2</option><option value="W1">W1</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
+                                <select id="inc-inf-sz-${grp}"><option value="all">크기 전체(있음)</option><option value="Small">Small</option><option value="Large">Large</option><option value="None">없음(None)</option></select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-box exc">
+                    <h5 class="filter-title">❌ Group ${grp.toUpperCase()} 제외 기준 (배제)</h5>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="exc-use-wt-${grp}" onchange="toggleTrendInputs('${grp}')"> 체중</label>
+                        <div class="filter-controls">
+                            <select id="exc-wt-tp-${grp}" disabled><option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option><option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
+                            <input type="number" id="exc-wt-val-${grp}" placeholder="기준값" disabled style="width:80px;">
+                            <select id="exc-wt-dir-${grp}" disabled style="font-weight:bold;"><option value="up">이상</option><option value="down">미만</option></select>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="exc-use-pod-${grp}" onchange="toggleTrendInputs('${grp}')"> 생존기간</label>
+                        <div class="filter-controls">
+                            <input type="number" id="exc-pod-val-${grp}" placeholder="기준일" disabled style="width:80px;">
+                            <select id="exc-pod-dir-${grp}" disabled style="font-weight:bold;"><option value="up">이상</option><option value="down">미만</option></select>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="exc-use-cod-${grp}" onchange="toggleTrendInputs('${grp}')"> 사망원인</label>
+                        <div style="flex:1; min-width:180px;">
+                            <div id="exc-cod-area-${grp}" style="display:none; padding-top:4px;">
+                                <button type="button" class="btn-small btn-red" onclick="loadTrendCodList()">사망원인 로드</button>
+                                <div id="trend-cod-list-exc-${grp}" style="margin-top:10px; width:100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="exc-use-are-${grp}" onchange="toggleTrendInputs('${grp}')"> ARE 발생</label>
+                        <div style="flex:1; min-width:180px;">
+                            <div id="exc-are-area-${grp}" class="filter-controls" style="display:none; padding-top:4px;">
+                                <label class="chk-label"><input type="checkbox" class="exc-are-chk-${grp}" value="micro"> Micro</label>
+                                <label class="chk-label"><input type="checkbox" class="exc-are-chk-${grp}" value="macro"> Macro</label>
+                                <label class="chk-label"><input type="checkbox" class="exc-are-chk-${grp}" value="미확인"> 미확인</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="filter-row">
+                        <label class="filter-label"><input type="checkbox" id="exc-use-inf-${grp}" onchange="toggleTrendInputs('${grp}')"> 뇌경색</label>
+                        <div style="flex:1; min-width:180px;">
+                            <div id="exc-inf-area-${grp}" class="filter-controls" style="display:none; padding-top:4px;">
+                                <select id="exc-inf-tp-${grp}"><option value="all">시점 전체</option><option value="D2">D2</option><option value="W1">W1</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
+                                <select id="exc-inf-sz-${grp}"><option value="all">크기 전체(있음)</option><option value="Small">Small</option><option value="Large">Large</option><option value="None">없음(None)</option></select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>`;
+
         main.innerHTML = `
         <div class="card">
-            <h3>🔬 조건 분석 (Condition Analysis)</h3>
+            <h3 style="margin-bottom:20px;">🔬 조건 분석 (다중 복합 필터)</h3>
             <div class="trend-opt-box">
                 <div style="font-weight:bold; color:var(--navy); margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:5px;">1. 코호트 선택</div>
                 <div id="trend-cohort-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px;">로딩 중...</div>
             </div>
             
-            <div class="trend-opt-box">
-                <div style="font-weight:bold; color:var(--navy); margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:5px;">2. 분류 기준 설정</div>
-                
-                <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;">
-                    <div style="flex: 1; min-width: 300px; border: 1px solid #90caf9; padding: 15px; border-radius: 8px; background: #e3f2fd;">
-                        <h5 style="margin-top:0; color:#1565C0; margin-bottom:15px;">✅ 그룹 분류 기준 (Target Group)</h5>
-                        
-                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
-                            <label style="font-weight:bold; cursor:pointer;"><input type="radio" name="trend-crit" value="weight" checked onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 체중</label>
-                            <select id="trend-wt-tp" style="padding:4px;"><option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option><option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
-                            <input type="number" id="trend-wt-val" placeholder="기준값" style="width:70px; padding:4px;"> g 미만
-                        </div>
-                        
-                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
-                            <label style="font-weight:bold; cursor:pointer;"><input type="radio" name="trend-crit" value="pod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 생존기간</label>
-                            <input type="number" id="trend-pod-val" placeholder="기준일" style="width:70px; padding:4px;" disabled> 일 미만
-                        </div>
-
-                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
-                            <label style="font-weight:bold; cursor:pointer;"><input type="radio" name="trend-crit" value="cod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 사망원인/ARE</label>
-                        </div>
-                        
-                        <div id="trend-cod-area" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #90caf9;">
-                            <button type="button" class="btn-small btn-blue" onclick="loadTrendCodList()">목록 갱신</button>
-                            <div id="trend-cod-list-inc" style="margin-top:10px;"></div>
-                        </div>
-                    </div>
-
-                    <div style="flex: 1; min-width: 300px; border: 1px solid #ef9a9a; padding: 15px; border-radius: 8px; background: #ffebee;">
-                        <h5 style="margin-top:0; color:#c62828; margin-bottom:15px;">❌ 분석 제외 기준 (완전 배제)</h5>
-                        
-                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
-                            <label style="font-weight:bold; cursor:pointer; color:#c62828;"><input type="checkbox" id="exc-use-wt" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 체중</label>
-                            <select id="exc-wt-tp" style="padding:4px;" disabled><option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option><option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option><option value="W8">W8</option><option value="W12">W12</option></select>
-                            <input type="number" id="exc-wt-val" placeholder="기준값" style="width:70px; padding:4px;" disabled> g 미만 제외
-                        </div>
-                        
-                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
-                            <label style="font-weight:bold; cursor:pointer; color:#c62828;"><input type="checkbox" id="exc-use-pod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 생존기간</label>
-                            <input type="number" id="exc-pod-val" placeholder="기준일" style="width:70px; padding:4px;" disabled> 일 미만 제외
-                        </div>
-
-                        <div style="margin-bottom: 10px; display:flex; align-items:center; gap:8px;">
-                            <label style="font-weight:bold; cursor:pointer; color:#c62828;"><input type="checkbox" id="exc-use-cod" onchange="toggleTrendInputs()" style="transform:scale(1.2); margin-right:4px;"> 사망원인/ARE</label>
-                        </div>
-                        
-                        <div id="exc-cod-area" style="display:none; margin-top:10px; padding-top:10px; border-top:1px dashed #ef9a9a;">
-                            <button type="button" class="btn-small btn-red" onclick="loadTrendCodList()">목록 갱신</button>
-                            <div id="trend-cod-list-exc" style="margin-top:10px;"></div>
-                        </div>
+            <div class="trend-opt-box" style="padding-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:15px; margin-bottom:15px;">
+                    <div style="font-weight:bold; color:var(--navy); font-size:1.1rem;">2. 분류 기준 설정</div>
+                    
+                    <div style="display:flex; gap:20px; background:#f4f6f8; padding:8px 15px; border-radius:30px;">
+                        <label style="font-weight:bold; cursor:pointer; color:#1565C0;">
+                            <input type="radio" name="trend-mode" value="single" checked onchange="switchTrendMode()" style="transform:scale(1.2); margin-right:5px;"> 단일 조건 (A vs 나머지)
+                        </label>
+                        <label style="font-weight:bold; cursor:pointer; color:#2e7d32;">
+                            <input type="radio" name="trend-mode" value="cross" onchange="switchTrendMode()" style="transform:scale(1.2); margin-right:5px;"> 교차 비교 (A vs B)
+                        </label>
                     </div>
                 </div>
+
+                <div id="cross-mode-warning" style="display:none; color:#c62828; font-weight:bold; font-size:0.9rem; margin-bottom:15px; background:#ffebee; padding:10px 15px; border-radius:6px; border:1px solid #ffcdd2; align-items:center; gap:8px;">
+                    <i class="material-icons" style="font-size:1.2rem;">info</i> 
+                    <span>조건은 서로 겹치지 않게(배타적으로) 설정해 주세요. 양쪽 조건에 모두 해당되는 개체는 <b>Group A에 우선 배정</b>됩니다.</span>
+                </div>
+                
+                <div id="trend-tabs" style="display:flex; gap:10px; margin-bottom: 20px;">
+                    <button id="trend-tab-btn-a" onclick="switchTrendTab('a')" style="flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #1565C0; background:#e3f2fd; color:#1565C0; border-radius:8px; cursor:pointer; transition:0.2s;">🟨 Group A 조건 세팅</button>
+                    <button id="trend-tab-btn-b" onclick="switchTrendTab('b')" style="flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#888; border-radius:8px; cursor:pointer; transition:0.2s; display:none;">🟩 Group B 조건 세팅</button>
+                </div>
+
+                <div id="trend-panel-a">
+                    ${buildFilterUI('a')}
+                </div>
+                <div id="trend-panel-b" style="display:none;">
+                    ${buildFilterUI('b')}
+                </div>
             </div>
+            
             <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
                 <input type="checkbox" id="trend-show-all" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
             </label>
-            <button class="btn btn-blue" onclick="analyzeTrend()">분석 시작 (Split View)</button>
+            <button class="btn btn-blue" onclick="analyzeTrend()" style="font-size:1.2rem; padding:15px; width:100%; border-radius:8px; box-shadow:0 4px 10px rgba(0,0,0,0.1);">🚀 설정된 조건으로 분석 시작</button>
         </div>
         <div id="trend-res-area" class="trend-container"></div>`;
         renderCohortCheckboxes('trend-cohort-list');
@@ -416,15 +503,15 @@ async function go(view, targetId = null, specificTabId = null) {
     }
     else if(view === 'daily') {
         currentScores = { act: 0, fur: 0, eye: 0 };
-        main.innerHTML = `<div class="card"><h3>데일리 체크</h3><div style="display:flex; gap:10px; margin-bottom:10px"><input type="number" id="dc-c" placeholder="C" oninput="mkId('dc')"><input type="number" id="dc-r" placeholder="N" oninput="mkId('dc')"></div><input type="text" id="dc-id" readonly style="background:#eee; margin-bottom:15px"><div class="input-group"><label>날짜</label><input type="date" id="dc-date"></div>${['act','fur','eye'].map(k => `<div class="input-group"><label>${k.toUpperCase()}</label><div class="rating-box">${[1,2,3,4,5].map(n => `<button class="rate-btn" onclick="score('${k}', ${n}, this)">${n}</button>`).join('')}</div></div>`).join('')}<div id="score-res" class="status-box">선택 필요</div><textarea id="dc-note" rows="2" placeholder="메모" style="margin-top:10px;"></textarea><div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div><button class="btn btn-green" onclick="saveDaily()" style="margin-top:15px;">저장</button></div>`;
+        main.innerHTML = `<div class="card"><h3>데일리 체크</h3><div style="display:flex; gap:10px; margin-bottom:10px"><input type="number" id="dc-c" placeholder="C" oninput="mkId('dc')"><input type="number" id="dc-r" placeholder="N" oninput="mkId('dc')"><select id="dc-g" onchange="mkId('dc')" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div><input type="text" id="dc-id" readonly style="background:#eee; margin-bottom:15px"><div class="input-group"><label>날짜</label><input type="date" id="dc-date"></div>${['act','fur','eye'].map(k => `<div class="input-group"><label>${k.toUpperCase()}</label><div class="rating-box">${[1,2,3,4,5].map(n => `<button class="rate-btn" onclick="score('${k}', ${n}, this)">${n}</button>`).join('')}</div></div>`).join('')}<div id="score-res" class="status-box">선택 필요</div><textarea id="dc-note" rows="2" placeholder="메모" style="margin-top:10px;"></textarea><div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div><button class="btn btn-green" onclick="saveDaily()" style="margin-top:15px;">저장</button></div>`;
         document.getElementById('dc-date').value = getTodayStr();
     }
     else if(view === 'add') { 
-        main.innerHTML = `<div class="card"><h3>대량 등록</h3><div class="input-group"><label>코호트</label><input type="number" id="add-c"></div><div style="display:flex; gap:10px;"><input type="number" id="add-s" placeholder="시작"><input type="number" id="add-e" placeholder="끝"></div><div class="input-group" style="margin-top:10px;"><label>반입일</label><input type="date" id="add-d"></div><button class="btn btn-green" onclick="saveBulk()">등록</button></div>`; 
+        main.innerHTML = `<div class="card"><h3>대량 등록</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><div class="input-group" style="flex:1;"><label>코호트</label><input type="number" id="add-c"></div><div class="input-group" style="flex:1;"><label>그룹</label><select id="add-g" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div></div><div style="display:flex; gap:10px;"><input type="number" id="add-s" placeholder="시작번호"><input type="number" id="add-e" placeholder="끝번호"></div><div class="input-group" style="margin-top:10px;"><label>반입일</label><input type="date" id="add-d"></div><button class="btn btn-green" onclick="saveBulk()">등록</button></div>`; 
         document.getElementById('add-d').value = getTodayStr(); 
     }
     else if(view === 'dose') { 
-        main.innerHTML = `<div class="card"><h3>투약 계산기</h3><input type="number" id="ds-c" placeholder="코호트" oninput="upDose()" style="margin-bottom:10px;"><table><thead><tr><th>번</th><th>WT(g)</th><th>ID</th></tr></thead><tbody>${Array.from({length:12},(_,i)=>`<tr><td><input type="number" class="dn" oninput="upDose()"></td><td><input type="number" class="dw"></td><td class="di">-</td></tr>`).join('')}</tbody></table><button class="btn btn-blue" onclick="saveDose()" style="margin-top:15px;">계산 및 저장</button><div id="dose-res" style="display:none;"></div></div>`; 
+        main.innerHTML = `<div class="card"><h3>투약 계산기</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><input type="number" id="ds-c" placeholder="코호트" oninput="upDose()" style="flex:1;"><select id="ds-g" onchange="upDose()" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div><table><thead><tr><th>번</th><th>WT(g)</th><th>ID</th></tr></thead><tbody>${Array.from({length:12},(_,i)=>`<tr><td><input type="number" class="dn" oninput="upDose()"></td><td><input type="number" class="dw"></td><td class="di">-</td></tr>`).join('')}</tbody></table><button class="btn btn-blue" onclick="saveDose()" style="margin-top:15px;">계산 및 저장</button><div id="dose-res" style="display:none;"></div></div>`; 
     }
     else if(view === 'rec') { 
         let timeOpts = `<option>Manual</option><option>Arrival</option><option>D00</option><option>D0</option><option>D2</option>`;
@@ -435,6 +522,7 @@ async function go(view, targetId = null, specificTabId = null) {
             <div style="display:flex; gap:10px;">
                 <input type="number" id="re-c" placeholder="C" oninput="mkId('re')">
                 <input type="number" id="re-r" placeholder="N" oninput="mkId('re')">
+                <select id="re-g" onchange="mkId('re')" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select>
             </div>
             <input type="text" id="re-id" readonly style="background:#eee; margin:10px 0;">
             <label style="font-size:0.8rem; font-weight:bold; color:var(--navy);">시점 선택</label>
