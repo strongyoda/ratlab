@@ -1556,3 +1556,130 @@ window.migrateToG1 = async function() {
         alert("업데이트 중 에러가 발생했습니다. 콘솔 창을 확인해주세요.");
     }
 };
+
+// AI 논문 분석용 마스터 데이터 추출 함수
+window.extractAllDataForAI = async function() {
+    alert("AI용 마크다운 데이터 추출을 시작합니다. 데이터 양에 따라 몇 초 정도 걸릴 수 있습니다.");
+    
+    try {
+        // 1. 모든 컬렉션 데이터 가져오기
+        const [ratsSnap, dailySnap, measSnap, doseSnap, cohortSnap] = await Promise.all([
+            db.collection("rats").get(),
+            db.collection("dailyLogs").get(),
+            db.collection("measurements").get(),
+            db.collection("doseLogs").get(),
+            db.collection("cohortNotes").get()
+        ]);
+
+        // 2. 코호트/그룹 메모 매핑 (실험 환경/조건을 AI에게 알려주기 위함)
+        const cohortInfo = {};
+        cohortSnap.forEach(doc => {
+            cohortInfo[doc.id] = doc.data();
+        });
+
+        // 3. 개체별 데이터 바구니 만들기
+        const ratData = {};
+        ratsSnap.forEach(doc => {
+            const d = doc.data();
+            ratData[d.ratId] = { ...d, timeline: [] }; // timeline 배열에 모든 이벤트 저장
+        });
+
+        // 4. 데일리 로그 밀어넣기
+        dailySnap.forEach(doc => {
+            const d = doc.data();
+            if (ratData[d.ratId]) {
+                ratData[d.ratId].timeline.push({
+                    date: d.date,
+                    type: "Daily Check",
+                    desc: `총점: ${d.totalScore} (Activity:${d.scores?.activity||0}, Fur:${d.scores?.fur||0}, Eye:${d.scores?.eye||0}) | 메모: ${d.note || "없음"}`
+                });
+            }
+        });
+
+        // 5. 체중/혈압 기록 밀어넣기
+        measSnap.forEach(doc => {
+            const d = doc.data();
+            if (ratData[d.ratId]) {
+                ratData[d.ratId].timeline.push({
+                    date: d.date,
+                    type: "Measurement",
+                    desc: `시점: ${d.timepoint} | 체중: ${d.weight}g | SBP: ${d.sbp}, DBP: ${d.dbp}, Mean: ${d.mean}`
+                });
+            }
+        });
+
+        // 6. 투약 기록 밀어넣기
+        doseSnap.forEach(doc => {
+            const d = doc.data();
+            if (ratData[d.ratId]) {
+                ratData[d.ratId].timeline.push({
+                    date: d.date,
+                    type: "Dose Log",
+                    desc: `투약량: ${parseFloat(d.doseMg).toFixed(2)}mg, 부피: ${parseFloat(d.volMl).toFixed(2)}ml (체중 ${d.weight}g 기준)`
+                });
+            }
+        });
+
+        // 7. 마크다운(Markdown) 텍스트로 예쁘게 병합하기
+        let mdText = "# Rat Lab Master Data for AI Analysis\n\n";
+        mdText += `> 데이터 추출 일시: ${new Date().toLocaleString()}\n`;
+        mdText += `> 목적: NotebookLM 및 LLM 논문 데이터 분석용\n\n`;
+
+        for (const [ratId, data] of Object.entries(ratData)) {
+            mdText += `## [Rat ID: ${ratId}]\n`;
+            mdText += `- 소속: Cohort ${data.cohort}, Group ${data.group}\n`;
+            mdText += `- 생존 상태: ${data.status} ${data.deathDate ? `(사망일: ${data.deathDate})` : ""}\n`;
+            if (data.cod) mdText += `- 사망 원인(COD): ${data.cod}\n`;
+            if (data.areMain) mdText += `- ARE 기록: ${data.areMain} (상세: ${data.areSub || '없음'})\n`;
+            
+            const cInfo = cohortInfo[data.cohort];
+            if (cInfo) {
+                const grpMemo = cInfo[`memo_${data.group}`] || "별도 메모 없음";
+                mdText += `- 그룹 환경/조건: ${grpMemo}\n`;
+            }
+
+            mdText += `- 주요 마일스톤:\n`;
+            if (data.arrivalDate) mdText += `  * 반입: ${data.arrivalDate} (반입주령: ${data.arrivalAge || '-'}주)\n`;
+            if (data.ovxDate) mdText += `  * OVX 수술일: ${data.ovxDate}\n`;
+            if (data.surgeryDate) mdText += `  * 본 수술일: ${data.surgeryDate}\n`;
+            if (data.doseStartDate) mdText += `  * 투약 시작일: ${data.doseStartDate}\n`;
+            if (data.sampleType) mdText += `  * 샘플링: ${data.sampleType} (날짜: ${data.sampleDate || '-'} / 메모: ${data.sampleMemo || '-'})\n`;
+
+            if (data.mrDates && data.mrDates.length > 0) {
+                mdText += `- MR 촬영 내역:\n`;
+                data.mrDates.forEach(mr => {
+                    mdText += `  * [${mr.date}] 시점: ${mr.timepoint}, Infarct Size: ${mr.infarctSize || '-'}, Loc: ${mr.infarctLoc || '-'}\n`;
+                });
+            }
+
+            mdText += `\n### Timeline (시간순 통합 기록)\n`;
+            
+            // 핵심: 모든 이벤트를 날짜 순서대로 정렬!
+            data.timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            if (data.timeline.length === 0) {
+                mdText += `> 등록된 세부 기록이 없습니다.\n`;
+            } else {
+                data.timeline.forEach(t => {
+                    mdText += `- **[${t.date}]** [${t.type}] ${t.desc}\n`;
+                });
+            }
+            mdText += `\n---\n\n`; 
+        }
+
+        // 8. 텍스트 파일(.txt)로 다운로드 처리
+        const blob = new Blob([mdText], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `RatLab_AI_MasterData_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        alert("데이터 추출 완료! 다운로드된 txt 파일을 NotebookLM에 업로드하세요.");
+
+    } catch (e) {
+        console.error(e);
+        alert("데이터 추출 중 오류가 발생했습니다: " + e.message);
+    }
+}
