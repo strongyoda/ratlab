@@ -1,6 +1,27 @@
 function score(k, n, btn) { btn.parentElement.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); currentScores[k] = n; const t = currentScores.act+currentScores.fur+currentScores.eye; document.getElementById('score-res').innerText=`총점: ${t}점`; }
 function mkId(p) { const c=document.getElementById(`${p}-c`).value, r=document.getElementById(`${p}-r`).value, g=document.getElementById(`${p}-g`).value || '1'; if(c&&r) document.getElementById(`${p}-id`).value = `C${c.padStart(2,'0')}${r.padStart(2,'0')}G${g}`; }
 function calM() { const s=Number(document.getElementById('re-s').value), d=Number(document.getElementById('re-d').value); if(s&&d) document.getElementById('re-m').value = Math.round(d+(s-d)/3); }
+// 입력된 Rat ID가 DB에 존재하는지 확인하는 함수
+async function checkRatValid(ratId) {
+    if (!ratId) {
+        alert("Rat ID를 입력해주세요.");
+        return false;
+    }
+    
+    try {
+        const snap = await db.collection("rats").where("ratId", "==", ratId).get();
+        if (snap.empty) {
+            alert(`DB에 존재하지 않는 개체입니다: ${ratId}\nID를 다시 확인해주세요.`);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.error("Rat ID 검증 중 오류:", e);
+        alert("ID 확인 중 시스템 오류가 발생했습니다.");
+        return false;
+    }
+}
+
 async function saveBulk() { 
     const c=document.getElementById('add-c').value, g=document.getElementById('add-g').value || '1';
     const s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; 
