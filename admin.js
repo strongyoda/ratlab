@@ -4,6 +4,20 @@ async function deleteCohort() { const c=document.getElementById('del-cohort').va
 
 
 
+// 행 삭제 표시 함수
+function markRowDel(btn) {
+    const row = btn.closest('tr');
+    if(row.classList.contains('row-del')) {
+        row.classList.remove('row-del');
+        btn.innerText = '삭제';
+        btn.style.background = 'var(--red)';
+    } else {
+        row.classList.add('row-del');
+        btn.innerText = '복구';
+        btn.style.background = 'gray';
+    }
+}
+
 async function searchForEdit() {
     const id = document.getElementById('edit-id').value.trim();
     if(!id) return alert("ID를 입력하세요");
@@ -19,10 +33,10 @@ async function searchForEdit() {
         const rData = ratDoc.data();
         
         const currentCod = rData.cod || extractLegacyCod(rData.codFull);
+        const currentCodSec = rData.codSec || []; // 부원인 로드
         const currentAre = rData.are || '';
         let areMain = currentAre.split(' ')[0] || '';
         
-        // [추가] 갯수 데이터 파싱 (구형 데이터 호환 처리 포함)
         let cMicro = 0, cMacro = 0, cUnk = 0;
         if (rData.areCounts) {
             cMicro = rData.areCounts.micro || 0;
@@ -36,6 +50,9 @@ async function searchForEdit() {
         }
         const mrOpts = ['-','D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','Death'];
 
+        const standardCods = ['SAH', 'Infarction', 'Vasospasm', 'Sacrifice', 'Surgical Failure', 'Unknown'];
+        const isOtherCod = currentCod && !standardCods.includes(currentCod) && currentCod !== '-' && currentCod !== '미기록';
+
         let html = `
         <div class="edit-container">
             <h3 style="color:var(--navy); border-bottom:2px solid var(--navy); padding-bottom:10px;">📝 통합 데이터 수정 (${rData.ratId})</h3>
@@ -43,11 +60,22 @@ async function searchForEdit() {
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                 <div class="input-group"><label>상태</label><select id="ed-status" style="padding:5px;"><option value="생존" ${rData.status==='생존'?'selected':''}>생존</option><option value="사망" ${rData.status==='사망'?'selected':''}>사망</option></select></div>
                 <div class="input-group">
-                    <label>사망 원인 (COD)</label>
-                    <select id="ed-cod" style="padding:5px;">
+                    <label>사망 원인 (Primary COD)</label>
+                    <select id="ed-cod" style="padding:5px; width:100%; box-sizing:border-box;" onchange="document.getElementById('ed-cod-other-wrap').style.display = this.value==='Other' ? 'block' : 'none';">
                         <option value="">-</option>
-                        ${['SAH', 'Infarction', 'Vasospasm', 'Sacrifice', 'Surgical Failure', 'Unknown'].map(c => `<option value="${c}" ${currentCod===c?'selected':''}>${c}</option>`).join('')}
+                        ${standardCods.map(c => `<option value="${c}" ${currentCod===c?'selected':''}>${c}</option>`).join('')}
+                        <option value="Other" ${isOtherCod?'selected':''}>기타 (직접 입력)</option>
                     </select>
+                    <div id="ed-cod-other-wrap" style="display:${isOtherCod?'block':'none'}; margin-top:5px;">
+                        <input type="text" id="ed-cod-other" value="${isOtherCod ? currentCod : ''}" placeholder="사망 원인을 직접 입력하세요" style="width:100%; padding:5px; box-sizing:border-box;">
+                    </div>
+                    
+                    <label style="margin-top:10px; display:block;">부원인 / 동반 (Secondary COD)</label>
+                    <div style="display:flex; gap:5px; flex-wrap:wrap; background:#f8f9fa; padding:8px; border-radius:4px; border:1px solid #ddd;">
+                        ${['SAH', 'Infarction', 'Vasospasm', 'Bleeding', 'Seizure'].map(sec => `
+                            <label style="cursor:pointer; font-size:0.8rem; display:flex; align-items:center;"><input type="checkbox" class="ed-cod-sec-chk" value="${sec}" ${currentCodSec.includes(sec)?'checked':''}> ${sec}</label>
+                        `).join('')}
+                    </div>
                 </div>
                 <div class="input-group">
                     <label>ARE 유무 및 갯수</label>
@@ -136,7 +164,6 @@ async function searchForEdit() {
     } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
 }
 
-
 async function saveTotalEdit(ratDocId) {
     if(!confirm("모든 변경사항을 저장하시겠습니까?")) return;
     
@@ -153,11 +180,21 @@ async function saveTotalEdit(ratDocId) {
         if(tp && dt) mrDatesArr.push({ timepoint: tp, date: dt, infarctSize: sz, infarctLoc: loc });
     });
 
-    const codVal = document.getElementById('ed-cod').value;
+    let codVal = document.getElementById('ed-cod').value;
+    if (codVal === 'Other') {
+        const otherInput = document.getElementById('ed-cod-other');
+        if (otherInput) codVal = otherInput.value.trim();
+        if (!codVal) return alert("기타 사망 원인을 입력해주세요.");
+    }
+
+    // 부원인(Secondary) 배열 추출
+    const edSecChks = document.querySelectorAll('.ed-cod-sec-chk:checked');
+    const codSecVal = Array.from(edSecChks).map(cb => cb.value);
+
     const areMain = document.getElementById('ed-are-main').value;
-    
     let areVal = '';
     let areCounts = { micro: 0, macro: 0, unk: 0 };
+    
     if (areMain === 'O') {
         areCounts.micro = Number(document.getElementById('ed-are-micro').value) || 0;
         areCounts.macro = Number(document.getElementById('ed-are-macro').value) || 0;
@@ -170,8 +207,9 @@ async function saveTotalEdit(ratDocId) {
     batch.update(ratRef, {
         status: document.getElementById('ed-status').value,
         cod: codVal,
+        codSec: codSecVal, // 🌟 DB에 Secondary Array 별도 저장
         are: areVal,
-        areCounts: areCounts, // 핵심: 갯수 DB 저장
+        areCounts: areCounts,
         codFull: `${codVal} / ARE: ${areVal}`, 
         arrivalDate: document.getElementById('ed-arrival').value,
         surgeryDate: document.getElementById('ed-surgery').value,
@@ -251,22 +289,6 @@ async function saveTotalEdit(ratDocId) {
         alert("저장 중 오류 발생: " + e.message);
     }
 }
-
-// 행 삭제 표시 함수
-function markRowDel(btn) {
-    const row = btn.closest('tr');
-    if(row.classList.contains('row-del')) {
-        row.classList.remove('row-del');
-        btn.innerText = '삭제';
-        btn.style.background = 'var(--red)';
-    } else {
-        row.classList.add('row-del');
-        btn.innerText = '복구';
-        btn.style.background = 'gray';
-    }
-}
-
-
 
 // 행 추가 함수
 function addTableRow(tbodyId) {
@@ -1042,6 +1064,9 @@ async function saveCodFinal() {
 // ============================================================
 //  AI 논문 작성용 풀-컨텍스트 데이터 추출 (주령/POD 초밀착 강제 주입 및 프롬프트 강화판)
 // ============================================================
+// ============================================================
+//  AI 논문 작성용 풀-컨텍스트 데이터 추출 (Primary/Secondary 인지 룰 추가)
+// ============================================================
 async function exportForAI() {
     const btn = document.getElementById('btn-extract-ai');
     const statusText = document.getElementById('ai-extract-status');
@@ -1073,14 +1098,14 @@ async function exportForAI() {
         const doseData = {};
         doseSnap.forEach(doc => { const d = doc.data(); if (!doseData[d.ratId]) doseData[d.ratId] = []; doseData[d.ratId].push(d); });
 
-        // 🔥 AI 지시문(System Prompt) 대폭 강화 (데이터 환각 금지 조항 추가)
         let aiText = `[SYSTEM PROMPT & STRICT CONTEXT]\n`;
         aiText += `당신은 세계 최고 수준의 신경외과 및 기초의학(Animal Model) 연구원입니다. 아래 제공되는 데이터는 뇌동맥류(Cerebral Aneurysm, ARE) 동물 모델(Rat)의 Raw Data입니다.\n\n`;
         aiText += `[🚨 매우 중요한 분석 지침 - 반드시 준수할 것]\n`;
-        aiText += `1. **주령(Age in weeks, w)의 절대적 중요성**: 쥐의 주령은 뇌동맥류 발생 및 파열(사망)에 결정적인 생리학적 요인입니다. 단순히 W1, W2 같은 시점만 보지 말고, 각 측정 데이터에 함께 각인된 '주령(예: 10.2w)'을 집중적으로 추적하십시오. 특정 주령 구간대에서 급격히 발생하는 체중 감소, 혈압 변화, 증상 악화를 면밀히 분석해야 합니다.\n`;
-        aiText += `2. **시간축의 이중 이해 (Age & POD)**: 모든 개별 데이터에는 '(주령, POD/Ref.D)' 형태의 시간표표가 붙어있습니다. POD(수술 후 경과일)를 통해 질병 유도 후의 시간을 파악하고, 동시에 Age(주령)를 통해 개체의 물리적 노화 상태를 함께 교차 분석하십시오.\n`;
-        aiText += `3. **대조군(Sham/Naïve) 해석 주의**: 타임라인에 'Reference Date (Sham/Naïve, NO Ligation)'가 기재된 개체는 수술을 받지 않은 대조군입니다. 이들의 타임라인에 적힌 'Ref.D'는 수술군과 시간축을 동기화하기 위해 설정된 가상의 기준일(Day 0)로부터 경과한 시간입니다. 이들을 절대 수술 개체로 착각하지 말고 대조군으로서 철저히 분리 비교하십시오.\n`;
-        aiText += `4. **데이터 환각(Hallucination) 절대 금지**: 특정 개체나 시점의 데이터(혈압, 체중, 샘플, MR 기록 등)가 누락되어 있거나 'No data', 'None', '-' 등으로 표기되어 있다면, **절대 주변의 다른 개체 값이나 평균값을 임의로 끌어다 채우거나 유추하여 표기하지 마십시오.** 데이터가 존재하지 않는 부분은 '분석 불가(누락됨)'로 엄격하게 명시해야 합니다.\n\n`;
+        aiText += `1. **주령(Age in weeks, w)의 절대적 중요성**: 쥐의 주령은 뇌동맥류 발생 및 파열(사망)에 결정적인 생리학적 요인입니다. 단순히 W1, W2 같은 시점만 보지 말고, 각 측정 데이터에 함께 각인된 '주령(예: 10.2w)'을 집중적으로 추적하십시오.\n`;
+        aiText += `2. **시간축의 이중 이해 (Age & POD)**: 모든 개별 데이터에는 '(주령, POD/Ref.D)' 형태의 시간표표가 붙어있습니다. POD를 통해 질병 유도 후의 시간을 파악하고, Age를 통해 노화 상태를 교차 분석하십시오.\n`;
+        aiText += `3. **대조군(Sham/Naïve) 해석 주의**: 타임라인에 'Reference Date'가 기재된 개체는 수술을 받지 않은 대조군입니다. 이들을 절대 수술 개체로 착각하지 마십시오.\n`;
+        aiText += `4. **데이터 환각(Hallucination) 절대 금지**: 데이터가 없으면 주변 개체값으로 유추하여 채우지 말고 '분석 불가'로 명시하십시오.\n`;
+        aiText += `5. **복합 사인 인지 (Primary & Secondary COD)**: 'Cause of Death' 항목이 Primary와 Secondary로 나뉘어 제공됩니다. Secondary(부원인/동반질환)에 기재된 질환(예: SAH, Infarction 등)도 해당 개체에서 확실히 발생한 것으로 간주하여 발생률 통계 및 교차 분석에 반드시 포함시키십시오.\n\n`;
         aiText += `=================================================\n\n`;
         
         aiText += `[1. COHORT EXPERIMENTAL CONDITIONS (코호트별 실험 조건)]\n`;
@@ -1104,7 +1129,6 @@ async function exportForAI() {
                 const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
                 const arrDate = r.arrivalDate;
                 
-                // 측정치마다 주령과 POD를 콤보로 묶어주는 헬퍼 함수
                 const getTemporalStr = (targetDateStr) => {
                     if(!targetDateStr) return '';
                     let res = [];
@@ -1131,11 +1155,12 @@ async function exportForAI() {
                 };
 
                 const cod = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '-');
+                const codSecStr = (r.codSec && r.codSec.length > 0) ? r.codSec.join(', ') : 'None'; // 🌟 부원인 추출
+                
                 const deathTempStr = r.deathDate ? getTemporalStr(r.deathDate) : '';
                 aiText += `  - Status: ${r.status} ${r.deathDate ? `(Death Date: ${r.deathDate}${deathTempStr})` : ''}\n`;
-                aiText += `  - Cause of Death (COD): ${cod}\n`;
+                aiText += `  - Cause of Death: Primary [${cod}] / Secondary [${codSecStr}]\n`;
                 
-                // ✅ ARE 갯수 데이터 추출 로직 추가
                 let areStr = r.are || '-';
                 if (r.areCounts) {
                     areStr += ` (Micro: ${r.areCounts.micro || 0}, Macro: ${r.areCounts.macro || 0}, Unknown: ${r.areCounts.unk || 0})`;
@@ -1156,7 +1181,6 @@ async function exportForAI() {
                     aiText += `    * Dose Started: ${r.doseStartDate}${getTemporalStr(r.doseStartDate)}\n`;
                 }
 
-                // ✅ MR Infarction(뇌경색) 데이터 추출 로직 추가
                 if (r.mrDates && r.mrDates.length > 0) {
                     const mrStr = r.mrDates.sort((a,b) => new Date(a.date) - new Date(b.date))
                                     .map(m => {
@@ -1331,13 +1355,69 @@ window.addModalAreRow = function(data = {}) {
     container.appendChild(row);
 };
 
-// 2. 모달 열기 함수 (저장된 리스트를 DB에서 다시 불러오도록 async 추가)
+// 2. 모달 열기 함수 (부원인 및 기타 입력창 JS 동적 생성)
 window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeathDate = '') {
     activeCodRatId = docId;
-    document.getElementById('modal-cod').value = currentCod && currentCod !== '미기록' ? currentCod : '';
     
+    let codSelect = document.getElementById('modal-cod');
+    
+    // --- [동적 UI 생성] HTML 수정 없이 기타창과 부원인 다중선택창 자동 생성 ---
+    if (codSelect && !Array.from(codSelect.options).some(opt => opt.value === 'Other')) {
+        const otherOpt = document.createElement('option');
+        otherOpt.value = 'Other';
+        otherOpt.innerText = '기타 (직접 입력)';
+        codSelect.appendChild(otherOpt);
+    }
+
+    let extraWrap = document.getElementById('modal-cod-extra-wrap');
+    if (codSelect && !extraWrap) {
+        extraWrap = document.createElement('div');
+        extraWrap.id = 'modal-cod-extra-wrap';
+        extraWrap.innerHTML = `
+            <div id="modal-cod-other-wrap" style="display:none; margin-top:5px;">
+                <input type="text" id="modal-cod-other" placeholder="사망 원인을 직접 입력하세요" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ddd; box-sizing:border-box;">
+            </div>
+            <div style="margin-top:15px; padding-top:10px; border-top:1px dashed #ddd;">
+                <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">부원인 / 동반질환 (Secondary COD) <span style="font-weight:normal; color:#666;">- 다중 선택</span></label>
+                <div style="display:flex; flex-wrap:wrap; gap:8px; background:#f8f9fa; padding:10px; border-radius:4px; border:1px solid #ddd;">
+                    <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="SAH"> SAH</label>
+                    <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="Infarction"> Infarction</label>
+                    <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="Vasospasm"> Vasospasm</label>
+                    <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="Bleeding"> Bleeding</label>
+                    <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="Seizure"> Seizure</label>
+                </div>
+            </div>
+        `;
+        codSelect.parentElement.appendChild(extraWrap);
+
+        codSelect.addEventListener('change', function() {
+            document.getElementById('modal-cod-other-wrap').style.display = this.value === 'Other' ? 'block' : 'none';
+        });
+    }
+    // --------------------------------------------------------------------------
+    
+    const otherInput = document.getElementById('modal-cod-other');
+    const otherWrap = document.getElementById('modal-cod-other-wrap');
+    const standardCods = ['SAH', 'Infarction', 'Vasospasm', 'Sacrifice', 'Surgical Failure', 'Unknown', '-', ''];
+
+    // 주원인(Primary) 데이터 세팅
+    if (currentCod && currentCod !== '미기록') {
+        if (standardCods.includes(currentCod)) {
+            if(codSelect) codSelect.value = currentCod;
+            if(otherWrap) otherWrap.style.display = 'none';
+            if(otherInput) otherInput.value = '';
+        } else {
+            if(codSelect) codSelect.value = 'Other';
+            if(otherWrap) otherWrap.style.display = 'block';
+            if(otherInput) otherInput.value = currentCod;
+        }
+    } else {
+        if(codSelect) codSelect.value = '';
+        if(otherWrap) otherWrap.style.display = 'none';
+        if(otherInput) otherInput.value = '';
+    }
+
     let main = '', cMicro = 0, cMacro = 0, cUnk = 0;
-    
     if(currentAre && currentAre !== '미기록') {
         main = currentAre.split(' ')[0];
         if (currentAre.includes('micro:')) {
@@ -1358,7 +1438,6 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
     
     const mainSel = document.getElementById('modal-are-main');
     mainSel.onchange = null;
-    
     const oldSub = document.getElementById('modal-are-sub');
     if(oldSub) oldSub.remove();
     const oldCountsBox = document.getElementById('modal-are-counts-box');
@@ -1403,26 +1482,28 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
     const rowContainer = document.getElementById('modal-are-rows');
     rowContainer.innerHTML = '<span style="color:#666; font-size:0.85rem;">기록을 불러오는 중...</span>'; 
     
-    // 👇 DB에서 최신 상세 위치 데이터(areList) 가져오기
     let areList = [];
+    let codSecList = []; // 부원인 리스트
     try {
         const docSnap = await db.collection("rats").doc(docId).get();
         if(docSnap.exists) {
             const rData = docSnap.data();
-            if(rData.areList && Array.isArray(rData.areList)) {
-                areList = rData.areList;
-            }
+            if(rData.areList && Array.isArray(rData.areList)) areList = rData.areList;
+            if(rData.codSec && Array.isArray(rData.codSec)) codSecList = rData.codSec; // DB에서 부원인 로드
         }
-    } catch(e) { console.error("areList 로딩 실패", e); }
+    } catch(e) { console.error("데이터 로딩 실패", e); }
+
+    // 부원인 체크박스 틱 처리
+    document.querySelectorAll('.modal-cod-sec-chk').forEach(chk => {
+        chk.checked = codSecList.includes(chk.value);
+    });
 
     rowContainer.innerHTML = ''; 
     
     if (main === 'O') {
         if (areList.length > 0) {
-            // 저장된 상세 정보가 있으면 화면에 쫙 깔아줌
             areList.forEach(item => addModalAreRow(item));
         } else {
-            // 상세 정보가 없고 예전 갯수만 있으면 빈 틀 생성
             for(let i=0; i<cMicro; i++) addModalAreRow({type:'micro'});
             for(let i=0; i<cMacro; i++) addModalAreRow({type:'macro'});
             for(let i=0; i<cUnk; i++) addModalAreRow({type:'미확인'});
@@ -1454,9 +1535,21 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
     simpleCodModal.style.zIndex = '1000000'; 
 }
 
-// 3. 데이터 저장 함수 (A-com 예외처리 반영)
+// 3. 데이터 저장 함수 (주원인 + 부원인 분리 저장)
 window.saveSimpleCod = async function() {
-    const cod = document.getElementById('modal-cod').value;
+    let cod = document.getElementById('modal-cod').value;
+    if (cod === 'Other') {
+        const otherInput = document.getElementById('modal-cod-other');
+        if (otherInput) cod = otherInput.value.trim();
+        if (!cod) return alert("기타 사망 원인을 직접 입력해주세요.");
+    }
+    
+    // 부원인(Secondary) 데이터 추출
+    let codSec = [];
+    document.querySelectorAll('.modal-cod-sec-chk:checked').forEach(chk => {
+        codSec.push(chk.value);
+    });
+
     const areMain = document.getElementById('modal-are-main').value;
     const deathDateEl = document.getElementById('modal-death-date');
     
@@ -1479,7 +1572,6 @@ window.saveSimpleCod = async function() {
             else if(tp === 'macro') areCounts.macro++;
             else areCounts.unk++;
             
-            // BA와 A-com은 방향 글자(R/L) 없이 그대로 저장
             const locStr = (side === 'BA' || side === 'A-com') ? side : `${side} ${art !== '-' ? art : ''}`.trim();
             areList.push({ type: tp, side: side, art: art });
             detailStrs.push(`${tp} (${locStr})`);
@@ -1494,6 +1586,7 @@ window.saveSimpleCod = async function() {
     
     const updateData = {
         cod: cod,
+        codSec: codSec, // 🌟 DB에 Secondary Array 별도 저장!
         are: areStr,
         areCounts: areCounts,
         areList: areList,
@@ -1556,130 +1649,3 @@ window.migrateToG1 = async function() {
         alert("업데이트 중 에러가 발생했습니다. 콘솔 창을 확인해주세요.");
     }
 };
-
-// AI 논문 분석용 마스터 데이터 추출 함수
-window.extractAllDataForAI = async function() {
-    alert("AI용 마크다운 데이터 추출을 시작합니다. 데이터 양에 따라 몇 초 정도 걸릴 수 있습니다.");
-    
-    try {
-        // 1. 모든 컬렉션 데이터 가져오기
-        const [ratsSnap, dailySnap, measSnap, doseSnap, cohortSnap] = await Promise.all([
-            db.collection("rats").get(),
-            db.collection("dailyLogs").get(),
-            db.collection("measurements").get(),
-            db.collection("doseLogs").get(),
-            db.collection("cohortNotes").get()
-        ]);
-
-        // 2. 코호트/그룹 메모 매핑 (실험 환경/조건을 AI에게 알려주기 위함)
-        const cohortInfo = {};
-        cohortSnap.forEach(doc => {
-            cohortInfo[doc.id] = doc.data();
-        });
-
-        // 3. 개체별 데이터 바구니 만들기
-        const ratData = {};
-        ratsSnap.forEach(doc => {
-            const d = doc.data();
-            ratData[d.ratId] = { ...d, timeline: [] }; // timeline 배열에 모든 이벤트 저장
-        });
-
-        // 4. 데일리 로그 밀어넣기
-        dailySnap.forEach(doc => {
-            const d = doc.data();
-            if (ratData[d.ratId]) {
-                ratData[d.ratId].timeline.push({
-                    date: d.date,
-                    type: "Daily Check",
-                    desc: `총점: ${d.totalScore} (Activity:${d.scores?.activity||0}, Fur:${d.scores?.fur||0}, Eye:${d.scores?.eye||0}) | 메모: ${d.note || "없음"}`
-                });
-            }
-        });
-
-        // 5. 체중/혈압 기록 밀어넣기
-        measSnap.forEach(doc => {
-            const d = doc.data();
-            if (ratData[d.ratId]) {
-                ratData[d.ratId].timeline.push({
-                    date: d.date,
-                    type: "Measurement",
-                    desc: `시점: ${d.timepoint} | 체중: ${d.weight}g | SBP: ${d.sbp}, DBP: ${d.dbp}, Mean: ${d.mean}`
-                });
-            }
-        });
-
-        // 6. 투약 기록 밀어넣기
-        doseSnap.forEach(doc => {
-            const d = doc.data();
-            if (ratData[d.ratId]) {
-                ratData[d.ratId].timeline.push({
-                    date: d.date,
-                    type: "Dose Log",
-                    desc: `투약량: ${parseFloat(d.doseMg).toFixed(2)}mg, 부피: ${parseFloat(d.volMl).toFixed(2)}ml (체중 ${d.weight}g 기준)`
-                });
-            }
-        });
-
-        // 7. 마크다운(Markdown) 텍스트로 예쁘게 병합하기
-        let mdText = "# Rat Lab Master Data for AI Analysis\n\n";
-        mdText += `> 데이터 추출 일시: ${new Date().toLocaleString()}\n`;
-        mdText += `> 목적: NotebookLM 및 LLM 논문 데이터 분석용\n\n`;
-
-        for (const [ratId, data] of Object.entries(ratData)) {
-            mdText += `## [Rat ID: ${ratId}]\n`;
-            mdText += `- 소속: Cohort ${data.cohort}, Group ${data.group}\n`;
-            mdText += `- 생존 상태: ${data.status} ${data.deathDate ? `(사망일: ${data.deathDate})` : ""}\n`;
-            if (data.cod) mdText += `- 사망 원인(COD): ${data.cod}\n`;
-            if (data.areMain) mdText += `- ARE 기록: ${data.areMain} (상세: ${data.areSub || '없음'})\n`;
-            
-            const cInfo = cohortInfo[data.cohort];
-            if (cInfo) {
-                const grpMemo = cInfo[`memo_${data.group}`] || "별도 메모 없음";
-                mdText += `- 그룹 환경/조건: ${grpMemo}\n`;
-            }
-
-            mdText += `- 주요 마일스톤:\n`;
-            if (data.arrivalDate) mdText += `  * 반입: ${data.arrivalDate} (반입주령: ${data.arrivalAge || '-'}주)\n`;
-            if (data.ovxDate) mdText += `  * OVX 수술일: ${data.ovxDate}\n`;
-            if (data.surgeryDate) mdText += `  * 본 수술일: ${data.surgeryDate}\n`;
-            if (data.doseStartDate) mdText += `  * 투약 시작일: ${data.doseStartDate}\n`;
-            if (data.sampleType) mdText += `  * 샘플링: ${data.sampleType} (날짜: ${data.sampleDate || '-'} / 메모: ${data.sampleMemo || '-'})\n`;
-
-            if (data.mrDates && data.mrDates.length > 0) {
-                mdText += `- MR 촬영 내역:\n`;
-                data.mrDates.forEach(mr => {
-                    mdText += `  * [${mr.date}] 시점: ${mr.timepoint}, Infarct Size: ${mr.infarctSize || '-'}, Loc: ${mr.infarctLoc || '-'}\n`;
-                });
-            }
-
-            mdText += `\n### Timeline (시간순 통합 기록)\n`;
-            
-            // 핵심: 모든 이벤트를 날짜 순서대로 정렬!
-            data.timeline.sort((a, b) => new Date(a.date) - new Date(b.date));
-            
-            if (data.timeline.length === 0) {
-                mdText += `> 등록된 세부 기록이 없습니다.\n`;
-            } else {
-                data.timeline.forEach(t => {
-                    mdText += `- **[${t.date}]** [${t.type}] ${t.desc}\n`;
-                });
-            }
-            mdText += `\n---\n\n`; 
-        }
-
-        // 8. 텍스트 파일(.txt)로 다운로드 처리
-        const blob = new Blob([mdText], { type: "text/plain;charset=utf-8" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `RatLab_AI_MasterData_${new Date().toISOString().slice(0,10)}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        alert("데이터 추출 완료! 다운로드된 txt 파일을 NotebookLM에 업로드하세요.");
-
-    } catch (e) {
-        console.error(e);
-        alert("데이터 추출 중 오류가 발생했습니다: " + e.message);
-    }
-}
