@@ -341,10 +341,18 @@ async function loadDetailData(forceId = null) {
         if(rat.status === '사망') {
             const displayCod = rat.cod || (rat.codFull ? extractLegacyCod(rat.codFull) : '미기록');
             const displayAre = rat.are || '미기록';
+            
+            // 🌟 부원인(Secondary COD) 텍스트 생성 로직 추가 🌟
+            const displayCodSec = (rat.codSec && rat.codSec.length > 0) ? rat.codSec.join(', ') : '';
+            let codText = `COD: ${displayCod}`;
+            if (displayCodSec) {
+                codText += ` <span style="color:#e65100; font-size:0.8rem;">(부원인: ${displayCodSec})</span>`;
+            }
+
             deathInfo = `<div class="info-item" style="grid-column: span 2; color:var(--red); border:1px solid var(--red); background:#ffebee;">
                 <b>사망: ${rat.deathDate||'날짜미상'} (POD ${pod})</b>
                 <button class="btn-red btn-small" style="float:right; padding:2px 8px;" onclick="openSimpleCod('${docId}', '${displayCod}', '${displayAre}', '${rat.deathDate||''}')">원인 기록</button>
-                <br><span style="font-size:0.9rem; color:#d32f2f; font-weight:bold;">COD: ${displayCod} / ARE: ${displayAre}</span>
+                <br><span style="font-size:0.9rem; color:#d32f2f; font-weight:bold;">${codText} / ARE: ${displayAre}</span>
             </div>`;
         }
 
@@ -1279,7 +1287,10 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                 const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?';
                 if (pod !== '?') { totalPod += pod; validPodCnt++; } // 유효한 POD 누적
                 const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록';
-                survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`;
+                // 🌟 부원인 꼬리표 추가 🌟
+                const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#e65100; font-weight:bold;">(+${r.codSec.join(', ')})</span>` : '';
+
+                survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}${secCodStr}</span></td></tr>`;
             });
             survTable += `</table>`;
             const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; // 평균 계산
@@ -1893,8 +1904,11 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             deadRats.forEach(r => { 
                 const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / (1000 * 60 * 60 * 24)) : '?';
                 if (pod !== '?') { totalPod += pod; validPodCnt++; }
-                const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; 
-                survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}</span></td></tr>`;
+                const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록';
+                // 🌟 부원인 꼬리표 추가 🌟
+                const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#e65100; font-weight:bold;">(+${r.codSec.join(', ')})</span>` : '';
+
+                survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}${secCodStr}</span></td></tr>`;
             });
             survTable += `</table>`;
             const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-';
