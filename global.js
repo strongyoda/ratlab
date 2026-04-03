@@ -78,6 +78,21 @@ let pvScale = 1;
 let pvTransX = 0;
 let pvTransY = 0;
 
+// [추가] 차트 X축 모드 (시점 vs 주령 연속) 토글 전역 상태
+window.isAgeMode = false;
+
+window.toggleXAxisMode = function() {
+    window.isAgeMode = !window.isAgeMode;
+    
+    // 현재 열려있는 탭을 확인해서 차트를 다시 그림
+    const view = appTabs.find(t => t.id === activeTabId)?.view;
+    if (view === 'cohort') loadCohortDetail();
+    else if (view === 'compare') {
+        if (document.getElementById('cp-ui-grp').style.display === 'block') loadGroupComparison();
+        else loadCohortComparison();
+    }
+    else if (view === 'trend') analyzeTrend();
+};
 
 
 // globals.js 에 있는 코드를 이 코드로 덮어씌워 주세요.
