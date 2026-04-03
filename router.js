@@ -326,9 +326,6 @@ async function go(view, targetId = null, specificTabId = null) {
                 </div>
             </div>
             
-            <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
-                <input type="checkbox" id="trend-show-all" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
-            </label>
             <button class="btn btn-blue" onclick="analyzeTrend()" style="font-size:1.2rem; padding:15px; width:100%; border-radius:8px; box-shadow:0 4px 10px rgba(0,0,0,0.1);">🚀 설정된 조건으로 분석 시작</button>
         </div>
         <div id="trend-res-area" class="trend-container"></div>`;
@@ -424,9 +421,7 @@ async function go(view, targetId = null, specificTabId = null) {
         <div class="card">
             <h3>📊 코호트 분석 (통합 보기)</h3>
             <div id="co-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">로딩 중...</div>
-            <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
-                <input type="checkbox" id="show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
-            </label>
+
             <button class="btn btn-blue" onclick="loadCohortDetail()">분석 시작</button>
         </div>
         <div id="cohort-res"></div>`;
@@ -445,9 +440,7 @@ async function go(view, targetId = null, specificTabId = null) {
             </div>
             <div id="cp-ui-ind">
                 <div id="comp-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">로딩 중...</div>
-                <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
-                    <input type="checkbox" id="comp-show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
-                </label>
+
                 <button class="btn btn-blue" onclick="loadCohortComparison()">개별 비교 시작</button>
             </div>
             <div id="cp-ui-grp" style="display:none;">
@@ -465,9 +458,7 @@ async function go(view, targetId = null, specificTabId = null) {
                         <div id="grp-list-c" style="max-height:150px; overflow-y:auto;"></div>
                     </div>
                 </div>
-                <label style="display:block; margin-bottom:15px; font-weight:bold; color:var(--navy); cursor:pointer;">
-                    <input type="checkbox" id="grp-show-all-tp" style="width:auto; margin-right:5px; transform:scale(1.2);"> 전체 타임라인 보기
-                </label>
+
                 <button class="btn btn-blue" onclick="loadGroupComparison()">그룹 비교 시작</button>
             </div>
         </div>
