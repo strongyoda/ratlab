@@ -130,6 +130,18 @@ async function loadDashboard() {
         const noteData = {};
         memoSnap.forEach(d => noteData[d.id] = d.data());
 
+        // 👇 [여기서부터 추가] 체중 비교를 위해 전체 체중 데이터를 불러와 랫드 ID별로 묶어줌
+        const measSnap = await db.collection("measurements").get();
+        const measByRat = {};
+        measSnap.forEach(doc => {
+            const m = doc.data();
+            if (m.weight) { // 체중 기록이 있는 경우에만 저장
+                if (!measByRat[m.ratId]) measByRat[m.ratId] = [];
+                measByRat[m.ratId].push(m);
+            }
+        });
+        // 👆 [추가 끝]
+
         const grp = {}; 
         
         // 👇 그룹(G)별로 데이터를 한 단계 더 쪼갭니다.
@@ -236,17 +248,38 @@ async function loadDashboard() {
                         else statusClass += ' status-severe'; 
                     } 
 
+                    // 👇 여기서부터 복사해서 덮어씌우세요!
                     let sampleMark = '';
-                    if (r.sampleType === 'Cast') {
-                        sampleMark = '<div class="sample-indicator sample-c">C</div>';
-                    } else if (r.sampleType === 'Histology') {
-                        sampleMark = '<div class="sample-indicator sample-h">H</div>';
+                    
+                    if (r.status === '사망') {
+                        // 죽은 애들은 기존처럼 H나 C 샘플 마크 표시
+                        if (r.sampleType === 'Cast') {
+                            sampleMark = '<div class="sample-indicator sample-c">C</div>';
+                        } else if (r.sampleType === 'Histology') {
+                            sampleMark = '<div class="sample-indicator sample-h">H</div>';
+                        }
+                    } else {
+                        // 산 애들은 이전 체중과 비교해서 10g 이상 빠졌는지 체크
+                        const myMeas = measByRat[r.ratId] || [];
+                        if (myMeas.length >= 2) {
+                            // 날짜순(과거->최신)으로 정렬
+                            myMeas.sort((a, b) => new Date(a.date) - new Date(b.date));
+                            
+                            const currentWt = myMeas[myMeas.length - 1].weight; // 가장 최근 체중
+                            const prevWt = myMeas[myMeas.length - 2].weight;    // 그 직전 체중
+                            
+                            // 둘 다 값이 있고, 전 측정 대비 10g 이상 줄었으면 빨간색 ▼ 마크 띄우기
+                            if (currentWt && prevWt && (prevWt - currentWt >= 10)) {
+                                sampleMark = '<div class="sample-indicator" style="color: var(--red);">▼</div>';
+                            }
+                        }
                     }
 
                     html += `<div class="rat-wrapper">
                                 ${sampleMark}
                                 <div class="${statusClass}" onclick="goToDetail('${r.ratId}')">${r.num}</div>
-                            </div>`; 
+                            </div>`;
+                    // 👆 여기까지 덮어씌우면 됩니다!
                 });
                 
                 html += `</div></div>`; // 그룹 끝
