@@ -112,10 +112,12 @@ window.addEventListener('DOMContentLoaded', () => {
 // [1] 전역 변수: 모든 시점의 POD(수술 후 경과일) 수치화 정의
 // Arrival을 -5로 설정하여 D00(-1)보다 확실히 앞에 오게 함
 const globalPodMap = {
-    "Arrival": -5,   // 반입 (Induction 훨씬 전)
-    "D00": -1,       // Baseline (수술 직전)
+    "D00": -1,       // 수술 전 베이스라인 (통합 마커)
     "D0": 0,         // 수술 당일 (기준점 0)
-    "D2": 2          // 2일차
+    "D1": 1,         // 수술 후 1일
+    "D2": 2,         // 수술 후 2일
+    "D3": 3,         // 수술 후 3일
+    "D4": 4,
 };
 // W1 ~ W50 자동 생성 (7일 간격)
 for (let i = 1; i <= 50; i++) {
@@ -201,19 +203,25 @@ function getTodayStr() {
     return kstDate.toISOString().split('T')[0];
 }
 
-// [2] 헬퍼 함수: 라벨 -> POD(숫자) 변환
-// 그래프 그릴 때 이 함수를 통해 X축 좌표를 계산합니다.
-// [수정] 라벨 -> POD 변환 헬퍼 (사용자 선택 라벨 절대 우선)
+// [수정] 라벨 -> POD 변환 헬퍼 (최종 정석 버전)
 function getPodForLabel(label, surgeryDate, recordDate) {
-    // 1. [절대 우선] 사용자가 선택한 시점(Label)이 표준 맵에 있으면 무조건 그 위치 사용
-    // 예: 실제론 9일차에 쟀어도 "W1"이라고 입력했으면 x=7 위치로 강제 고정
-    if (label && globalPodMap.hasOwnProperty(label)) {
+    // 🚨 Arrival을 여기서 빼야 합니다! 
+    // Arrival을 빼면, 아래 1번 로직을 타서 개별 날짜가 달라도 무조건 '-50'이라는 하나의 위치로 묶이게 됩니다.
+    const dynamicLabels = ['Surgery', 'Sacrifice', 'Death']; 
+    
+    // 1. Arrival이나 W1, D2 같은 정기 표준 시점은 기존처럼 예쁘게 고정 위치 사용
+    if (label && globalPodMap.hasOwnProperty(label) && !dynamicLabels.includes(label)) {
         return globalPodMap[label];
     }
 
-    // 2. 표준 시점이 아닌 경우(Manual 입력 등)에만 실제 날짜 차이 계산
+    // 2. 수기(Manual) 입력이거나 유동적 라벨인 경우 수술일 기준 '실제 날짜 차이(POD)' 계산
     if (surgeryDate && recordDate) {
         return Math.floor((new Date(recordDate) - new Date(surgeryDate)) / (1000 * 60 * 60 * 24));
+    }
+
+    // 3. 기록 날짜가 누락되었는데 라벨만 있는 경우 최후의 수단
+    if (label && globalPodMap.hasOwnProperty(label)) {
+        return globalPodMap[label];
     }
 
     return null; // 계산 불가
