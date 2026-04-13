@@ -875,11 +875,31 @@ async function loadDetailData(forceId = null) {
 
 function goToDetail(ratId) { go('detail', ratId); }
 
+// [추가] 통합/개별 선택 상태를 감지하여 하위 그룹 배열을 반환하는 헬퍼 함수
+function getExpandedSelectedGroups(containerId) {
+    const wrappers = document.querySelectorAll(`#${containerId} .cohort-wrapper`);
+    let selected = [];
+    wrappers.forEach(wrap => {
+        const mainCb = wrap.querySelector('.co-main-cb');
+        const grpCbs = Array.from(wrap.querySelectorAll('.grp-checkbox'));
+        if (mainCb && mainCb.checked) {
+            // 코호트 전체가 체크된 경우 하위 그룹 전체를 선택 배열에 포함
+            grpCbs.forEach(cb => selected.push(cb.value));
+        } else {
+            // 개별 그룹만 체크된 경우 해당 그룹만 포함
+            grpCbs.filter(cb => cb.checked).forEach(cb => selected.push(cb.value));
+        }
+    });
+    return selected;
+}
+
 // 4. 코호트 분석 탭
 async function loadCohortDetail() {
-    const checkboxes = document.querySelectorAll('#co-check-list .grp-checkbox:checked');
-    if(checkboxes.length === 0) return alert("분석할 코호트 그룹을 하나 이상 선택하세요.");
-    const selectedGroups = Array.from(checkboxes).map(cb => cb.value);
+    // 정의된 변수 이름을 selectedGroups로 통일합니다.
+    const selectedGroups = getExpandedSelectedGroups('co-check-list');
+    
+    // 이 부분에서 checkboxes.length를 쓰면 에러가 납니다. selectedGroups로 고칩니다.
+    if(selectedGroups.length === 0) return alert("분석할 코호트 그룹을 하나 이상 선택하세요.");
     
     await runCohortAnalysis(selectedGroups, 'cohort-res', '_main');
 }
@@ -920,6 +940,24 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
         const snapshots = await Promise.all(promises);
 
+        // [신규] 동적 Arrival 좌표 계산 엔진
+        let realMinPod = 9999;
+        snapshots.forEach((snap, idx) => {
+            const r = rats[idx];
+            snap.forEach(doc => {
+                const d = doc.data();
+                if (d.timepoint !== 'Arrival') {
+                    let podVal = null;
+                    if (globalPodMap.hasOwnProperty(d.timepoint)) podVal = globalPodMap[d.timepoint];
+                    else if (r.surgeryDate && d.date) podVal = Math.floor((new Date(d.date) - new Date(r.surgeryDate)) / 86400000);
+                    if (podVal !== null && podVal < realMinPod) realMinPod = podVal;
+                }
+            });
+        });
+        if (realMinPod === 9999) realMinPod = -7;
+        const dynamicArrivalPod = (fixedOptions && fixedOptions.dynamicArrivalPod !== undefined) ? fixedOptions.dynamicArrivalPod : (realMinPod - 3);
+        const actualMinX = (fixedOptions && fixedOptions.minX !== undefined) ? fixedOptions.minX : (dynamicArrivalPod - 2);
+
         const scatterDataWt = [], scatterDataSbp = [];
         const existTicksWt = new Set(), existTicksSbp = new Set();
         const tickLabelMap = {};
@@ -940,8 +978,13 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                 if (window.isAgeMode) {
                     if (arrDt && d.date) xVal = arrAge + (new Date(d.date) - arrDt) / (1000 * 60 * 60 * 24 * 7);
                 } else {
-                    xVal = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
-                    if ((d.timepoint === 'Manual' || !d.timepoint) && xVal !== null) labelText = `D${xVal}`;
+                    if (d.timepoint === 'Arrival') {
+                        xVal = dynamicArrivalPod; // 수술일 없어도 묻지도 따지지도 않고 꽂아넣기!
+                        labelText = 'Arrival';
+                    } else {
+                        xVal = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
+                        if ((d.timepoint === 'Manual' || !d.timepoint) && xVal !== null) labelText = `D${xVal}`;
+                    }
                 }
 
                 if (xVal !== null) {
@@ -959,14 +1002,13 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             });
         });
 
-        const standardKeys = Object.keys(globalPodMap).filter(k => k === 'Arrival' || k === 'D00' || k === 'D0' || k === 'D2' || k.startsWith('W'));
+        const standardKeys = Object.keys(globalPodMap).filter(k => k === 'D00' || k === 'D0' || k === 'D2' || k.startsWith('W'));
         standardKeys.forEach(k => { tickLabelMap[globalPodMap[k]] = k; });
-        const arrivalPod = globalPodMap["Arrival"];
         
-        const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === arrivalPod ? "Arrival" : (tickLabelMap[val] || `D${val}`));
-        const podToLabel = (pod) => pod === arrivalPod ? "Arrival" : (tickLabelMap[pod] || `D${pod}`);
+        const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (tickLabelMap[val] || `D${val}`));
+        const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (tickLabelMap[pod] || `D${pod}`);
 
-        const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: arrivalPod, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < arrivalPod) ? (arr[0] - 2) : arrivalPod; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
+        const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: dynamicArrivalPod, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < dynamicArrivalPod) ? (arr[0] - 2) : dynamicArrivalPod; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
         const rangeWtX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksWt);
         const rangeSbpX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksSbp);
 
@@ -1170,7 +1212,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             new Chart(document.getElementById(areChartId), { type: 'doughnut', data: { labels: Object.keys(areCountsObj), datasets: [{ data: Object.values(areCountsObj), backgroundColor: ['#1565C0', '#4CAF50', '#9E9E9E'] }] }, options: dOpt });
         }
 
-        const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["Arrival", "D00", "D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
+        const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["D00", "D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
         const buildLinearTicks = (minX, maxX, step) => { const ticks = []; const start = Math.ceil(minX); const end = Math.floor(maxX); for (let v = start; v <= end; v += step) ticks.push(v); return ticks; };
         
         const createChartOptions = (minX, maxX, minY, maxY) => {
@@ -1187,7 +1229,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                     } 
                 };
             } else {
-                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: minX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => tickLabelMap[ctx.tick.value] ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: arrivalPod, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
+                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t=>t.value===dynamicArrivalPod)) scale.ticks.push({value:dynamicArrivalPod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod) ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
             }
         };
 
@@ -1231,6 +1273,24 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
         const snapshots = await Promise.all(promises);
 
+        // [수정완료] 빨간줄 및 배열 이름 오류 수정
+        let realMinPod = 9999;
+        snapshots.forEach((snap, idx) => {
+            const r = ratDataList[idx]; // <- rats 대신 ratDataList 사용
+            snap.forEach(doc => {
+                const d = doc.data();
+                if (d.timepoint !== 'Arrival') {
+                    let podVal = null;
+                    if (globalPodMap.hasOwnProperty(d.timepoint)) podVal = globalPodMap[d.timepoint];
+                    else if (r.surgeryDate && d.date) podVal = Math.floor((new Date(d.date) - new Date(r.surgeryDate)) / 86400000);
+                    if (podVal !== null && podVal < realMinPod) realMinPod = podVal;
+                }
+            });
+        });
+        if (realMinPod === 9999) realMinPod = -7;
+        const dynamicArrivalPod = (fixedOptions && fixedOptions.dynamicArrivalPod !== undefined) ? fixedOptions.dynamicArrivalPod : (realMinPod - 3);
+        const actualMinX = (fixedOptions && fixedOptions.minX !== undefined) ? fixedOptions.minX : (dynamicArrivalPod - 2);
+
         const scatterDataWt = [], scatterDataSbp = [];
         const existTicksWt = new Set(), existTicksSbp = new Set();
         const tickLabelMap = {};
@@ -1247,12 +1307,18 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 let labelText = d.timepoint;
                 if (!labelText || labelText === 'Manual') labelText = d.date;
                 
+                // 여기서 중복 선언되었던 에러 유발 변수 삭제함
                 let xVal = null;
                 if (window.isAgeMode) {
                     if (arrDt && d.date) xVal = arrAge + (new Date(d.date) - arrDt) / (1000 * 60 * 60 * 24 * 7);
                 } else {
-                    xVal = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
-                    if ((d.timepoint === 'Manual' || !d.timepoint) && xVal !== null) labelText = `D${xVal}`;
+                    if (d.timepoint === 'Arrival') {
+                        xVal = dynamicArrivalPod;
+                        labelText = 'Arrival';
+                    } else {
+                        xVal = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
+                        if ((d.timepoint === 'Manual' || !d.timepoint) && xVal !== null) labelText = `D${xVal}`;
+                    }
                 }
 
                 if (xVal !== null) {
@@ -1473,6 +1539,12 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["Arrival", "D00", "D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
         const buildLinearTicks = (minX, maxX, step) => { const ticks = []; const start = Math.ceil(minX); const end = Math.floor(maxX); for (let v = start; v <= end; v += step) ticks.push(v); return ticks; };
         
+        
+        const extendedPodToLabel = (pod) => {
+            if (pod === dynamicArrivalPod) return "Arrival";
+            return podToLabel(pod);
+        };
+
         const createChartOptions = (minX, maxX, minY, maxY) => {
             if (window.isAgeMode) {
                 return { 
@@ -1487,7 +1559,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                     } 
                 };
             } else {
-                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: minX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => tickLabelMap[ctx.tick.value] ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: arrivalPod, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
+                const actualMinX = fixedOptions && fixedOptions.minX !== undefined ? fixedOptions.minX : minX;
+                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t => t.value === dynamicArrivalPod)) scale.ticks.push({value: dynamicArrivalPod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return extendedPodToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod) ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return extendedPodToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : extendedPodToLabel(pod); } } } } };
             }
         };
 
@@ -2019,10 +2092,9 @@ async function renderGroupSelectors() {
                 const lbl = document.createElement('label');
                 lbl.style.cssText = "cursor:pointer; font-size:0.75rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:2px 4px; border-radius:3px; border:1px solid #eee; white-space:nowrap;";
                 lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 3px 0 0; transform:scale(0.9);" onchange="
-                    const wrap = this.closest('.cohort-wrapper');
-                    const mainCb = wrap.querySelector('.co-main-cb');
-                    const anyChecked = Array.from(wrap.querySelectorAll('.grp-checkbox')).some(cb => cb.checked);
-                    mainCb.checked = anyChecked;
+                const wrap = this.closest('.cohort-wrapper');
+                const mainCb = wrap.querySelector('.co-main-cb');
+                if(this.checked) { mainCb.checked = false; }
                 ">${g}`;
                 grpBox.appendChild(lbl);
             });
@@ -2035,7 +2107,6 @@ async function renderGroupSelectors() {
     createList('grp-list-c');
 }
 
-// ... [Existing renderCohortCheckboxes, initDetailSelectors, updateRatList ...]
 async function renderCohortCheckboxes(containerId) {
     const ratsData = await getRatsWithCache();
     
@@ -2066,15 +2137,15 @@ async function renderCohortCheckboxes(containerId) {
         const sortedGroups = Array.from(cohortMap[c]).sort();
         const wrapper = document.createElement('div');
         wrapper.className = 'cohort-wrapper';
-        // 박스 여백 대폭 축소, 왼쪽 정렬
         wrapper.style.cssText = "border:1px solid #ddd; padding:4px 6px; border-radius:6px; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,0.05); display:flex; flex-direction:column; align-items:flex-start;";
 
-        // 상위 코호트 체크박스 (글씨 크기 축소, 줄바꿈 방지)
+        // 상위 코호트 체크박스
         const header = document.createElement('label');
         header.style.cssText = "cursor:pointer; font-weight:900; font-size:0.85rem; color:var(--navy); display:flex; align-items:center; border-bottom:1px solid #eee; padding-bottom:3px; margin-bottom:3px; width:100%; white-space:nowrap;";
         header.innerHTML = `<input type="checkbox" class="co-main-cb" value="${c}" style="margin:0 4px 0 0; transform:scale(1.0);" onchange="
-            const chks = this.closest('.cohort-wrapper').querySelectorAll('.grp-checkbox');
-            chks.forEach(chk => chk.checked = this.checked);
+            const wrap = this.closest('.cohort-wrapper');
+            const chks = wrap.querySelectorAll('.grp-checkbox');
+            if(this.checked) { chks.forEach(chk => chk.checked = false); }
         ">Cohort ${c}`;
         wrapper.appendChild(header);
 
@@ -2084,14 +2155,15 @@ async function renderCohortCheckboxes(containerId) {
 
         sortedGroups.forEach(g => {
             const lbl = document.createElement('label');
-            // 그룹 글씨 더 작게, 패딩 최소화
             lbl.style.cssText = "cursor:pointer; font-size:0.75rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:2px 4px; border-radius:3px; border:1px solid #eee; white-space:nowrap;";
+            
+            // 👇 문제의 원인이었던 자동 체크 로직 제거 및 독립 작동으로 변경
             lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 3px 0 0; transform:scale(0.9);" onchange="
                 const wrap = this.closest('.cohort-wrapper');
                 const mainCb = wrap.querySelector('.co-main-cb');
-                const anyChecked = Array.from(wrap.querySelectorAll('.grp-checkbox')).some(cb => cb.checked);
-                mainCb.checked = anyChecked;
+                if(this.checked) { mainCb.checked = false; }
             ">${g}`;
+            
             grpContainer.appendChild(lbl);
         });
 
@@ -2108,16 +2180,31 @@ async function loadCohortComparison() {
     syncChartsSbp = []; syncChartsWt = [];
     activeCrosshairValSbp = null; activeCrosshairValWt = null;
 
-    const checkboxes = document.querySelectorAll('#comp-check-list .grp-checkbox:checked');
-    const selectedGroups = Array.from(checkboxes).map(cb => cb.value);
+    // [수정] 통합(Cohort) 단위인지, 개별(Group) 단위인지 사용자 선택 감지
+    const wrappers = document.querySelectorAll('#comp-check-list .cohort-wrapper');
+    let comparisonUnits = []; // { type: 'cohort'|'group', val: '12'|'12||G1', expanded: ['12||G1', ...] }
 
-    if(selectedGroups.length < 2) return alert("비교할 그룹을 2개 이상 선택해주세요.");
+    wrappers.forEach(wrap => {
+        const mainCb = wrap.querySelector('.co-main-cb');
+        const grpCbs = Array.from(wrap.querySelectorAll('.grp-checkbox'));
+        
+        if (mainCb && mainCb.checked) {
+            comparisonUnits.push({ type: 'cohort', val: mainCb.value, expanded: grpCbs.map(cb => cb.value) });
+        } else {
+            grpCbs.filter(cb => cb.checked).forEach(cb => {
+                comparisonUnits.push({ type: 'group', val: cb.value, expanded: [cb.value] });
+            });
+        }
+    });
+
+    if(comparisonUnits.length < 2) return alert("비교할 대상(코호트 또는 그룹)을 2개 이상 선택해주세요.");
 
     const container = document.getElementById('comp-res-area');
     container.innerHTML = '<div class="loader"></div> 데이터 범위 계산 중...';
 
     try {
-        const targetCohorts = [...new Set(selectedGroups.map(v => v.split('||')[0]))];
+        const allTargetVals = comparisonUnits.flatMap(u => u.expanded);
+        const targetCohorts = [...new Set(allTargetVals.map(v => v.split('||')[0]))];
         const ratPromises = targetCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
         const ratSnaps = await Promise.all(ratPromises);
         
@@ -2127,7 +2214,7 @@ async function loadCohortComparison() {
         ratSnaps.forEach(snap => snap.forEach(d => {
             const r = d.data();
             const key = `${r.cohort}||${r.group || 'G1'}`;
-            if (selectedGroups.includes(key)) {
+            if (allTargetVals.includes(key)) {
                 allRats.push(r);
                 const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
                 if(arrAge < globalMinAge) globalMinAge = arrAge;
@@ -2145,11 +2232,21 @@ async function loadCohortComparison() {
         let globalMinX = 0, globalMaxX = 0, globalMaxSbp = 0, globalMaxWt = 0;
         let globalMinSbp = 9999, globalMinWt = 9999; 
         const unionStandardTicks = new Set(); 
+        let realMinPod = 9999; // 추가됨
 
         measSnaps.forEach((snap, i) => {
             const r = allRats[i];
             snap.forEach(d => {
                 const v = d.data();
+                
+                // 최솟값 계산 추가됨
+                if (v.timepoint !== 'Arrival') {
+                    let podVal = null;
+                    if (globalPodMap.hasOwnProperty(v.timepoint)) podVal = globalPodMap[v.timepoint];
+                    else if (r.surgeryDate && v.date) podVal = Math.floor((new Date(v.date) - new Date(r.surgeryDate)) / 86400000);
+                    if (podVal !== null && podVal < realMinPod) realMinPod = podVal;
+                }
+
                 const pod = getPodForLabel(v.timepoint, r.surgeryDate, v.date);
                 if (pod !== null) {
                     if (pod < globalMinX) globalMinX = pod;
@@ -2160,12 +2257,15 @@ async function loadCohortComparison() {
                 if (v.timepoint && globalPodMap.hasOwnProperty(v.timepoint)) unionStandardTicks.add(v.timepoint);
             });
         });
+        
+        if (realMinPod === 9999) realMinPod = -7;
+        const dynamicArrivalPod = realMinPod - 3;
+        const actualMinX = dynamicArrivalPod - 2;
 
         let globalMaxAreLoc = 0; let globalMaxInfLoc = 0; const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
 
-        selectedGroups.forEach(val => {
-            const [c, g] = val.split('||');
-            const ratsInGrp = allRats.filter(r => r.cohort === c && (r.group || 'G1') === g);
+        comparisonUnits.forEach(unit => {
+            const ratsInGrp = allRats.filter(r => unit.expanded.includes(`${r.cohort}||${r.group || 'G1'}`));
             const locStats = {}; const infStats = {}; infTps.forEach(tp => infStats[tp] = 0);
 
             ratsInGrp.forEach(r => {
@@ -2186,30 +2286,29 @@ async function loadCohortComparison() {
             const maxInf = Math.max(0, ...Object.values(infStats)); if (maxInf > globalMaxInfLoc) globalMaxInfLoc = maxInf;
         });
 
-        const fixedOptions = { minX: globalMinX - 2, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc };
+        const fixedOptions = { minX: actualMinX, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc, dynamicArrivalPod: dynamicArrivalPod };
         container.innerHTML = ''; 
         const colors = ['#E6194B', '#3CB44B', '#4363D8', '#F58231', '#911EB4', '#46F0F0'];
         
-        const groupsData = selectedGroups.map((val, i) => {
-            const [c, g] = val.split('||');
+        const groupsData = comparisonUnits.map((unit, i) => {
             return {
-                name: `Cohort ${c} (${g})`,
+                name: unit.type === 'cohort' ? `Cohort ${unit.val} (통합)` : `Cohort ${unit.val.replace('||', ' ')}`,
                 color: colors[i % colors.length],
-                rats: allRats.filter(r => r.cohort === c && (r.group || 'G1') === g)
+                rats: allRats.filter(r => unit.expanded.includes(`${r.cohort}||${r.group || 'G1'}`))
             };
         });
         renderUnifiedTimeline(groupsData, container);
         
-        for(let i=0; i<selectedGroups.length; i++) {
-            const val = selectedGroups[i];
-            const [c, g] = val.split('||');
-            const divId = `comp-res-${c}-${g}`;
+        for(let i=0; i<comparisonUnits.length; i++) {
+            const unit = comparisonUnits[i];
+            const divId = `comp-res-${i}`;
             const colDiv = document.createElement('div');
             colDiv.className = 'comp-col';
             colDiv.id = divId;
             container.appendChild(colDiv);
             
-            await runCohortAnalysis([val], divId, `_comp_${c}_${g}`, fixedOptions, `Cohort ${c} (${g})`);
+            const title = unit.type === 'cohort' ? `Cohort ${unit.val} (전체 통합 비교)` : `Cohort ${unit.val.replace('||', ' ')}`;
+            await runCohortAnalysis(unit.expanded, divId, `_comp_${i}`, fixedOptions, title);
         }
     } catch(e) { console.error("Comparison Error", e); container.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
 }
@@ -2278,9 +2377,11 @@ window.toggleTrendInputs = function(grp) {
 };
 
 async function loadTrendCodList() {
-    const checkboxes = document.querySelectorAll('#trend-cohort-list .grp-checkbox:checked');
-    if (checkboxes.length === 0) return alert("코호트 그룹을 먼저 선택해주세요.");
-    const selectedGroups = Array.from(checkboxes).map(cb => cb.value);
+    const selectedGroups = getExpandedSelectedGroups('trend-cohort-list');
+    
+    // checkboxes -> selectedGroups로 변경
+    if (selectedGroups.length === 0) return alert("코호트 그룹을 먼저 선택해주세요.");
+    
 
     const areas = ['inc-a', 'exc-a', 'inc-b', 'exc-b'];
     areas.forEach(a => {
@@ -2331,10 +2432,12 @@ async function loadTrendCodList() {
 }
 
 async function analyzeTrend() {
-    const checkboxes = document.querySelectorAll('#trend-cohort-list .grp-checkbox:checked');
-    if (checkboxes.length === 0) return alert("코호트 그룹을 하나 이상 선택하세요.");
-    const selectedGroups = Array.from(checkboxes).map(cb => cb.value);
-    const mode = document.querySelector('input[name="trend-mode"]:checked').value; 
+    const selectedGroups = getExpandedSelectedGroups('trend-cohort-list');
+    
+    // checkboxes -> selectedGroups로 변경
+    if (selectedGroups.length === 0) return alert("코호트 그룹을 하나 이상 선택하세요.");
+    
+    const mode = document.querySelector('input[name="trend-mode"]:checked').value;
 
     const getCriteria = (grp) => ({
         useIncWt: document.getElementById(`inc-use-wt-${grp}`).checked,
@@ -2521,7 +2624,27 @@ async function analyzeTrend() {
             const maxInf = Math.max(0, ...Object.values(infStats)); if (maxInf > globalMaxInfLoc) globalMaxInfLoc = maxInf;
         });
 
-        const fixedOptions = { labels: globalLabels, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, maxPod: globalMaxPod, minAge: globalMinAge, maxAge: globalMaxAge, maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc };
+        let realMinPod = 9999;
+        [groupTarget, groupControl].forEach(grp => {
+            grp.forEach(r => {
+                if (measMap[r.ratId]) {
+                    Object.keys(measMap[r.ratId]).forEach(timeKey => {
+                        let podVal = null;
+                        if (globalPodMap.hasOwnProperty(timeKey)) podVal = globalPodMap[timeKey];
+                        else if (r.surgeryDate && timeKey.match(/^\d{4}-\d{2}-\d{2}$/)) podVal = Math.floor((new Date(timeKey) - new Date(r.surgeryDate)) / 86400000);
+                        if (podVal !== null && podVal < realMinPod) realMinPod = podVal;
+                    });
+                }
+            });
+        });
+        if (realMinPod === 9999) realMinPod = -7;
+        const dynamicArrivalPod = realMinPod - 3;
+
+        const fixedOptions = { 
+            labels: globalLabels, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, maxPod: globalMaxPod, minAge: globalMinAge, maxAge: globalMaxAge, maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc,
+            dynamicArrivalPod: dynamicArrivalPod,
+            minX: dynamicArrivalPod - 2 
+        };
 
         // 그래프 타이틀 생성 도우미
         const getTitleStr = (c, grpName) => {
