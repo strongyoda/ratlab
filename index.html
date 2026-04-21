@@ -163,7 +163,7 @@
             <h3 style="margin-top:0; color:var(--navy);">사망 원인 & ARE 기록</h3>
             <div class="input-group">
                 <label>사망 원인 (COD)</label>
-                <select id="modal-cod" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ddd;">
+                <select id="modal-cod" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ddd;" onchange="document.getElementById('modal-cod-other-wrap').style.display = this.value === 'Other' ? 'block' : 'none';">
                     <option value="">-</option>
                     <option value="SAH">SAH</option>
                     <option value="Infarction">Infarction</option>
@@ -171,7 +171,12 @@
                     <option value="Sacrifice">Sacrifice</option>
                     <option value="Surgical Failure">Surgical Failure</option>
                     <option value="Unknown">Unknown</option>
+                    <option value="Other">기타 (직접 입력)</option>
                 </select>
+                
+                <div id="modal-cod-other-wrap" style="display:none; margin-top:5px;">
+                    <input type="text" id="modal-cod-other" placeholder="사망 원인을 직접 입력하세요" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ddd; box-sizing:border-box;">
+                </div>
             </div>
             <div class="input-group" style="margin-top:10px;">
                 <label>ARE 유무</label>
@@ -237,360 +242,25 @@
         <button onclick="nextPptSlide()" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(0,0,0,0.3); color:white; border:none; width:60px; height:60px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:11001; transition:0.3s;" onmouseover="this.style.background='rgba(0,0,0,0.7)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'">▶</button>
     </div>
 
-    <button id="ai-chat-fab" onclick="toggleAiChat()" style="display:none;">
-        <i class="material-icons">auto_awesome</i>
-    </button>
+<script src="ai_assistant.js"></script>
 
-    <div id="ai-chat-window" style="display:none;">
-        <div class="ai-chat-header">
-            <span style="font-weight:bold; display:flex; align-items:center; gap:5px;">
-                <i class="material-icons" style="font-size:1.2rem;">auto_awesome</i> RLM AI Assistant
-            </span>
-            <button onclick="toggleAiChat()" style="background:none; border:none; color:white; cursor:pointer; font-size:1.5rem; line-height:1;">&times;</button>
-        </div>
-        <div id="ai-chat-messages">
-            <div class="msg-bot">안녕하세요! 무엇이 궁금하세요? (예: "C9에서 histology한 애들중에 제일 빨리죽은게 누구야?")</div>
-        </div>
-        <div class="ai-chat-input-area">
-            <input type="text" id="ai-chat-input" placeholder="AI에게 분석 명령 내리기..." onkeypress="if(event.key==='Enter') sendAiMessage()">
-            <button onclick="sendAiMessage()"><i class="material-icons">send</i></button>
-        </div>
+<div id="ai-chat-window" style="display:none; position:fixed; bottom:80px; right:20px; width:350px; height:500px; background:white; border-radius:12px; box-shadow:0 5px 25px rgba(0,0,0,0.2); z-index:10000; display:flex; flex-direction:column;">
+    <div class="ai-chat-header" style="background:var(--navy); color:white; padding:15px; border-radius:12px 12px 0 0; display:flex; justify-content:space-between;">
+        <span>RLM AI Analyst</span>
+        <button onclick="toggleAiChat()" style="background:none; border:none; color:white; cursor:pointer;">&times;</button>
     </div>
+    <div id="ai-chat-messages" style="flex:1; overflow-y:auto; padding:15px; font-size:0.9rem;">
+        <div class="msg-bot">안녕하세요! 어떤 데이터 비교를 도와드릴까요?</div>
+    </div>
+    <div style="padding:10px; border-top:1px solid #eee; display:flex;">
+        <input type="text" id="ai-chat-input" placeholder="분석 명령 입력..." style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;" onkeypress="if(event.key==='Enter') sendAiMessage()">
+        <button onclick="sendAiMessage()" style="margin-left:5px; background:var(--navy); color:white; border:none; padding:8px 12px; border-radius:4px;">전송</button>
+    </div>
+</div>
 
-    <script>
-    window.lastAiRatId = null;
-    window.lastAiQueryResult = null;
-    
-    function updateAiVisibility() {
-        const aiFab = document.getElementById('ai-chat-fab');
-        const chatWin = document.getElementById('ai-chat-window');
+<button id="ai-chat-fab" onclick="toggleAiChat()" style="position:fixed; bottom:20px; right:20px; width:50px; height:50px; border-radius:50%; background:var(--navy); color:white; border:none; cursor:pointer; z-index:10000; box-shadow:0 4px 10px rgba(0,0,0,0.3);">
+    <i class="material-icons">auto_awesome</i>
+</button>
 
-        // 로그인 상태 확인
-        const isLoggedIn = !!firebase.auth().currentUser;
-
-        if (aiFab) {
-            aiFab.style.display = isLoggedIn ? 'flex' : 'none';
-        }
-
-        if (!isLoggedIn && chatWin) {
-            chatWin.style.display = 'none';
-        }
-    }
-
-    function toggleAiChat() {
-        const chatWin = document.getElementById('ai-chat-window');
-        chatWin.style.display = chatWin.style.display === 'none' ? 'flex' : 'none';
-    }
-
-    function executeAiAction(aiResult, msgBox) {
-        const intent = aiResult.intent;
-        const view = aiResult.view;
-        const params = aiResult.params || {};
-
-        if (intent === 'open_view') {
-            if (!view) {
-                msgBox.innerHTML += `<div class="msg-bot" style="color:red;">열어야 할 화면 정보가 없습니다.</div>`;
-                return true;
-            }
-
-            createNewTab(view);
-
-            // ===== 코호트 비교 자동 세팅 =====
-            if (view === 'compare') {
-                const compareMode = params.compareMode || 'ind';
-
-                setTimeout(() => {
-                    try {
-                        // 1) 개별 비교
-                        if (compareMode === 'ind') {
-                            if (typeof switchCompTab === 'function') {
-                                switchCompTab('ind');
-                            }
-
-                            const checkboxes = document.querySelectorAll('#comp-check-list input[type="checkbox"]');
-                            if (!checkboxes.length) {
-                                msgBox.innerHTML += `<div class="msg-bot" style="color:red;">개별 비교 체크박스를 찾지 못했어요.</div>`;
-                                msgBox.scrollTop = msgBox.scrollHeight;
-                                return;
-                            }
-
-                            checkboxes.forEach(cb => {
-                                const v = String(cb.value).replace(/^C/i, '');
-                                cb.checked = Array.isArray(params.cohorts) && params.cohorts.includes(v);
-                            });
-
-                            if (typeof loadCohortComparison === 'function') {
-                                loadCohortComparison();
-                            }
-
-                            msgBox.innerHTML += `<div class="msg-bot">✅ ${aiResult.reply || '코호트 개별 비교를 시작했습니다.'}</div>`;
-                            msgBox.scrollTop = msgBox.scrollHeight;
-                            return;
-                        }
-
-                        // 2) 그룹 비교
-                        if (compareMode === 'grp') {
-                            if (typeof switchCompTab === 'function') {
-                                switchCompTab('grp');
-                            }
-
-                            const setGroupChecks = (containerId, values) => {
-                                const arr = Array.isArray(values) ? values.map(v => String(v).replace(/^C/i, '')) : [];
-                                const boxes = document.querySelectorAll(`#${containerId} input[type="checkbox"]`);
-                                boxes.forEach(cb => {
-                                    const v = String(cb.value).replace(/^C/i, '');
-                                    cb.checked = arr.includes(v);
-                                });
-                            };
-
-                            setGroupChecks('grp-list-a', params.groupA || []);
-                            setGroupChecks('grp-list-b', params.groupB || []);
-                            setGroupChecks('grp-list-c', params.groupC || []);
-
-                            if (typeof loadGroupComparison === 'function') {
-                                loadGroupComparison();
-                            }
-
-                            msgBox.innerHTML += `<div class="msg-bot">✅ ${aiResult.reply || '코호트 그룹 비교를 시작했습니다.'}</div>`;
-                            msgBox.scrollTop = msgBox.scrollHeight;
-                            return;
-                        }
-
-                        msgBox.innerHTML += `<div class="msg-bot" style="color:red;">알 수 없는 compareMode 입니다.</div>`;
-                        msgBox.scrollTop = msgBox.scrollHeight;
-
-                    } catch (e) {
-                        console.error('compare 자동 실행 실패:', e);
-                        msgBox.innerHTML += `<div class="msg-bot" style="color:red;">코호트 비교 자동 실행 중 문제가 발생했어요.</div>`;
-                        msgBox.scrollTop = msgBox.scrollHeight;
-                    }
-                }, 500);
-
-                return true;
-            }
-
-            msgBox.innerHTML += `<div class="msg-bot">✅ ${aiResult.reply || '화면을 열었습니다.'}</div>`;
-            return true;
-        }
-
-        if (intent === 'open_detail') {
-            createNewTab('detail');
-            setTimeout(() => {
-                if (params.ratId && typeof loadDetailData === 'function') {
-                    loadDetailData(params.ratId);
-                    window.lastAiRatId = params.ratId;
-                }
-            }, 300);
-
-            msgBox.innerHTML += `<div class="msg-bot">✅ ${aiResult.reply || '상세 화면을 열었습니다.'}</div>`;
-            return true;
-        }
-
-        return false;
-    } 
-
-    function applyAiTrendParams(params) {
-        if (params.cohorts) {
-            document.querySelectorAll('.co-checkbox').forEach(cb => {
-                cb.checked = params.cohorts.includes(cb.value);
-            });
-        }
-
-        if (params.mode) {
-            const modeRadio = document.querySelector(`input[name="trend-mode"][value="${params.mode}"]`);
-            if (modeRadio) {
-                modeRadio.checked = true;
-                if (typeof switchTrendMode === 'function') switchTrendMode();
-            }
-        }
-
-        const fillConditions = (grpObj, grp) => {
-            if (!grpObj) return;
-
-            ['inc', 'exc'].forEach(type => {
-                ['wt', 'pod', 'cod', 'are', 'inf'].forEach(crit => {
-                    const chk = document.getElementById(`${type}-use-${crit}-${grp}`);
-                    if (chk) chk.checked = false;
-                });
-            });
-
-            if (grpObj.useIncCod) {
-                const useChk = document.getElementById(`inc-use-cod-${grp}`);
-                if (useChk) useChk.checked = true;
-
-                if (grpObj.incCodChks) {
-                    document.querySelectorAll(`.trend-cod-chk-inc-${grp}`).forEach(c => {
-                        c.checked = grpObj.incCodChks.includes(c.value);
-                    });
-                }
-            }
-
-            if (grpObj.useExcCod) {
-                const useChk = document.getElementById(`exc-use-cod-${grp}`);
-                if (useChk) useChk.checked = true;
-
-                if (grpObj.excCodChks) {
-                    document.querySelectorAll(`.trend-cod-chk-exc-${grp}`).forEach(c => {
-                        c.checked = grpObj.excCodChks.includes(c.value);
-                    });
-                }
-            }
-
-            if (grpObj.useIncAre) {
-                const useChk = document.getElementById(`inc-use-are-${grp}`);
-                if (useChk) useChk.checked = true;
-
-                const area = document.getElementById(`inc-are-area-${grp}`);
-                if (area && grpObj.incAreChks) {
-                    area.querySelectorAll('input[type="checkbox"]').forEach(c => {
-                        c.checked = grpObj.incAreChks.includes(c.value);
-                    });
-                }
-            }
-
-            if (grpObj.useExcAre) {
-                const useChk = document.getElementById(`exc-use-are-${grp}`);
-                if (useChk) useChk.checked = true;
-
-                const area = document.getElementById(`exc-are-area-${grp}`);
-                if (area && grpObj.excAreChks) {
-                    area.querySelectorAll('input[type="checkbox"]').forEach(c => {
-                        c.checked = grpObj.excAreChks.includes(c.value);
-                    });
-                }
-            }
-
-            if (typeof toggleTrendInputs === 'function') {
-                toggleTrendInputs(grp);
-            }
-        };
-
-        fillConditions(params.grpA, 'a');
-        if (params.mode === 'cross') fillConditions(params.grpB, 'b');
-
-        if (typeof analyzeTrend === 'function') {
-            analyzeTrend();
-        }
-    }
-
-    async function sendAiMessage() {
-        const inp = document.getElementById('ai-chat-input');
-        const text = inp.value.trim();
-        if (!text) return;
-
-        const msgBox = document.getElementById('ai-chat-messages');
-
-        msgBox.innerHTML += `<div class="msg-user">${text}</div>`;
-        inp.value = '';
-        msgBox.scrollTop = msgBox.scrollHeight;
-
-        const loadingId = 'ai-loading-' + Date.now();
-        msgBox.innerHTML += `
-            <div class="msg-bot" id="${loadingId}">
-                <div class="loader" style="width:15px; height:15px; border-width:2px; display:inline-block; margin-right:5px; vertical-align:middle;"></div>
-                AI가 요청을 해석하고 있습니다...
-            </div>
-        `;
-        msgBox.scrollTop = msgBox.scrollHeight;
-
-        try {
-            const res = await fetch("https://asia-northeast3-nidd-lab.cloudfunctions.net/askRatAI", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    message: text,
-                    contextRatId: window.lastAiRatId || null,
-                    lastAiQueryResult: window.lastAiQueryResult || null
-                })
-            });
-
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                console.error("AI 서버 오류 상세:", data);
-                throw new Error(data.detail || data.error || `서버 응답 오류 (${res.status})`);
-            }
-
-            let aiResult;
-            try {
-                aiResult = typeof data.reply === 'string' ? JSON.parse(data.reply) : data.reply;
-            } catch (e) {
-                console.error('AI JSON 파싱 실패:', data.reply);
-                throw new Error("AI 응답 형식이 올바르지 않습니다.");
-            }
-
-            document.getElementById(loadingId)?.remove();
-
-            if (executeAiAction(aiResult, msgBox)) {
-                msgBox.scrollTop = msgBox.scrollHeight;
-                return;
-            }
-
-            const intent = aiResult.intent || 'unknown';
-            const params = aiResult.params || {};
-            const reply = aiResult.reply || '요청을 처리했습니다.';
-
-            if (intent === 'trend_filter') {
-                createNewTab('trend');
-
-                setTimeout(() => {
-                    try {
-                        applyAiTrendParams(params);
-                        msgBox.innerHTML += `<div class="msg-bot">✅ ${reply}</div>`;
-                        msgBox.scrollTop = msgBox.scrollHeight;
-                    } catch (e) {
-                        console.error("조건분석 자동 세팅 실패:", e);
-                        msgBox.innerHTML += `<div class="msg-bot" style="color:red;">조건분석 화면을 세팅하는 중 문제가 발생했어요.</div>`;
-                        msgBox.scrollTop = msgBox.scrollHeight;
-                    }
-                }, 300);
-
-                return;
-            }
-
-            if (intent === 'data_query') {
-                const qres = await fetch("https://asia-northeast3-nidd-lab.cloudfunctions.net/runRatQuery", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(params)
-                });
-
-                const qdata = await qres.json().catch(() => ({}));
-                if (!qres.ok) {
-                    throw new Error(qdata.error || "데이터 조회 실패");
-                }
-
-                msgBox.innerHTML += `<div class="msg-bot">✅ ${qdata.reply || '데이터 조회를 완료했습니다.'}</div>`;
-
-                if (qdata.result && qdata.result.ratId) {
-                    window.lastAiRatId = qdata.result.ratId;
-                    window.lastAiQueryResult = qdata.result;
-                }
-
-                if (params.openDetail && qdata.result && qdata.result.ratId && typeof loadDetailData === 'function') {
-                    createNewTab('detail');
-                    setTimeout(() => {
-                        try {
-                            loadDetailData(qdata.result.ratId);
-                        } catch (e) {
-                            console.error("상세 자동 열기 실패:", e);
-                        }
-                    }, 300);
-                }
-
-                msgBox.scrollTop = msgBox.scrollHeight;
-                return;
-            }
-
-            msgBox.innerHTML += `<div class="msg-bot">🤔 ${reply}</div>`;
-            msgBox.scrollTop = msgBox.scrollHeight;
-
-        } catch (error) {
-            console.error(error);
-            document.getElementById(loadingId)?.remove();
-            msgBox.innerHTML += `<div class="msg-bot" style="color:red;">앗, AI 처리 중 문제가 발생했어요.<br>${error.message || "알 수 없는 오류"}</div>`;
-            msgBox.scrollTop = msgBox.scrollHeight;
-        }
-    }
-</script>
 </body>
 </html>
