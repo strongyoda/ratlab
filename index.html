@@ -87,6 +87,25 @@
         </nav>
 
         <main id="tab-views-container"></main>
+
+        <div id="ai-chat-window" style="display:none; position:fixed; bottom:80px; right:20px; width:350px; height:500px; background:white; border-radius:12px; box-shadow:0 5px 25px rgba(0,0,0,0.2); z-index:10000; display:flex; flex-direction:column;">
+        <div class="ai-chat-header" style="background:var(--navy); color:white; padding:15px; border-radius:12px 12px 0 0; display:flex; justify-content:space-between;">
+            <span>RLM AI Analyst</span>
+            <button onclick="toggleAiChat()" style="background:none; border:none; color:white; cursor:pointer;">&times;</button>
+        </div>
+        <div id="ai-chat-messages" style="flex:1; overflow-y:auto; padding:15px; font-size:0.9rem;">
+            <div class="msg-bot">안녕하세요! 어떤 데이터 비교를 도와드릴까요?</div>
+        </div>
+        <div style="padding:10px; border-top:1px solid #eee; display:flex;">
+            <input type="text" id="ai-chat-input" placeholder="분석 명령 입력..." style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;" onkeypress="if(event.key==='Enter') sendAiMessage()">
+            <button onclick="sendAiMessage()" style="margin-left:5px; background:var(--navy); color:white; border:none; padding:8px 12px; border-radius:4px;">전송</button>
+        </div>
+</div>
+
+<button id="ai-chat-fab" onclick="toggleAiChat()" style="position:fixed; bottom:20px; right:20px; width:50px; height:50px; border-radius:50%; background:var(--navy); color:white; border:none; cursor:pointer; z-index:10000; box-shadow:0 4px 10px rgba(0,0,0,0.3);">
+    <i class="material-icons">auto_awesome</i>
+</button>
+
     </div>
 
     <div id="cod-modal">
@@ -244,23 +263,6 @@
 
 <script src="ai_assistant.js"></script>
 
-<div id="ai-chat-window" style="display:none; position:fixed; bottom:80px; right:20px; width:350px; height:500px; background:white; border-radius:12px; box-shadow:0 5px 25px rgba(0,0,0,0.2); z-index:10000; display:flex; flex-direction:column;">
-    <div class="ai-chat-header" style="background:var(--navy); color:white; padding:15px; border-radius:12px 12px 0 0; display:flex; justify-content:space-between;">
-        <span>RLM AI Analyst</span>
-        <button onclick="toggleAiChat()" style="background:none; border:none; color:white; cursor:pointer;">&times;</button>
-    </div>
-    <div id="ai-chat-messages" style="flex:1; overflow-y:auto; padding:15px; font-size:0.9rem;">
-        <div class="msg-bot">안녕하세요! 어떤 데이터 비교를 도와드릴까요?</div>
-    </div>
-    <div style="padding:10px; border-top:1px solid #eee; display:flex;">
-        <input type="text" id="ai-chat-input" placeholder="분석 명령 입력..." style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;" onkeypress="if(event.key==='Enter') sendAiMessage()">
-        <button onclick="sendAiMessage()" style="margin-left:5px; background:var(--navy); color:white; border:none; padding:8px 12px; border-radius:4px;">전송</button>
-    </div>
-</div>
-
-<button id="ai-chat-fab" onclick="toggleAiChat()" style="position:fixed; bottom:20px; right:20px; width:50px; height:50px; border-radius:50%; background:var(--navy); color:white; border:none; cursor:pointer; z-index:10000; box-shadow:0 4px 10px rgba(0,0,0,0.3);">
-    <i class="material-icons">auto_awesome</i>
-</button>
 
 </body>
 </html>
