@@ -133,7 +133,9 @@ async function login() {
 
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('main-app').style.display = 'block';
-        updateAiVisibility();
+        // 로그인 성공 시 챗봇 플로팅 버튼 보이기
+        const aiFab = document.getElementById('ai-chat-fab');
+        if(aiFab) aiFab.style.display = 'block';
         setTimeout(() => initTabs(), 50); 
     } catch (e) {
         console.error(e);
@@ -144,7 +146,11 @@ async function login() {
 async function logout() {
     try {
         await firebase.auth().signOut();
-        updateAiVisibility();
+        // 로그아웃 시 챗봇 플로팅 버튼 숨기기 및 채팅창 닫기
+        const aiFab = document.getElementById('ai-chat-fab');
+        const aiWindow = document.getElementById('ai-chat-window');
+        if(aiFab) aiFab.style.display = 'none';
+        if(aiWindow) aiWindow.style.display = 'none';
         location.reload();
     } catch (e) {
         console.error(e);
