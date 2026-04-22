@@ -449,129 +449,144 @@ async function loadDetailData(forceId = null) {
         // --- 화면 UI 조합 ---
         // 현재 그룹 번호 추출 (G1 -> 1)
         const currentGroupNum = rat.group ? rat.group.replace('G', '') : '1';
+        // 1. 정보 박스 구성 (3등분 로직)
+        const infoBoxes = [];
+        infoBoxes.push(`<div class="info-row-item"><b>D+${dPlus}</b><br><span style="font-size:0.85rem; color:#666;">반입 후</span><br><span style="font-size:0.8rem; color:#888;">${rat.arrivalDate||'-'}</span></div>`);
+        infoBoxes.push(`<div class="info-row-item"><b>POD ${pod}</b><br><span style="font-size:0.85rem; color:#666;">수술 후</span><br><span style="font-size:0.8rem; color:#888;">약 ${ageAtSurgStr}주령</span></div>`);
+        
+        if (rat.status === '사망') {
+            const deathPod = rat.surgeryDate && rat.deathDate ? Math.floor((new Date(rat.deathDate) - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
+            infoBoxes.push(`<div class="info-row-item" style="background:#fff5f5; border-color:#fed7d7;"><b style="color:var(--red);">사망 (POD ${deathPod})</b><br><span style="font-size:0.85rem; color:#666;">${rat.deathDate}</span></div>`);
+        } else if (rat.doseStartDate) {
+            infoBoxes.push(`<div class="info-row-item" style="background:#f0fff4; border-color:#c6f6d5;"><b style="color:var(--green);">투약 중</b><br><span style="font-size:0.85rem; color:#666;">시작: ${rat.doseStartDate}</span></div>`);
+        }
 
         view.innerHTML = `
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:15px;">
+            <div class="card" style="padding:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                     <div style="display:flex; align-items:center; gap:10px;">
-                        <h3 style="margin:0; font-size:1.4rem;">${id}</h3>
-                        <select id="group-change-sel" onchange="changeRatGroup('${docId}', '${id}', this.value)" style="padding:4px 8px; border-radius:4px; border:1px solid #1565C0; color:#1565C0; font-weight:bold; background:#e3f2fd; outline:none; cursor:pointer;">
-                            ${[1,2,3,4,5].map(n => `<option value="${n}" ${currentGroupNum == n ? 'selected' : ''}>G${n}</option>`).join('')}
-                        </select>
+                        <h3 style="margin:0; font-size:1.5rem; color:var(--navy);">${id}</h3>
+                        <span class="badge" style="background:#e3f2fd; color:#1565c0; border:1px solid #bbdefb; border-radius:6px; padding:2px 8px; font-weight:bold; font-size:0.85rem;">${rat.group || 'G1'}</span>
                     </div>
-                    <span style="font-weight:bold; padding:4px 10px; border-radius:20px; background:${rat.status==='생존'?'#e8f5e9':'#ffebee'}; color:${rat.status==='생존'?'#2e7d32':'#c62828'}">${rat.status}</span>
-                </div>
-                <div class="info-grid">
-                    <div class="info-item"><b>D+${dPlus}</b><br>반입 후<br><span style="font-size:0.8rem; color:#666;">${rat.arrivalDate||'-'} (${arrivalAgeNum}주령)</span></div>
-                    <div class="info-item"><b>POD ${pod}</b><br>수술 후<br><span style="font-size:0.8rem; color:#666; font-weight:bold;">수술 시: 약 ${ageAtSurgStr}주령</span></div>
-                    ${deathInfo}
-                    ${doseInfo}
+                    <button class="btn-small" onclick="if('${rat.status}'==='생존') openSimpleCod('${docId}', '', '', getTodayStr())" 
+                            style="background:${rat.status==='생존'?'var(--green)':'var(--red)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:8px; cursor:${rat.status==='생존'?'pointer':'default'};">
+                        <i class="material-icons" style="font-size:18px;">${rat.status==='생존'?'check_circle':'error'}</i> ${rat.status}
+                    </button>
                 </div>
                 
-                <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px; padding:12px; background:#f8f9fa; border-radius:8px; border:1px solid #eee;">
-                    <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center;">
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">반입주령</label>
-                            <select id="arr-age" style="width:70px; padding:4px;">
-                                ${[5,6,7,8,9,10].map(v=>`<option value="${v}" ${arrivalAgeNum===v?'selected':''}>${v}주</option>`).join('')}
-                            </select>
-                            <button class="btn-small" onclick="upArrivalAge('${docId}')">저장</button>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">OVX일자</label>
-                            <input type="date" id="ovx-d" value="${rat.ovxDate||''}" style="width:130px; padding:4px 6px;">
-                            <button class="btn-small" onclick="upOvx('${docId}')">저장</button>
-                        </div>
-                        <div style="display:flex; align-items:center; gap:6px;">
-                            <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">투약시작</label>
-                            <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" style="width:130px; padding:4px 6px;">
-                            <button class="btn-small" onclick="upDoseStart('${docId}')">저장</button>
-                        </div>
-                    </div>
+                <div class="info-row-container">${infoBoxes.join('')}</div>
+                
+                <div style="display:flex; gap:20px; align-items: stretch; flex-wrap:wrap;">
                     
-                    <div style="display:flex; gap:15px; flex-wrap:wrap; align-items:center; width:100%;">
-                        <div style="display:flex; align-items:center; gap:15px; background:#fff3e0; padding:8px; border-radius:6px; border:1px solid #ffcc80; flex-wrap:wrap; flex:1;">
-                            <label style="cursor:pointer; font-size:0.85rem; color:var(--red); font-weight:bold; display:flex; align-items:center;">
-                                <input type="checkbox" id="chk-sham" ${rat.isNonInduction ? 'checked' : ''} 
-                                    onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none';" style="transform:scale(1.2); margin-right:6px;">
-                                Ligation 안 함 (Sham/Naïve)
-                            </label>
-                            
-                            <div id="surg-date-wrapper" style="display:${rat.isNonInduction ? 'none' : 'flex'}; align-items:center; gap:6px;">
-                                <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">수술일자</label>
-                                <input type="date" id="surg-d" value="${rat.surgeryDate||''}" style="width:130px; padding:4px;">
+                    <div style="flex:6; min-width:300px; display:flex; flex-direction:column; gap:15px;">
+                        
+                        <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee; display:flex; flex-wrap:wrap; gap:10px;">
+                            <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:0.85rem; font-weight:bold;">반입주령</span>
+                                <select id="arr-age" style="border:none; background:none; font-weight:bold; outline:none;">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}</select>
+                                <button class="btn-small btn-blue" onclick="upArrivalAge('${docId}')" style="padding:4px 8px;">저장</button>
+                            </div>
+                            <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:0.85rem; font-weight:bold;">OVX일자</span>
+                                <input type="date" id="ovx-d" value="${rat.ovxDate||''}" style="border:none; font-size:0.85rem; outline:none;">
+                                <button class="btn-small btn-blue" onclick="upOvx('${docId}')" style="padding:4px 8px;">저장</button>
+                            </div>
+                            <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:0.85rem; font-weight:bold;">투약시작</span>
+                                <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" style="border:none; font-size:0.85rem; outline:none;">
+                                <button class="btn-small btn-blue" onclick="upDoseStart('${docId}')" style="padding:4px 8px;">저장</button>
                             </div>
                             
-                            <div id="sham-ref-wrapper" style="display:${rat.isNonInduction ? 'flex' : 'none'}; align-items:center; gap:6px;">
-                                <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--red);">비교 기준 주령</label>
-                                <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" style="width:70px; padding:4px;"> <span style="font-size:0.8rem; color:var(--red); font-weight:bold;">주</span>
+                            <div style="width:100%; display:flex; align-items:center; gap:15px; background:#fff3e0; padding:10px 12px; border-radius:8px; border:1px solid #ffcc80; flex-wrap:wrap;">
+                                <label style="cursor:pointer; font-size:0.85rem; color:var(--red); font-weight:bold; display:flex; align-items:center;">
+                                    <input type="checkbox" id="chk-sham" ${rat.isNonInduction ? 'checked' : ''} 
+                                        onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none';" style="transform:scale(1.2); margin-right:6px;">
+                                    Ligation 안 함 (Sham/Naïve)
+                                </label>
+                                <div id="surg-date-wrapper" style="display:${rat.isNonInduction ? 'none' : 'flex'}; align-items:center; gap:6px;">
+                                    <span style="font-size:0.85rem; font-weight:bold;">수술일자</span>
+                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" style="border:1px solid #ccc; border-radius:4px; padding:4px;">
+                                </div>
+                                <div id="sham-ref-wrapper" style="display:${rat.isNonInduction ? 'flex' : 'none'}; align-items:center; gap:6px;">
+                                    <span style="font-size:0.85rem; font-weight:bold; color:var(--red);">비교 기준 주령</span>
+                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
+                                </div>
+                                <button class="btn-small btn-red" onclick="saveSurgAndSham('${docId}', '${rat.arrivalDate || ''}', ${arrivalAgeNum||6})" style="margin-left:auto; padding:4px 10px;">저장</button>
+                            </div>
+
+                            <div style="width:100%; display:flex; align-items:center; gap:6px; background:#e3f2fd; padding:10px 12px; border-radius:8px; border:1px solid #bbdefb; flex-wrap:wrap;">
+                                <span style="font-size:0.85rem; font-weight:bold; color:var(--navy);">얻은 샘플</span>
+                                <select id="sample-tp" style="padding:4px; border-radius:4px; border:1px solid #ccc;">
+                                    <option value="">-</option>
+                                    <option value="Histology" ${rat.sampleType==='Histology'?'selected':''}>Histology</option>
+                                    <option value="Cast" ${rat.sampleType==='Cast'?'selected':''}>Cast</option>
+                                    <option value="Fail" ${rat.sampleType==='Fail'?'selected':''}>못함</option>
+                                </select>
+                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                <input type="text" id="sample-memo" value="${rat.sampleMemo||''}" placeholder="메모" style="flex:1; min-width:120px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                <button class="btn-small btn-blue" onclick="upSampleInfo('${docId}')" style="padding:4px 10px;">저장</button>
+                            </div>
+                        </div>
+
+                        <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee;">
+                            <h4 style="margin:0 0 10px 0; font-size:0.9rem; color:var(--navy);"><i class="material-icons" style="font-size:18px; vertical-align:middle;">biotech</i> MR 촬영 이력 (Infarction 관찰)</h4>
+                            
+                            <div id="mr-list-area" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+                                ${(() => {
+                                    const mrArr = rat.mrDates || [];
+                                    if(mrArr.length === 0) return '<span style="font-size:0.85rem; color:#888;">기록된 MR이 없습니다.</span>';
+                                    
+                                    const tpWeightMap = { 'D00':-1, 'D0':0, 'D2':2, 'W1':7, 'W2':14, 'W3':21, 'W4':28, 'W5':35, 'W6':42, 'W7':49, 'W8':56, 'W12':84, 'Death':9999 };
+                                    
+                                    return mrArr.map((mr, idx) => ({ ...mr, originalIdx: idx }))
+                                        .sort((a, b) => {
+                                            const wA = tpWeightMap[a.timepoint] !== undefined ? tpWeightMap[a.timepoint] : 9999;
+                                            const wB = tpWeightMap[b.timepoint] !== undefined ? tpWeightMap[b.timepoint] : 9999;
+                                            if (wA === wB) return new Date(a.date) - new Date(b.date);
+                                            return wA - wB;
+                                        })
+                                        .map(mr => {
+                                            let infStr = '';
+                                            if(mr.infarctSize && mr.infarctSize !== 'None') {
+                                                infStr = `<span style="color:#e65100; font-weight:bold; margin-left:4px; cursor:pointer;" title="수정하기" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, '${mr.infarctSize}', '${mr.infarctLoc||'-'}')">[${mr.infarctSize}(${mr.infarctLoc||'-'})]</span>`;
+                                            } else {
+                                                infStr = `<span style="color:#2196F3; font-weight:bold; font-size:1.1rem; margin-left:4px; cursor:pointer;" title="Infarct 기록 추가" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, 'None', '-')">[+]</span>`;
+                                            }
+                                            return `
+                                            <span style="background:#fff; border:1px solid #ccc; padding:4px 8px; border-radius:6px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                                                <b>${mr.timepoint}</b>: ${mr.date} ${infStr}
+                                                <i class="material-icons" style="font-size:1.2rem; color:var(--red); cursor:pointer;" onclick="removeMrDate('${docId}', ${mr.originalIdx})">cancel</i>
+                                            </span>
+                                            `;
+                                        }).join('');
+                                })()}
                             </div>
                             
-                            <button class="btn-small btn-red" onclick="saveSurgAndSham('${docId}', '${rat.arrivalDate || ''}', ${arrivalAgeNum})" style="margin-left:auto;">저장</button>
+                            <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed #ddd; padding-top:10px;">
+                                ${rat.isNonInduction ? 
+                                    `<input type="hidden" id="new-mr-tp" value="-">
+                                     <div style="font-size:0.85rem; font-weight:bold; color:var(--red); background:#ffebee; padding:6px 10px; border-radius:6px; text-align:center;">시점 무관</div>` 
+                                : 
+                                    `<select id="new-mr-tp" style="width:90px; padding:6px; font-size:0.85rem; border-radius:6px; border:1px solid #ccc;">
+                                        ${['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W12','Death'].map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+                                    </select>`
+                                }
+                                <input type="date" id="new-mr-d" value="${getTodayStr()}" style="width:130px; padding:6px; font-size:0.85rem; border-radius:6px; border:1px solid #ccc;">
+                                <button class="btn-small btn-green" onclick="addMrDate('${docId}')" style="padding:6px 12px; font-size:0.85rem;">+ 새 MR 추가</button>
+                            </div>
                         </div>
                     </div>
-                    
-                    <div style="display:flex; align-items:center; gap:6px; background:#e3f2fd; padding:8px; border-radius:6px; border:1px solid #bbdefb; flex-wrap:wrap;">
-                        <label style="font-size:0.8rem; margin-right:0; font-weight:bold; color:var(--navy);">얻은 샘플</label>
-                        <select id="sample-tp" style="width:100px; padding:4px;">
-                            <option value="">-</option>
-                            <option value="Histology" ${rat.sampleType==='Histology'?'selected':''}>Histology</option>
-                            <option value="Cast" ${rat.sampleType==='Cast'?'selected':''}>Cast</option>
-                            <option value="Fail" ${rat.sampleType==='Fail'?'selected':''}>못함</option>
-                        </select>
-                        <input type="date" id="sample-d" value="${rat.sampleDate||''}" style="width:130px; padding:4px;">
-                        <input type="text" id="sample-memo" value="${rat.sampleMemo||''}" placeholder="메모 (예: 조직손상)" style="flex:1; min-width:150px; padding:4px;">
-                        <button class="btn-small btn-blue" onclick="upSampleInfo('${docId}')">저장</button>
-                    </div>
 
-                    <div style="background:#fff; border:1px solid #ddd; padding:10px; border-radius:6px;">
-                        <div style="font-size:0.85rem; font-weight:bold; color:var(--navy); margin-bottom:8px;">📷 MR 촬영 이력 (Infarction 관찰)</div>
-                        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-                            ${(() => {
-                                const mrArr = rat.mrDates || [];
-                                if(mrArr.length === 0) return '<span style="font-size:0.8rem; color:#888;">기록된 MR이 없습니다.</span>';
-                                
-                                return mrArr.map((mr, idx) => ({ ...mr, originalIdx: idx }))
-                                    .sort((a, b) => {
-                                        const wA = tpWeight[a.timepoint] !== undefined ? tpWeight[a.timepoint] : 9999;
-                                        const wB = tpWeight[b.timepoint] !== undefined ? tpWeight[b.timepoint] : 9999;
-                                        if (wA === wB) return new Date(a.date) - new Date(b.date);
-                                        return wA - wB;
-                                    })
-                                    .map(mr => {
-                                        // ✅ [+] 버튼으로 심플하게 변경
-                                        let infStr = '';
-                                        if(mr.infarctSize && mr.infarctSize !== 'None') {
-                                            infStr = `<span style="color:#e65100; font-weight:bold; margin-left:4px; cursor:pointer;" title="수정하기" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, '${mr.infarctSize}', '${mr.infarctLoc||'-'}')">[${mr.infarctSize}(${mr.infarctLoc||'-'})]</span>`;
-                                        } else {
-                                            infStr = `<span style="color:#2196F3; font-weight:bold; font-size:1rem; margin-left:4px; cursor:pointer;" title="Infarct 기록 추가" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, 'None', '-')">[+]</span>`;
-                                        }
-
-                                        return `
-                                        <span style="background:#f1f3f5; border:1px solid #ccc; padding:3px 8px; border-radius:4px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px;">
-                                            <b>${mr.timepoint}</b>: ${mr.date} ${infStr}
-                                            <i class="material-icons" style="font-size:1.1rem; color:var(--red); cursor:pointer;" onclick="removeMrDate('${docId}', ${mr.originalIdx})">cancel</i>
-                                        </span>
-                                        `;
-                                    }).join('');
-                            })()}
+                    <div style="flex:4; min-width:250px; display:flex; flex-direction:column; background:#fffde7; border:1px solid #fff59d; border-radius:12px; padding:15px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <span style="font-weight:bold; color:#f57f17; display:flex; align-items:center; gap:5px;"><i class="material-icons" style="font-size:18px;">note</i> 개체 자유 메모</span>
+                            <button class="btn-small btn-green" onclick="saveGeneralMemo('${docId}')" style="padding:4px 12px;">메모 저장</button>
                         </div>
-                        <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed #eee; padding-top:8px;">
-                            ${rat.isNonInduction ? 
-                                `<input type="hidden" id="new-mr-tp" value="-">
-                                 <div style="font-size:0.85rem; font-weight:bold; color:var(--red); background:#ffebee; padding:4px 8px; border-radius:4px; text-align:center; width:90px; box-sizing:border-box;">시점 무관</div>` 
-                            : 
-                                `<select id="new-mr-tp" style="width:90px; padding:4px; font-size:0.85rem;">
-                                    ${mrOpts.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
-                                </select>`
-                            }
-                            <input type="date" id="new-mr-d" value="${getTodayStr()}" style="width:130px; padding:4px; font-size:0.85rem;">
-                            <button class="btn-small btn-green" onclick="addMrDate('${docId}')" style="padding:4px 10px; font-size:0.85rem;">+ 새 MR 추가</button>
-                        </div>
+                        <textarea id="general-memo-area" style="flex:1; width:100%; border:1px solid #ffe082; border-radius:8px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${rat.generalMemo || ''}</textarea>
                     </div>
                 </div>
             </div>
-            
+        
             <div class="card" style="border-top: 4px solid #fbc02d;">
                 <h4 style="margin-top:0; color:var(--navy);">⏳ 개체 라이프사이클 타임라인 (주령 기준)</h4>
                 <div style="font-size:0.8rem; color:#666; margin-bottom:10px; display:flex; gap:12px; flex-wrap:wrap; background:#f8f9fa; padding:8px; border-radius:6px;">
@@ -2762,3 +2777,18 @@ function openRatModal(ratId) {
     // 3. 실제 데이터 로드 및 렌더링 호출
     loadDetailData(ratId);
 }
+
+// ==========================================
+// 랫드 개체 상세보기 전용: 자유 메모장 저장
+// ==========================================
+window.saveGeneralMemo = async function(docId) {
+    const memoVal = document.getElementById('general-memo-area').value;
+    try {
+        await db.collection("rats").doc(docId).update({ generalMemo: memoVal });
+        alert("메모가 저장되었습니다.");
+        clearRatsCache();
+    } catch(e) {
+        console.error(e);
+        alert("메모 저장 실패: " + e.message);
+    }
+};
