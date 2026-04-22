@@ -429,3 +429,45 @@ th { background: #f8f9fa; }
     padding: 0 10px;
 }
 .ai-chat-input-area button i { font-size: 1.8rem; vertical-align: middle; }
+
+/* --- 버튼 디자인 성형 --- */
+.btn, .btn-small {
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border: none !important;
+    cursor: pointer;
+}
+.btn:hover, .btn-small:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    filter: brightness(1.1);
+}
+.btn:active { transform: translateY(0); }
+
+/* --- 랫드 상세 정보 박스 (3등분/2등분) --- */
+.info-row-container {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.info-row-item {
+    flex: 1; /* 동일한 비율로 나눔 */
+    background: #fff;
+    padding: 15px;
+    border-radius: 12px;
+    border: 1px solid #eee;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+}
+
+/* --- 모바일 반응형 레이아웃 --- */
+@media (max-width: 768px) {
+    .combined-record-container {
+        flex-direction: column !important; /* 모바일에서 위아래로 */
+    }
+    .info-row-container {
+        flex-direction: column; /* 정보 박스도 모바일에선 세로로 */
+    }
+}
