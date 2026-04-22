@@ -498,9 +498,59 @@ async function go(view, targetId = null, specificTabId = null) {
         <div id="detail-view"></div>`; 
         await initDetailSelectors(targetId);
     }
-    else if(view === 'daily') {
+else if(view === 'daily') {
         currentScores = { act: 0, fur: 0, eye: 0 };
-        main.innerHTML = `<div class="card"><h3>데일리 체크</h3><div style="display:flex; gap:10px; margin-bottom:10px"><input type="number" id="dc-c" placeholder="C" oninput="mkId('dc')"><input type="number" id="dc-r" placeholder="N" oninput="mkId('dc')"><select id="dc-g" onchange="mkId('dc')" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div><input type="text" id="dc-id" readonly style="background:#eee; margin-bottom:15px"><div class="input-group"><label>날짜</label><input type="date" id="dc-date"></div>${['act','fur','eye'].map(k => `<div class="input-group"><label>${k.toUpperCase()}</label><div class="rating-box">${[1,2,3,4,5].map(n => `<button class="rate-btn" onclick="score('${k}', ${n}, this)">${n}</button>`).join('')}</div></div>`).join('')}<div id="score-res" class="status-box">선택 필요</div><textarea id="dc-note" rows="2" placeholder="메모" style="margin-top:10px;"></textarea><div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div><button class="btn btn-green" onclick="saveDaily()" style="margin-top:15px;">저장</button></div>`;
+        main.innerHTML = `
+            <div class="card" style="padding: 15px;">
+                <h3 style="margin-bottom:20px; color:var(--navy);">상태 & 체중 통합 기록</h3>
+                
+                <div style="background:#f8f9fa; padding:15px; border-radius:10px; margin-bottom:15px; display:inline-flex; gap:12px; flex-wrap:wrap; border:1px solid #eee; align-items:center;">
+                    <div style="display:flex; gap:6px; align-items:center;">
+                        <input type="number" id="dc-c" placeholder="코호트" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:6px; border:1px solid #ccc; text-align:center; outline:none;">
+                        <input type="number" id="dc-r" placeholder="번호" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:6px; border:1px solid #ccc; text-align:center; outline:none;">
+                        <select id="dc-g" onchange="mkId('dc')" style="width:65px; padding:8px 4px; border-radius:6px; border:1px solid #ccc; outline:none; cursor:pointer;">
+                            <option value="1">G1</option><option value="2">G2</option><option value="3">G3</option>
+                            <option value="4">G4</option><option value="5">G5</option>
+                        </select>
+                    </div>
+                    <input type="text" id="dc-id" readonly placeholder="ID 결과" style="width:130px; padding:8px; background:#e9ecef; border:1px solid #ddd; border-radius:6px; text-align:center; font-weight:bold; color:var(--navy);">
+                    <input type="date" id="dc-date" style="width:150px; padding:8px; border-radius:6px; border:1px solid #ccc; outline:none; cursor:pointer;">
+                </div>
+
+                <div class="combined-record-container" style="display:flex; gap:15px;">
+                    <div style="flex:1; padding:15px; border:1px solid #eee; border-radius:10px; background:#fff;">
+                        <h4 style="margin-top:0;"><i class="material-icons" style="font-size:18px; vertical-align:middle;">assignment</i> 상태 (Daily)</h4>
+                        ${['act','fur','eye'].map(k => `
+                        <div class="input-group">
+                            <label style="font-size:0.8rem;">${k.toUpperCase()}</label>
+                            <div class="rating-box">${[1,2,3,4,5].map(n => `<button class="rate-btn" onclick="score('${k}', ${n}, this)">${n}</button>`).join('')}</div>
+                        </div>`).join('')}
+                        <div id="score-res" class="status-box">선택 필요</div>
+                        <textarea id="dc-note" rows="2" placeholder="메모" style="width:100%; margin-top:10px;"></textarea>
+                        <div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div>
+                    </div>
+
+                    <div style="flex:1; padding:15px; border:1px solid #e3f2fd; border-radius:10px; background:#f1f8ff;">
+                        <h4 style="margin-top:0; color:#1565c0;"><i class="material-icons" style="font-size:18px; vertical-align:middle;">monitor_weight</i> 체중 (Weight)</h4>
+                        <div class="input-group">
+                            <label>시점 선택</label>
+                            <select id="dc-tp" style="width:100%; padding:10px; border-radius:6px; border:1px solid #bbdefb;">
+                                <option value="Manual">Manual (수기 입력)</option>
+                                <option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option>
+                                <option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option>
+                                <option value="W8">W8</option><option value="W12">W12</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="margin-top:15px;">
+                            <label>체중 (g)</label>
+                            <input type="number" id="dc-wt" placeholder="체중 입력" style="width:100%; padding:10px; border:1px solid #bbdefb;">
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-green" onclick="saveDaily()" style="margin-top:20px; width:100%; height:50px; font-size:1.1rem;">데이터 통합 저장</button>
+            </div>
+        `;
         document.getElementById('dc-date').value = getTodayStr();
     }
     else if(view === 'add') { 
