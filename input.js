@@ -48,37 +48,68 @@ async function saveDaily() {
     const dead = document.getElementById('is-dead').checked;
     const total = currentScores.act + currentScores.fur + currentScores.eye;
 
-    if (!dead && (currentScores.act === 0 || currentScores.fur === 0 || currentScores.eye === 0)) { 
-        alert("Activity, Fur, Eye 점수를 모두 선택해주세요."); 
+    // [신규] 체중 입력창 데이터 (프론트엔드에 id="dc-wt", id="dc-tp"가 있다고 가정)
+    const wtInput = document.getElementById('dc-wt');
+    const tpInput = document.getElementById('dc-tp');
+    const wt = wtInput ? wtInput.value : '';
+    const tp = tpInput ? tpInput.value : '';
+
+    if (!dead && total === 0 && !note && !wt) { 
+        alert("상태 점수, 메모, 체중 중 최소 하나 이상을 입력해주세요."); 
         return; 
     }
     
     try {
-        // [수정] scores 저장 시 'act'를 'activity'로 명확하게 저장
-        await db.collection("dailyLogs").add({ 
-            ratId: id, 
-            date: date, 
-            timestamp: new Date().toLocaleTimeString(), 
-            scores: { 
-                activity: currentScores.act, // 여기서 변환
-                fur: currentScores.fur, 
-                eye: currentScores.eye 
-            }, 
-            totalScore: total, 
-            note: note, 
-            createdAt: firebase.firestore.FieldValue.serverTimestamp() 
-        });
-        
-        const rSnap = await db.collection("rats").where("ratId", "==", id).get();
-        if(!rSnap.empty) { 
-            if(dead) { await rSnap.docs[0].ref.update({ status: '사망', deathDate: date }); } 
-            else { await rSnap.docs[0].ref.update({ lastScore: total }); } 
+        let savedCount = 0;
+
+        // 1. 데일리 체크 내용이 있을 때 저장
+        if (total > 0 || note || dead) {
+            await db.collection("dailyLogs").add({ 
+                ratId: id, 
+                date: date, 
+                timestamp: new Date().toLocaleTimeString(), 
+                scores: { activity: currentScores.act, fur: currentScores.fur, eye: currentScores.eye }, 
+                totalScore: total, 
+                note: note, 
+                createdAt: firebase.firestore.FieldValue.serverTimestamp() 
+            });
+            
+            const rSnap = await db.collection("rats").where("ratId", "==", id).get();
+            if(!rSnap.empty) { 
+                if(dead) { await rSnap.docs[0].ref.update({ status: '사망', deathDate: date }); } 
+                else { await rSnap.docs[0].ref.update({ lastScore: total }); } 
+            }
+            savedCount++;
         }
-        
-        clearRatsCache();
-        alert("저장되었습니다.");
-        document.getElementById('dc-note').value = '';
-        document.getElementById('is-dead').checked = false;
+
+        // 2. 체중(WT) 내용이 있을 때 저장
+        if (wt) {
+            if (!tp) return alert("체중을 저장하시려면 '시점(W1, D2 등)'을 반드시 선택해야 합니다.");
+            
+            await db.collection("measurements").add({ 
+                ratId: id, 
+                weight: Number(wt), 
+                date: date, 
+                timepoint: tp,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            savedCount++;
+        }
+
+        if (savedCount > 0) {
+            clearRatsCache();
+            alert("입력하신 데이터가 성공적으로 저장되었습니다!");
+            
+            // 입력창 초기화
+            document.getElementById('dc-note').value = '';
+            document.getElementById('is-dead').checked = false;
+            if(wtInput) wtInput.value = '';
+            
+            document.querySelectorAll('.rate-btn').forEach(b => b.classList.remove('active'));
+            currentScores = { act: 0, fur: 0, eye: 0 };
+            const scoreRes = document.getElementById('score-res');
+            if (scoreRes) scoreRes.innerText = '총점: 0점';
+        }
     } catch(e) { console.error(e); alert("에러: " + e.message); }
 }
 
