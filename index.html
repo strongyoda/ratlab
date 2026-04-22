@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>Rat Lab Manager Pro</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+    <!-- Firebase v9 compat -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
+    <script src="global.js"></script>
+    <script src="router.js"></script>
+    <script src="input.js"></script>
+    <script src="chart.js"></script>
+    <script src="media.js"></script>
+    <script src="admin.js"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="login-screen">
+        <div class="login-box">
+            <h2 style="color:var(--navy)">LAB MANAGER</h2>
+            <input type="text" id="uid" placeholder="ID" style="margin-bottom:10px">
+            <input type="password" id="upw" placeholder="PW" style="margin-bottom:20px" onkeypress="if(event.key==='Enter') login()">
+            <button class="btn btn-green" onclick="login()">LOGIN</button>
+        </div>
+    </div>
+
+    <style>
+        /* 1. 화면 폭 1000px 제한 강제 해제 (화면 100% 사용) */
+        main#tab-views-container { max-width: 100% !important; padding: 60px 0 0 0 !important; margin: 0 !important; }
+        
+        /* 2. 헤더는 최상단(1000) 유지, 사이드바(900)와 어두운 배경(800)은 헤더 아래에서만 동작 */
+        header { z-index: 1000 !important; height: 60px !important; position: fixed !important; width: 100% !important; top: 0 !important; left: 0 !important; }
+        #sidebar { z-index: 900 !important; top: 60px !important; height: calc(100vh - 60px) !important; padding-top: 0 !important; position: fixed !important; }
+        #overlay { z-index: 800 !important; top: 60px !important; height: calc(100vh - 60px) !important; position: fixed !important; }
+        
+        /* 3. 각 탭 내부 여백 설정 */
+        .tab-view-content { max-width: 100% !important; padding: 20px !important; box-sizing: border-box; margin: 0 !important; }
+    </style>
+
+    <div id="main-app">
+        <header style="display:flex; align-items:flex-end; padding:0 20px; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.05); box-sizing:border-box;">
+            <div style="display:flex; align-items:center; height:60px; padding-bottom:8px; box-sizing:border-box;">
+                <div class="menu-btn-box" onclick="toggleMenu()" style="margin-right:15px; cursor:pointer;">
+                    <i class="material-icons" style="color:var(--navy)">menu</i>
+                    <span class="menu-btn-text">MENU</span>
+                </div>
+                <span style="font-weight:900; color:var(--navy); font-size:1.2rem; margin-right:20px; white-space:nowrap;">RLM Pro</span>
+            </div>
+            
+            <div style="display:flex; flex:1; overflow-x:auto; align-items:flex-end; gap:5px; height:60px; box-sizing:border-box;">
+                <div id="app-tabs-container" style="display:flex; gap:4px; height:100%; align-items:flex-end;">
+                    </div>
+                <button onclick="createNewTab('blank')" style="background:none; border:none; color:var(--navy); cursor:pointer; font-weight:900; font-size:1.5rem; padding:8px 12px; line-height:1; margin-bottom:2px;" title="새 탭 열기">+</button>
+            </div>
+        </header>
+
+        <div id="overlay" onclick="toggleMenu()"></div>
+
+        <nav id="sidebar">
+            <div class="nav-item" onclick="go('dash')"><i class="material-icons">dashboard</i>대시보드</div>
+            <div class="nav-item" onclick="go('detail')"><i class="material-icons">search</i>랫드 상세보기</div>
+            <div class="nav-item" onclick="go('cohort')"><i class="material-icons">bar_chart</i>코호트 분석</div>
+            <div class="nav-item" onclick="go('compare')"><i class="material-icons">compare_arrows</i>코호트 비교</div>
+            <div class="nav-item" onclick="go('trend')"><i class="material-icons">trending_up</i>조건분석</div>
+            <div class="nav-item" onclick="openPptSetup()"><i class="material-icons">slideshow</i>프레젠테이션</div>
+            <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>상태 & 체중 기록</div>
+            <div class="nav-item" onclick="go('add')"><i class="material-icons">add_circle</i>신규 등록</div>
+            <div class="nav-item" onclick="go('dose')"><i class="material-icons">science</i>투약 계산기</div>
+            <div class="nav-item" onclick="go('bp')"><i class="material-icons">analytics</i>BP 계산 & 입력</div>
+            <div class="nav-item" onclick="go('admin')"><i class="material-icons">admin_panel_settings</i>데이터 관리</div>
+            <div class="nav-item" onclick="logout()" style="margin-top:auto"><i class="material-icons">logout</i>로그아웃</div>
+        </nav>
+
+        <main id="tab-views-container"></main>
+
+        <div id="ai-chat-window" style="display:none; position:fixed; bottom:80px; right:20px; width:350px; height:500px; background:white; border-radius:12px; box-shadow:0 5px 25px rgba(0,0,0,0.2); z-index:10000; display:flex; flex-direction:column;">
+        <div class="ai-chat-header" style="background:var(--navy); color:white; padding:15px; border-radius:12px 12px 0 0; display:flex; justify-content:space-between;">
+            <span>RLM AI Analyst</span>
+            <button onclick="toggleAiChat()" style="background:none; border:none; color:white; cursor:pointer;">&times;</button>
+        </div>
+        <div id="ai-chat-messages" style="flex:1; overflow-y:auto; padding:15px; font-size:0.9rem;">
+            <div class="msg-bot">안녕하세요! 어떤 데이터 비교를 도와드릴까요?</div>
+        </div>
+        <div style="padding:10px; border-top:1px solid #eee; display:flex;">
+            <input type="text" id="ai-chat-input" placeholder="분석 명령 입력..." style="flex:1; padding:8px; border:1px solid #ddd; border-radius:4px;" onkeypress="if(event.key==='Enter') sendAiMessage()">
+            <button onclick="sendAiMessage()" style="margin-left:5px; background:var(--navy); color:white; border:none; padding:8px 12px; border-radius:4px;">전송</button>
+        </div>
+</div>
+
+<button id="ai-chat-fab" onclick="toggleAiChat()" style="position:fixed; bottom:20px; right:20px; width:50px; height:50px; border-radius:50%; background:var(--navy); color:white; border:none; cursor:pointer; z-index:10000; box-shadow:0 4px 10px rgba(0,0,0,0.3);">
+    <i class="material-icons">auto_awesome</i>
+</button>
+
+    </div>
+
+    <div id="cod-modal">
+        <div class="cod-box">
+            
+            <div id="cod-step-1" class="cod-step-container">
+                <div class="cod-title">사망 원인 분류 (1/3)</div>
+                <button class="cod-btn" onclick="selectCodType('Neurological')">Neurological</button>
+                <button class="cod-btn" onclick="selectCodType('Non-Neurological')">Non-Neurological</button>
+                <button class="cod-btn" style="background:#ffebee; color:var(--red)" onclick="closeCod()">취소</button>
+            </div>
+
+            <div id="cod-step-2-neuro" class="cod-step-container">
+                <div class="cod-title">Aneurysm 여부 (2/3)</div>
+                <button class="cod-btn" onclick="selectCodAn('Aneurysm(O)')">Aneurysm (O)</button>
+                <button class="cod-btn" onclick="selectCodAn('Aneurysm(X)')">Aneurysm (X)</button>
+                <button class="cod-btn" style="background:#eee;" onclick="codBack(1)">이전</button>
+            </div>
+
+            <div id="cod-step-2-non-neuro" class="cod-step-container">
+                <div class="cod-title">Non-Neurological 원인 (2/3)</div>
+                <button class="cod-btn" onclick="selectCodNonNeuroCause('Unknown')">Unknown</button>
+                <button class="cod-btn" onclick="selectCodNonNeuroCause('Surgical Failure')">Surgical Failure</button>
+                <button class="cod-btn" onclick="selectCodNonNeuroCause('Sacrifice')">Sacrifice</button>
+                <button class="cod-btn" style="background:#eee;" onclick="codBack(1)">이전</button>
+            </div>
+
+            <div id="cod-step-3" class="cod-step-container">
+                <div class="cod-title">세부 원인 선택 (3/3)<br><span style="font-size:0.8rem; font-weight:normal;">중복 선택 가능</span></div>
+                <div class="cod-grid" style="margin-bottom:20px;">
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="SAH"> SAH</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Infarction"> Infarction</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Vasospasm"> Vasospasm</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Sacrifice"> Sacrifice</label>
+                    <label class="cod-option"><input type="checkbox" name="cod-check" value="Unknown"> Unknown</label>
+                </div>
+                
+                <button class="cod-btn btn-blue" onclick="saveCodFinal()">최종 저장</button>
+                <button class="cod-btn" style="background:#eee;" onclick="codBack('neuro-2')">이전</button>
+            </div>
+
+        </div>
+    </div>
+
+
+    <div id="bpBatchModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:white; padding:20px; border-radius:8px; width:90%; max-width:1200px; max-height:90vh; overflow-y:auto; box-shadow:0 4px 10px rgba(0,0,0,0.3);">
+            <h3 style="margin-top:0;">📊 선택한 BP 데이터 DB 저장</h3>
+            <p style="font-size:14px; color:#666;">선택한 데이터가 어떤 개체와 시점인지 확인 후 저장하세요.</p>
+            
+            <table style="width:100%; border-collapse:collapse; margin-bottom:20px;">
+                <thead>
+                    <tr style="background:#f5f5f5; border-bottom:2px solid #ddd; text-align:left;">
+                        <th style="padding:8px;">Rat ID (자동감지)</th>
+                        <th style="padding:8px;">측정값 (SBP/Mean)</th>
+                        <th style="padding:8px;">측정일 (Date)</th>
+                        <th style="padding:8px; color:#d32f2f;">저장할 Rat ID (필수)</th>
+                        <th style="padding:8px; color:#1a237e;">저장할 시점 (필수)</th>
+                    </tr>
+                </thead>
+                <tbody id="bpBatchList">
+                    </tbody>
+            </table>
+
+            <div style="text-align:right; margin-top:20px;">
+                <button onclick="closeBatchModal()" style="padding:10px 20px; background:#9e9e9e; color:white; border:none; border-radius:4px; cursor:pointer;">취소</button>
+                <button onclick="saveBatchToDB()" style="padding:10px 20px; background:#1a237e; color:white; border:none; border-radius:4px; cursor:pointer; margin-left:10px;">💾 데이터베이스에 저장</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="simple-cod-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+        <div style="background:white; padding:20px; border-radius:12px; width:90%; max-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+            <h3 style="margin-top:0; color:var(--navy);">사망 원인 & ARE 기록</h3>
+            <div class="input-group">
+                <label>사망 원인 (COD)</label>
+                <select id="modal-cod" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ddd;" onchange="document.getElementById('modal-cod-other-wrap').style.display = this.value === 'Other' ? 'block' : 'none';">
+                    <option value="">-</option>
+                    <option value="SAH">SAH</option>
+                    <option value="Infarction">Infarction</option>
+                    <option value="Vasospasm">Vasospasm</option>
+                    <option value="Sacrifice">Sacrifice</option>
+                    <option value="Surgical Failure">Surgical Failure</option>
+                    <option value="Unknown">Unknown</option>
+                    <option value="Other">기타 (직접 입력)</option>
+                </select>
+                
+                <div id="modal-cod-other-wrap" style="display:none; margin-top:5px;">
+                    <input type="text" id="modal-cod-other" placeholder="사망 원인을 직접 입력하세요" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ddd; box-sizing:border-box;">
+                </div>
+            </div>
+            <div class="input-group" style="margin-top:10px;">
+                <label>ARE 유무</label>
+                <div style="display:flex; gap:10px;">
+                    <select id="modal-are-main" style="flex:1; padding:8px; border-radius:4px; border:1px solid #ddd;" onchange="document.getElementById('modal-are-sub').style.display = this.value === 'O' ? 'block' : 'none';">
+                        <option value="">-</option>
+                        <option value="O">O</option>
+                        <option value="X">X</option>
+                    </select>
+                    <select id="modal-are-sub" style="flex:1; padding:8px; border-radius:4px; border:1px solid #ddd; display:none;">
+                        <option value="미확인">미확인</option>
+                        <option value="micro">micro</option>
+                        <option value="macro">macro</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button class="btn btn-blue" style="flex:1;" onclick="saveSimpleCod()">저장</button>
+                <button class="btn" style="flex:1; background:#eee; color:#333;" onclick="document.getElementById('simple-cod-modal').style.display='none'">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="photo-viewer-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:12000; align-items:center; justify-content:center; overflow:hidden;">
+        <button onclick="closePhotoViewer()" style="position:absolute; top:20px; right:20px; background:var(--red); color:white; border:none; padding:10px 15px; border-radius:8px; cursor:pointer; font-weight:bold; z-index:12001; font-size:1rem;">닫기 ✖</button>
+        <div id="photo-viewer-memo" style="position:absolute; bottom:30px; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.9); padding:10px 20px; border-radius:20px; z-index:12001; pointer-events:none; font-weight:bold; font-size:1.1rem; color:#333; max-width:80%; text-align:center;"></div>
+        
+        <div id="photo-viewer-rmark" style="display:none; position:absolute; font-size:3rem; font-weight:900; color:#ffeb3b; text-shadow:2px 2px 5px rgba(0,0,0,0.8); z-index:12001; pointer-events:none;">R</div>
+        
+        <img id="photo-viewer-img" draggable="false" style="max-width:90%; max-height:90%; transition: transform 0.1s; cursor:grab; user-select:none; -webkit-user-drag:none;" src="">
+    </div>
+
+    <div id="ppt-setup-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; align-items:center; justify-content:center;">
+        <div style="background:white; padding:20px; border-radius:12px; width:90%; max-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+            <h3 style="margin-top:0; color:var(--navy);">📽️ 프레젠테이션 모드</h3>
+            <p style="font-size:0.9rem; color:#666;">발표를 진행할 코호트를 선택하세요.</p>
+            
+            <select id="ppt-cohort-sel" style="width:100%; padding:10px; margin-bottom:15px; border:1px solid #ccc; border-radius:6px; font-size:1rem;">
+                <option value="">데이터 불러오는 중...</option>
+            </select>
+
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-blue" style="flex:1;" onclick="startPpt()">시작하기</button>
+                <button class="btn" style="flex:1; background:#eee; color:#333;" onclick="document.getElementById('ppt-setup-modal').style.display='none'">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="ppt-main-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#fff; z-index:11000; flex-direction:column;">
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 30px; background:var(--navy); color:white; box-shadow:0 2px 10px rgba(0,0,0,0.2); z-index:11001;">
+            <div id="ppt-header-info" style="font-size:1.5rem; font-weight:bold;">Cohort Presentation</div>
+            <div style="display:flex; align-items:center; gap:20px;">
+                <span id="ppt-progress" style="font-size:1.2rem; font-weight:bold; background:rgba(255,255,255,0.2); padding:5px 15px; border-radius:20px;">1 / 10</span>
+                <button onclick="closePpt()" style="background:var(--red); color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:1rem;">✖ 종료 (ESC)</button>
+            </div>
+        </div>
+
+        <div id="ppt-slide-container" style="flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; padding:20px; background:#f4f6f9;">
+            </div>
+
+        <button onclick="prevPptSlide()" style="position:absolute; top:50%; left:20px; transform:translateY(-50%); background:rgba(0,0,0,0.3); color:white; border:none; width:60px; height:60px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:11001; transition:0.3s;" onmouseover="this.style.background='rgba(0,0,0,0.7)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'">◀</button>
+        <button onclick="nextPptSlide()" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(0,0,0,0.3); color:white; border:none; width:60px; height:60px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:11001; transition:0.3s;" onmouseover="this.style.background='rgba(0,0,0,0.7)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'">▶</button>
+    </div>
+
+<script src="ai_assistant.js"></script>
+
+
+</body>
+</html>
