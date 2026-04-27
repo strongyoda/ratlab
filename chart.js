@@ -456,7 +456,19 @@ async function loadDetailData(forceId = null) {
         
         if (rat.status === '사망') {
             const deathPod = rat.surgeryDate && rat.deathDate ? Math.floor((new Date(rat.deathDate) - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
-            infoBoxes.push(`<div class="info-row-item" style="background:#fff5f5; border-color:#fed7d7;"><b style="color:var(--red);">사망 (POD ${deathPod})</b><br><span style="font-size:0.85rem; color:#666;">${rat.deathDate}</span></div>`);
+            const displayCod = rat.cod || (rat.codFull ? extractLegacyCod(rat.codFull) : '미기록');
+            const displayAre = rat.are || '미기록';
+            const displayCodSec = (rat.codSec && rat.codSec.length > 0) ? rat.codSec.join(', ') : '';
+            let codText = `${displayCod}`;
+            if (displayCodSec) codText += ` (+${displayCodSec})`;
+
+            infoBoxes.push(`<div class="info-row-item" style="background:#fff5f5; border-color:#fed7d7;">
+                <b style="color:var(--red);">사망 (POD ${deathPod})</b><br>
+                <span style="font-size:0.85rem; color:#666;">${rat.deathDate || '-'}</span><br>
+                <div style="font-size:0.75rem; color:#c62828; margin-top:5px; font-weight:bold; line-height:1.3; word-break:keep-all;">
+                    COD: ${codText}<br>ARE: ${displayAre}
+                </div>
+            </div>`);
         } else if (rat.doseStartDate) {
             infoBoxes.push(`<div class="info-row-item" style="background:#f0fff4; border-color:#c6f6d5;"><b style="color:var(--green);">투약 중</b><br><span style="font-size:0.85rem; color:#666;">시작: ${rat.doseStartDate}</span></div>`);
         }
@@ -468,9 +480,9 @@ async function loadDetailData(forceId = null) {
                         <h3 style="margin:0; font-size:1.5rem; color:var(--navy);">${id}</h3>
                         <span class="badge" style="background:#e3f2fd; color:#1565c0; border:1px solid #bbdefb; border-radius:6px; padding:2px 8px; font-weight:bold; font-size:0.85rem;">${rat.group || 'G1'}</span>
                     </div>
-                    <button class="btn-small" onclick="if('${rat.status}'==='생존') openSimpleCod('${docId}', '', '', getTodayStr())" 
-                            style="background:${rat.status==='생존'?'var(--green)':'var(--red)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:8px; cursor:${rat.status==='생존'?'pointer':'default'};">
-                        <i class="material-icons" style="font-size:18px;">${rat.status==='생존'?'check_circle':'error'}</i> ${rat.status}
+                    <button class="btn-small" onclick="openSimpleCod('${docId}', '${rat.cod || ''}', '${rat.are || ''}', '${rat.deathDate || getTodayStr()}')" 
+                            style="background:${rat.status==='생존'?'var(--green)':'var(--red)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="클릭하여 사망 정보 수정">
+                        <i class="material-icons" style="font-size:18px;">${rat.status==='생존'?'check_circle':'edit'}</i> ${rat.status === '생존' ? '생존' : '사망 (수정)'}
                     </button>
                 </div>
                 
