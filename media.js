@@ -155,25 +155,34 @@ function renderStagingArea(docId) {
     list.innerHTML = html;
 }
 
-async function uploadAllStagedPhotos(docId) {
-    if(stagedPhotos.length === 0) return;
+// ==========================================
+// 📸 멀티 이미지 업로드 & 향상된 사진 뷰어 로직
+// ==========================================
+
+window.uploadAllStagedPhotos = async function(docId) {
+    if(!stagedPhotos || stagedPhotos.length === 0) return;
     const btn = document.getElementById(`photo-upload-all-btn-${docId}`);
+    if(!btn) return;
     btn.innerText = `업로드 중... (0 / ${stagedPhotos.length})`;
     btn.disabled = true;
 
-    let successCount = 0; const newPhotos = [];
+    let successCount = 0; 
+    const newPhotos = [];
 
     try {
         for(let i = 0; i < stagedPhotos.length; i++) {
             const p = stagedPhotos[i];
-            const memoVal = document.getElementById(`stage-memo-${p.id}`).value.trim();
-            const rMarkVal = document.getElementById(`stage-rmark-${p.id}`).value;
-            const tpVal = document.getElementById(`stage-tp-${p.id}`).value;
-            const dateVal = document.getElementById(`stage-date-${p.id}`).value; // 날짜 추출
+            const memoVal = document.getElementById(`stage-memo-${p.id}`)?.value.trim() || '';
+            const rMarkVal = document.getElementById(`stage-rmark-${p.id}`)?.value || 'none';
+            const tpVal = document.getElementById(`stage-tp-${p.id}`)?.value || 'none';
+            const dateVal = document.getElementById(`stage-date-${p.id}`)?.value || '';
 
             btn.innerText = `압축 및 업로드 중... (${i + 1} / ${stagedPhotos.length})`;
 
-            const compressedBlob = await compressImage(p.file, rMarkVal);
+            let compressedBlob;
+            if(typeof compressImage === 'function') compressedBlob = await compressImage(p.file, rMarkVal);
+            else compressedBlob = p.file;
+            
             const filename = `rats_photos/${docId}/${Date.now()}_${i}_${p.file.name}.jpg`;
             const storageRef = firebase.storage().ref().child(filename);
             
@@ -185,9 +194,10 @@ async function uploadAllStagedPhotos(docId) {
                 memo: memoVal,
                 rMark: rMarkVal,
                 timepoint: tpVal,
-                photoDate: dateVal, // DB에 날짜 저장
+                photoDate: dateVal,
                 timestamp: new Date().toISOString(),
-                filename: filename
+                filename: filename,
+                originalName: p.file.name // 🌟 원본 파일명 저장 추가!
             });
             successCount++;
         }
@@ -198,17 +208,21 @@ async function uploadAllStagedPhotos(docId) {
         }
 
         alert(`${successCount}장의 사진이 성공적으로 등록되었습니다.`);
-        stagedPhotos = []; 
+        stagedPhotos = [];
+        if(typeof renderStagingArea === 'function') renderStagingArea(docId);
         clearRatsCache();
-        await loadDetailData();
+        
+        if(typeof loadDetailData === 'function') loadDetailData(docId);
 
     } catch(e) {
-        console.error(e); alert("오류 발생: " + e.message);
-        btn.innerText = "🚀 준비된 사진 모두 업로드"; btn.disabled = false;
+        console.error(e); 
+        alert("오류 발생: " + e.message);
+        btn.innerText = "🚀 준비된 사진 모두 업로드"; 
+        btn.disabled = false;
     }
-}
+};
 
-async function deletePhoto(docId, photoObjStr) {
+window.deletePhoto = async function(docId, photoObjStr) {
     if(!confirm("이 사진을 정말 삭제하시겠습니까?")) return;
     const photoObj = JSON.parse(decodeURIComponent(photoObjStr));
     try {
@@ -216,20 +230,78 @@ async function deletePhoto(docId, photoObjStr) {
         await db.collection('rats').doc(docId).update({ photos: firebase.firestore.FieldValue.arrayRemove(photoObj) });
         alert("삭제되었습니다."); clearRatsCache(); loadDetailData();
     } catch(e) { console.error(e); alert("삭제 실패"); }
-}
+};
 
+let currentPhotoIndex = 0;
 
-function openPhotoViewer(url, memo) {
+window.openPhotoViewer = function(indexOrUrl, memo = '') {
+    // 예전 방식(URL 전달)으로 호출되면 URL로 인덱스를 역추적
+    if (typeof indexOrUrl === 'string') {
+        currentPhotoIndex = window.currentRatPhotos ? window.currentRatPhotos.findIndex(p => p.url === indexOrUrl) : 0;
+        if(currentPhotoIndex === -1) currentPhotoIndex = 0;
+    } else {
+        currentPhotoIndex = indexOrUrl;
+    }
+
+    if (!window.currentRatPhotos || window.currentRatPhotos.length === 0) return;
+    const p = window.currentRatPhotos[currentPhotoIndex];
+    if (!p) return;
+
     const modal = document.getElementById('photo-viewer-modal');
     const img = document.getElementById('photo-viewer-img');
-    document.getElementById('photo-viewer-memo').innerText = memo || '메모 없음';
-    img.src = url;
-    pvScale = 1; pvTransX = 0; pvTransY = 0;
-    img.style.transform = `translate(0px, 0px) scale(1)`;
-    modal.style.display = 'flex';
-}
-function closePhotoViewer() { document.getElementById('photo-viewer-modal').style.display = 'none'; }
+    if(!modal || !img) return; 
+    
+    const memoEl = document.getElementById('photo-viewer-memo');
+    if(memoEl) memoEl.innerText = p.memo || '메모 없음';
+    
+    const filenameEl = document.getElementById('photo-viewer-filename');
+    if(filenameEl) filenameEl.innerText = p.originalName || '';
 
+    img.src = p.url;
+    if(typeof pvScale !== 'undefined') {
+        pvScale = 1; pvTransX = 0; pvTransY = 0;
+        img.style.transform = `translate(0px, 0px) scale(1)`;
+    }
+    
+    const prevBtn = document.getElementById('pv-prev-btn');
+    const nextBtn = document.getElementById('pv-next-btn');
+    if(prevBtn) prevBtn.style.display = (currentPhotoIndex > 0) ? 'block' : 'none';
+    if(nextBtn) nextBtn.style.display = (currentPhotoIndex < window.currentRatPhotos.length - 1) ? 'block' : 'none';
+
+    modal.style.display = 'flex';
+};
+
+window.closePhotoViewer = function() { 
+    document.getElementById('photo-viewer-modal').style.display = 'none'; 
+};
+
+window.pvNext = function(e) {
+    if(e) e.stopPropagation();
+    if(window.currentRatPhotos && currentPhotoIndex < window.currentRatPhotos.length - 1) {
+        openPhotoViewer(currentPhotoIndex + 1);
+    }
+};
+
+window.pvPrev = function(e) {
+    if(e) e.stopPropagation();
+    if(currentPhotoIndex > 0) openPhotoViewer(currentPhotoIndex - 1);
+};
+
+window.handlePptKeys = function(e) {
+    const viewer = document.getElementById('photo-viewer-modal');
+    if(viewer && viewer.style.display === 'flex') {
+        if(e.key === 'Escape') closePhotoViewer();
+        else if(e.key === 'ArrowRight' || e.key === ' ') pvNext();
+        else if(e.key === 'ArrowLeft') pvPrev();
+        return; 
+    }
+
+    if(typeof nextPptSlide === 'function') {
+        if(e.key === 'ArrowRight' || e.key === ' ') nextPptSlide();
+        else if(e.key === 'ArrowLeft') prevPptSlide();
+        else if(e.key === 'Escape') closePpt();
+    }
+};
 
 
 // ==========================================
