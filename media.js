@@ -212,8 +212,8 @@ window.uploadAllStagedPhotos = async function(docId) {
         if(typeof renderStagingArea === 'function') renderStagingArea(docId);
         clearRatsCache();
         
-        if(typeof loadDetailData === 'function') loadDetailData(docId);
-
+        if(typeof loadDetailData === 'function') loadDetailData();
+        
     } catch(e) {
         console.error(e); 
         alert("오류 발생: " + e.message);
