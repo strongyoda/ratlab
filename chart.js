@@ -402,19 +402,19 @@ async function loadDetailData(forceId = null) {
         const tpWeight = { 'D00':-1, 'D0':0, 'D2':2, 'W1':7, 'W2':14, 'W3':21, 'W4':28, 'W5':35, 'W6':42, 'W7':49, 'W8':56, 'W9':63, 'W10':70, 'W11':77, 'W12':84, 'none':9999 };
 
         photos.sort((a, b) => {
-            // 1순위: 지정된 날짜(photoDate) 오름차순 정렬
             if (a.photoDate && b.photoDate && a.photoDate !== b.photoDate) {
                 return new Date(a.photoDate) - new Date(b.photoDate);
             }
-            // 2순위: 시점(timepoint) 가중치 정렬
             const wA = (a.timepoint && tpWeight[a.timepoint] !== undefined) ? tpWeight[a.timepoint] : 9999;
             const wB = (b.timepoint && tpWeight[b.timepoint] !== undefined) ? tpWeight[b.timepoint] : 9999;
             if (wA !== wB) return wA - wB;
-            // 3순위: 업로드 타임스탬프
             return new Date(a.timestamp || 0) - new Date(b.timestamp || 0);
         });
 
-        const photoHtml = photos.length > 0 ? photos.map(p => {
+        // 🌟 현재 정렬된 사진 배열을 전역에 저장 (좌우 이동할 때 쓰기 위함)
+        window.currentRatPhotos = photos;
+
+        const photoHtml = photos.length > 0 ? photos.map((p, index) => {
             let rMarkHtml = '';
             if (p.rMark && p.rMark !== 'none') {
                 let posStyle = '';
@@ -425,7 +425,6 @@ async function loadDetailData(forceId = null) {
                 rMarkHtml = `<div style="position:absolute; ${posStyle} font-weight:900; color:#ffeb3b; text-shadow:1px 1px 3px #000; font-size:1.1rem; pointer-events:none;">R</div>`;
             }
             
-            // 날짜 + 시점 조합 배지
             let tpBadgeText = '';
             if (p.photoDate) tpBadgeText += p.photoDate;
             if (p.timepoint && p.timepoint !== 'none') tpBadgeText += (tpBadgeText ? ' ' : '') + `[${p.timepoint}]`;
@@ -435,13 +434,18 @@ async function loadDetailData(forceId = null) {
                 tpBadge = `<div style="position:absolute; top:5px; left:5px; background:rgba(26,35,126,0.9); color:white; padding:2px 6px; border-radius:4px; font-size:0.75rem; font-weight:bold; box-shadow:0 1px 3px rgba(0,0,0,0.3); pointer-events:none; z-index:5;">${tpBadgeText}</div>`;
             }
 
+            const fName = p.originalName ? p.originalName : '';
+
             return `
             <div style="position:relative; width:130px; height:130px; border:1px solid #ddd; border-radius:8px; overflow:hidden; background:#000; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-                <img src="${p.url}" draggable="false" style="width:100%; height:100%; object-fit:cover; cursor:pointer; user-select:none; -webkit-user-drag:none;" onclick="openPhotoViewer('${p.url}', '${p.memo||''}')">
+                <img src="${p.url}" draggable="false" style="width:100%; height:100%; object-fit:cover; cursor:pointer; user-select:none; -webkit-user-drag:none;" onclick="openPhotoViewer(${index})">
                 ${tpBadge}
                 ${rMarkHtml}
                 <button onclick="deletePhoto('${docId}', '${encodeURIComponent(JSON.stringify(p))}')" style="position:absolute; top:5px; right:5px; background:rgba(211,47,47,0.8); color:white; border:none; border-radius:50%; width:24px; height:24px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10;">✖</button>
-                <div style="position:absolute; bottom:0; left:0; width:100%; background:rgba(0,0,0,0.7); color:white; font-size:0.75rem; padding:4px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-sizing:border-box; z-index:5;">${p.memo||'메모없음'}</div>
+                <div style="position:absolute; bottom:0; left:0; width:100%; background:rgba(0,0,0,0.7); color:white; font-size:0.75rem; padding:4px; text-align:center; box-sizing:border-box; z-index:5;">
+                    <div style="color:#aed581; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px;">${fName}</div>
+                    <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.memo||'메모없음'}</div>
+                </div>
             </div>`;
         }).join('') : '<div style="color:#888; font-size:0.85rem; padding:10px;">등록된 사진이 없습니다.</div>';
 
@@ -2802,5 +2806,150 @@ window.saveGeneralMemo = async function(docId) {
     } catch(e) {
         console.error(e);
         alert("메모 저장 실패: " + e.message);
+    }
+};
+
+// ==========================================
+// 📸 [업그레이드] 사진 원본 파일명 저장 & 뷰어 좌우 넘기기 기능
+// ==========================================
+
+// 1. 사진 업로드 시 원본 파일명(originalName) 추가 저장
+window.uploadAllStagedPhotos = async function(docId) {
+    if(!stagedPhotos || stagedPhotos.length === 0) return;
+    const btn = document.getElementById(`photo-upload-all-btn-${docId}`);
+    if(!btn) return;
+    btn.innerText = `업로드 중... (0 / ${stagedPhotos.length})`;
+    btn.disabled = true;
+
+    let successCount = 0; 
+    const newPhotos = [];
+
+    try {
+        for(let i = 0; i < stagedPhotos.length; i++) {
+            const p = stagedPhotos[i];
+            const memoVal = document.getElementById(`stage-memo-${p.id}`)?.value.trim() || '';
+            const rMarkVal = document.getElementById(`stage-rmark-${p.id}`)?.value || 'none';
+            const tpVal = document.getElementById(`stage-tp-${p.id}`)?.value || 'none';
+            const dateVal = document.getElementById(`stage-date-${p.id}`)?.value || '';
+
+            btn.innerText = `압축 및 업로드 중... (${i + 1} / ${stagedPhotos.length})`;
+
+            // 압축 함수 호출 (기존에 정의되어 있다고 가정)
+            let compressedBlob;
+            if(typeof compressImage === 'function') {
+                compressedBlob = await compressImage(p.file, rMarkVal);
+            } else {
+                compressedBlob = p.file; // 압축 함수가 없으면 원본 그대로 사용
+            }
+            
+            const filename = `rats_photos/${docId}/${Date.now()}_${i}_${p.file.name}.jpg`;
+            const storageRef = firebase.storage().ref().child(filename);
+            
+            const snapshot = await storageRef.put(compressedBlob);
+            const downloadURL = await snapshot.ref.getDownloadURL();
+
+            // 🔥 핵심: originalName 에 원본 파일 이름 저장!
+            newPhotos.push({
+                url: downloadURL,
+                memo: memoVal,
+                rMark: rMarkVal,
+                timepoint: tpVal,
+                photoDate: dateVal,
+                timestamp: new Date().toISOString(),
+                filename: filename,
+                originalName: p.file.name 
+            });
+            successCount++;
+        }
+
+        btn.innerText = `데이터베이스 저장 중...`;
+        for (let np of newPhotos) {
+            await db.collection('rats').doc(docId).update({ photos: firebase.firestore.FieldValue.arrayUnion(np) });
+        }
+
+        alert(`${successCount}장의 사진이 성공적으로 등록되었습니다.`);
+        stagedPhotos = []; 
+        clearRatsCache();
+        
+        // 팝업 안이라면 팝업 내용 리로드, 아니면 일반 리로드
+        if(typeof loadDetailData === 'function') await loadDetailData(docId);
+
+    } catch(e) {
+        console.error(e); 
+        alert("오류 발생: " + e.message);
+        btn.innerText = "🚀 준비된 사진 모두 업로드"; 
+        btn.disabled = false;
+    }
+};
+
+// 2. 사진 뷰어 좌우 컨트롤 기능
+let currentPhotoIndex = 0;
+
+window.openPhotoViewer = function(indexOrUrl, memo = '') {
+    // 만약 예전 방식(URL을 직접 던짐)으로 호출되었다면 URL로 인덱스를 찾음
+    if (typeof indexOrUrl === 'string') {
+        currentPhotoIndex = window.currentRatPhotos ? window.currentRatPhotos.findIndex(p => p.url === indexOrUrl) : 0;
+        if(currentPhotoIndex === -1) currentPhotoIndex = 0;
+    } else {
+        currentPhotoIndex = indexOrUrl;
+    }
+
+    if (!window.currentRatPhotos || window.currentRatPhotos.length === 0) return;
+    const p = window.currentRatPhotos[currentPhotoIndex];
+    if (!p) return;
+
+    const modal = document.getElementById('photo-viewer-modal');
+    const img = document.getElementById('photo-viewer-img');
+    if(!modal || !img) return; // 뷰어 UI가 없으면 작동 안함
+    
+    // 메모 및 파일명 세팅
+    const memoEl = document.getElementById('photo-viewer-memo');
+    if(memoEl) memoEl.innerText = p.memo || '메모 없음';
+    
+    const filenameEl = document.getElementById('photo-viewer-filename');
+    if(filenameEl) filenameEl.innerText = p.originalName || '';
+
+    // 이미지 띄우기 및 줌 초기화
+    img.src = p.url;
+    if(typeof pvScale !== 'undefined') {
+        pvScale = 1; pvTransX = 0; pvTransY = 0;
+        img.style.transform = `translate(0px, 0px) scale(1)`;
+    }
+    
+    // 첫 사진/마지막 사진 화살표 숨김 제어
+    const prevBtn = document.getElementById('pv-prev-btn');
+    const nextBtn = document.getElementById('pv-next-btn');
+    if(prevBtn) prevBtn.style.display = (currentPhotoIndex > 0) ? 'block' : 'none';
+    if(nextBtn) nextBtn.style.display = (currentPhotoIndex < window.currentRatPhotos.length - 1) ? 'block' : 'none';
+
+    modal.style.display = 'flex';
+};
+
+window.pvNext = function(e) {
+    if(e) e.stopPropagation();
+    if(currentPhotoIndex < window.currentRatPhotos.length - 1) openPhotoViewer(currentPhotoIndex + 1);
+};
+
+window.pvPrev = function(e) {
+    if(e) e.stopPropagation();
+    if(currentPhotoIndex > 0) openPhotoViewer(currentPhotoIndex - 1);
+};
+
+// 키보드 방향키 연동 덮어쓰기 (기존 PPT 기능 유지)
+window.handlePptKeys = function(e) {
+    const viewer = document.getElementById('photo-viewer-modal');
+    // 사진 뷰어가 켜져 있을 때의 동작
+    if(viewer && viewer.style.display === 'flex') {
+        if(e.key === 'Escape') closePhotoViewer();
+        else if(e.key === 'ArrowRight' || e.key === ' ') pvNext();
+        else if(e.key === 'ArrowLeft') pvPrev();
+        return; 
+    }
+
+    // PPT 모드일 때의 동작
+    if(typeof nextPptSlide === 'function') {
+        if(e.key === 'ArrowRight' || e.key === ' ') nextPptSlide();
+        else if(e.key === 'ArrowLeft') prevPptSlide();
+        else if(e.key === 'Escape') closePpt();
     }
 };
