@@ -1388,7 +1388,19 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
             deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#e65100; font-weight:bold;">(+${r.codSec.join(', ')})</span>` : ''; survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}${secCodStr}</span></td></tr>`; });
             survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
-            finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}) - 생존율 (주령 기준) <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;">[사망개체 평균 생존: POD ${avgPodStr}]</span></h4><div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
+            
+            // 🔥 체크박스 UI 삽입
+            const survHeaderHtml = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h4 style="margin:0;">⚰️ 사망 분석 (${deadRats.length}) - 생존율 <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;" id="surv-avg-txt${uniqueSuffix}">[평균 생존: POD ${avgPodStr}]</span></h4>
+                    <div style="display:flex; gap:15px; font-size:0.85rem;">
+                        <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-surgfail${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Surgical Failure 제외</label>
+                        <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-sac${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Sacrifice 제외</label>
+                    </div>
+                </div>
+            `;
+            
+            finalHtml += `<div class="card" style="border-left:5px solid var(--red)">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
         const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:#1565c0; color:#fff; transition:0.2s; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${window.isAgeMode ? '📈 주령(Age) 연속 보기' : '🕒 시점(POD) 보기'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
@@ -1428,16 +1440,18 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         new Chart(document.getElementById(infLocChartId), { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' }, { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' }, { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 }, ...(infMaxY ? { max: infMaxY } : {}) } } } });
 
         if (deadRats.length > 0) {
-            let minAge = 999, maxAge = 0; const deathByAge = {};
-            rats.forEach(r => { const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6; let endAge = arrAge; if(r.status === '사망' && r.deathDate && r.arrivalDate) { endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate)) / (1000*60*60*24*7)); const w = Math.floor(endAge); deathByAge[w] = (deathByAge[w] || 0) + 1; } else if (r.arrivalDate) { endAge = arrAge + ((new Date() - new Date(r.arrivalDate)) / (1000*60*60*24*7)); } if(endAge < minAge) minAge = Math.floor(endAge); if(endAge > maxAge) maxAge = Math.ceil(endAge); });
-            if(minAge === 999) minAge = 6;
-            const targetMinAge = (fixedOptions && fixedOptions.minAge !== undefined) ? Math.floor(fixedOptions.minAge) : (minAge === 999 ? 6 : minAge);
-            const targetMaxAge = (fixedOptions && fixedOptions.maxAge !== undefined) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
-            const survLabels = [], survData = []; let currentAlive = rats.length;
-            for (let w = targetMinAge; w <= targetMaxAge; w++) { survLabels.push(`${w}주령`); if (deathByAge[w]) currentAlive -= deathByAge[w]; survData.push((currentAlive / rats.length) * 100); }
-            new Chart(document.getElementById(sChartId), { type: 'line', data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] }, options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
+            // 전역에 원본 데이터 캐싱 (체크박스 토글 시 재계산용)
+            if(!window.survDataCache) window.survDataCache = {};
+            window.survDataCache[uniqueSuffix] = {
+                allRats: rats, // 🌟 ratDataList -> rats 로 수정
+                fixedOpt: fixedOptions
+            };
+
+            // 차트 렌더링 호출 (지연 실행)
+            setTimeout(() => { updateSurvivalChart(uniqueSuffix, sChartId); }, 50);
+
             const codCounts = {}; deadRats.forEach(r => { const cod = r.cod || extractLegacyCod(r.codFull) || 'Unknown'; codCounts[cod] = (codCounts[cod] || 0) + 1; });
-            const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; rats.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; });
+            const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; rats.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; }); // 🌟 ratDataList -> rats 로 수정
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
             const codBgColors = Object.keys(codCounts).map(k => typeof codColors !== 'undefined' && codColors[k] ? codColors[k] : '#C9CBCF');
             new Chart(document.getElementById(codChartId), { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: codBgColors }] }, options: dOpt });
@@ -1649,8 +1663,20 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             deadRats.sort((a, b) => { const cA = Number(a.cohort) || 0; const cB = Number(b.cohort) || 0; if (cA !== cB) return cA - cB; return a.ratId.localeCompare(b.ratId); });
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
             deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#e65100; font-weight:bold;">(+${r.codSec.join(', ')})</span>` : ''; survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}${secCodStr}</span></td></tr>`; });
-            survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-';
-            finalHtml += `<div class="card" style="border-left:5px solid var(--red)"><h4>⚰️ 사망 분석 (${deadRats.length}) - 생존율 (주령 기준) <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;">[사망개체 평균 생존: POD ${avgPodStr}]</span></h4><div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
+            survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
+            
+            // 🔥 체크박스 UI 삽입
+            const survHeaderHtml = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h4 style="margin:0;">⚰️ 사망 분석 (${deadRats.length}) - 생존율 <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;" id="surv-avg-txt${uniqueSuffix}">[평균 생존: POD ${avgPodStr}]</span></h4>
+                    <div style="display:flex; gap:15px; font-size:0.85rem;">
+                        <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-surgfail${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Surgical Failure 제외</label>
+                        <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-sac${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Sacrifice 제외</label>
+                    </div>
+                </div>
+            `;
+            
+            finalHtml += `<div class="card" style="border-left:5px solid var(--red)">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
         const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:#1565c0; color:#fff; transition:0.2s; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${window.isAgeMode ? '📈 주령(Age) 연속 보기' : '🕒 시점(POD) 보기'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
@@ -1690,14 +1716,16 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         new Chart(document.getElementById(infLocChartId), { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' }, { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' }, { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 }, ...(infMaxY ? { max: infMaxY } : {}) } } } });
 
         if (deadRats.length > 0) {
-            let minAge = 999, maxAge = 0; const deathByAge = {};
-            ratDataList.forEach(r => { const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6; let endAge = arrAge; if(r.status === '사망' && r.deathDate && r.arrivalDate) { endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate)) / (1000*60*60*24*7)); const w = Math.floor(endAge); deathByAge[w] = (deathByAge[w] || 0) + 1; } else if (r.arrivalDate) { endAge = arrAge + ((new Date() - new Date(r.arrivalDate)) / (1000*60*60*24*7)); } if(endAge < minAge) minAge = Math.floor(endAge); if(endAge > maxAge) maxAge = Math.ceil(endAge); });
-            if(minAge === 999) minAge = 6;
-            const targetMinAge = (fixedOptions && fixedOptions.minAge !== undefined) ? Math.floor(fixedOptions.minAge) : (minAge === 999 ? 6 : minAge);
-            const targetMaxAge = (fixedOptions && fixedOptions.maxAge !== undefined) ? Math.ceil(fixedOptions.maxAge) : Math.ceil(maxAge);
-            const survLabels = [], survData = []; let currentAlive = ratDataList.length;
-            for (let w = targetMinAge; w <= targetMaxAge; w++) { survLabels.push(`${w}주령`); if (deathByAge[w]) currentAlive -= deathByAge[w]; survData.push((currentAlive / ratDataList.length) * 100); }
-            new Chart(document.getElementById(sChartId), { type: 'line', data: { labels: survLabels, datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] }, options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } } });
+            // 전역에 원본 데이터 캐싱 (체크박스 토글 시 재계산용)
+            if(!window.survDataCache) window.survDataCache = {};
+            window.survDataCache[uniqueSuffix] = {
+                allRats: ratDataList,
+                fixedOpt: fixedOptions
+            };
+
+            // 차트 렌더링 호출 (지연 실행)
+            setTimeout(() => { updateSurvivalChart(uniqueSuffix, sChartId); }, 50);
+
             const codCounts = {}; deadRats.forEach(r => { const cod = r.cod || extractLegacyCod(r.codFull) || 'Unknown'; codCounts[cod] = (codCounts[cod] || 0) + 1; });
             const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; ratDataList.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; });
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
@@ -1747,6 +1775,88 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
     } catch (e) { console.error(e); resDiv.innerHTML = headerHtml + `<p style="color:red">오류 발생: ${e.message}</p>`; }
 }
+
+// ==========================================
+// 생존율(Survival Rate) 차트 동적 업데이트 함수
+// ==========================================
+window.updateSurvivalChart = function(suffix, chartId) {
+    const cache = window.survDataCache[suffix];
+    if(!cache) return;
+    
+    const excSurgFail = document.getElementById(`chk-exc-surgfail${suffix}`).checked;
+    const excSac = document.getElementById(`chk-exc-sac${suffix}`).checked;
+
+    // 필터링 적용 (해당 원인이면 전체 집단에서 아예 배제)
+    const validRats = cache.allRats.filter(r => {
+        const cod = r.cod || extractLegacyCod(r.codFull) || '';
+        if(excSurgFail && cod === 'Surgical Failure') return false;
+        if(excSac && cod === 'Sacrifice') return false;
+        return true;
+    });
+
+    let minAge = 999, maxAge = 0; 
+    const deathByAge = {};
+    let totalPod = 0, validPodCnt = 0;
+
+    validRats.forEach(r => {
+        const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+        let endAge = arrAge;
+        
+        if (r.status === '사망' && r.deathDate) {
+            if(r.arrivalDate) endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
+            const w = Math.floor(endAge);
+            deathByAge[w] = (deathByAge[w] || 0) + 1;
+            
+            if (r.surgeryDate) {
+                const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000);
+                totalPod += pod;
+                validPodCnt++;
+            }
+        } else if (r.arrivalDate) {
+            endAge = arrAge + ((new Date() - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
+        }
+        
+        if(endAge < minAge) minAge = Math.floor(endAge);
+        if(endAge > maxAge) maxAge = Math.ceil(endAge);
+    });
+
+    if(minAge === 999) minAge = 6;
+    const targetMinAge = (cache.fixedOpt && cache.fixedOpt.minAge !== undefined) ? Math.floor(cache.fixedOpt.minAge) : minAge;
+    const targetMaxAge = (cache.fixedOpt && cache.fixedOpt.maxAge !== undefined) ? Math.ceil(cache.fixedOpt.maxAge) : Math.ceil(maxAge);
+
+    const survLabels = [], survData = [];
+    let currentAlive = validRats.length; // 필터링된 총 마리수 기준
+
+    for (let w = targetMinAge; w <= targetMaxAge; w++) {
+        survLabels.push(`${w}주령`);
+        if (deathByAge[w]) currentAlive -= deathByAge[w];
+        survData.push(validRats.length > 0 ? (currentAlive / validRats.length) * 100 : 0);
+    }
+
+    // 평균 생존 텍스트 갱신
+    const avgTxtEl = document.getElementById(`surv-avg-txt${suffix}`);
+    if(avgTxtEl) {
+        avgTxtEl.innerText = `[사망개체 평균 생존: POD ${validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) : '-'}일] (N=${validRats.length})`;
+    }
+
+    // 차트 업데이트 로직
+    let chartInstance = Chart.getChart(chartId);
+    
+    if (chartInstance) {
+        chartInstance.data.labels = survLabels;
+        chartInstance.data.datasets[0].data = survData;
+        chartInstance.update();
+    } else {
+        new Chart(document.getElementById(chartId), {
+            type: 'line',
+            data: { 
+                labels: survLabels, 
+                datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] 
+            },
+            options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
+        });
+    }
+};
 
 // [공통] 필터 적용 로직 (개체 숨김 + 시점 숨김 동시 적용)
 function applyChartFilters(chart) {
@@ -2806,5 +2916,88 @@ window.saveGeneralMemo = async function(docId) {
     } catch(e) {
         console.error(e);
         alert("메모 저장 실패: " + e.message);
+    }
+};
+
+
+// ==========================================
+// 📈 생존율(Survival Rate) 차트 동적 업데이트 함수
+// ==========================================
+window.updateSurvivalChart = function(suffix, chartId) {
+    const cache = window.survDataCache[suffix];
+    if(!cache) return;
+    
+    const excSurgFail = document.getElementById(`chk-exc-surgfail${suffix}`).checked;
+    const excSac = document.getElementById(`chk-exc-sac${suffix}`).checked;
+
+    // 필터링 적용 (해당 원인이면 전체 집단(N)에서 아예 배제)
+    const validRats = cache.allRats.filter(r => {
+        const cod = r.cod || extractLegacyCod(r.codFull) || '';
+        if(excSurgFail && cod === 'Surgical Failure') return false;
+        if(excSac && cod === 'Sacrifice') return false;
+        return true;
+    });
+
+    let minAge = 999, maxAge = 0; 
+    const deathByAge = {};
+    let totalPod = 0, validPodCnt = 0;
+
+    validRats.forEach(r => {
+        const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+        let endAge = arrAge;
+        
+        if (r.status === '사망' && r.deathDate) {
+            if(r.arrivalDate) endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
+            const w = Math.floor(endAge);
+            deathByAge[w] = (deathByAge[w] || 0) + 1;
+            
+            if (r.surgeryDate) {
+                const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000);
+                totalPod += pod;
+                validPodCnt++;
+            }
+        } else if (r.arrivalDate) {
+            endAge = arrAge + ((new Date() - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
+        }
+        
+        if(endAge < minAge) minAge = Math.floor(endAge);
+        if(endAge > maxAge) maxAge = Math.ceil(endAge);
+    });
+
+    if(minAge === 999) minAge = 6;
+    const targetMinAge = (cache.fixedOpt && cache.fixedOpt.minAge !== undefined) ? Math.floor(cache.fixedOpt.minAge) : minAge;
+    const targetMaxAge = (cache.fixedOpt && cache.fixedOpt.maxAge !== undefined) ? Math.ceil(cache.fixedOpt.maxAge) : Math.ceil(maxAge);
+
+    const survLabels = [], survData = [];
+    let currentAlive = validRats.length; // 필터링된 총 마리수(N)
+
+    for (let w = targetMinAge; w <= targetMaxAge; w++) {
+        survLabels.push(`${w}주령`);
+        if (deathByAge[w]) currentAlive -= deathByAge[w];
+        survData.push(validRats.length > 0 ? (currentAlive / validRats.length) * 100 : 0);
+    }
+
+    // 평균 생존 텍스트 갱신 (전체 N수 포함)
+    const avgTxtEl = document.getElementById(`surv-avg-txt${suffix}`);
+    if(avgTxtEl) {
+        avgTxtEl.innerText = `[평균 생존: POD ${validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) : '-'}일] (유효 N=${validRats.length})`;
+    }
+
+    // 차트 업데이트 로직
+    let chartInstance = Chart.getChart(chartId);
+    
+    if (chartInstance) {
+        chartInstance.data.labels = survLabels;
+        chartInstance.data.datasets[0].data = survData;
+        chartInstance.update();
+    } else {
+        new Chart(document.getElementById(chartId), {
+            type: 'line',
+            data: { 
+                labels: survLabels, 
+                datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] 
+            },
+            options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
+        });
     }
 };
