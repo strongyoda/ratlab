@@ -1062,16 +1062,15 @@ async function saveCodFinal() {
 }
 
 // ============================================================
-//  AI 논문 작성용 풀-컨텍스트 데이터 추출 (주령/POD 초밀착 강제 주입 및 프롬프트 강화판)
-// ============================================================
-// ============================================================
-//  AI 논문 작성용 풀-컨텍스트 데이터 추출 (Primary/Secondary 인지 룰 추가)
+//  AI 논문 작성용 풀-컨텍스트 데이터 추출 (Full Coverage Edition)
+//  ✨ 추가됨: generalMemo, areList(혈관 위치), refAge, group, 코호트 그룹별 메모,
+//             mrConfig/mrChecks(코호트 MR 스케줄), 사진 메타데이터
 // ============================================================
 async function exportForAI() {
     const btn = document.getElementById('btn-extract-ai');
     const statusText = document.getElementById('ai-extract-status');
     
-    if(!confirm("모든 데이터를 분석하여 AI가 읽기 좋은 텍스트 파일로 추출하시겠습니까?\n(강력한 AI 프롬프트와 함께 모든 개별 측정치에 주령 및 POD가 각인됩니다.)")) return;
+    if(!confirm("모든 데이터를 분석하여 AI가 읽기 좋은 텍스트 파일로 추출하시겠습니까?\n(주령/POD/메모 등 홈페이지에 기록된 모든 데이터가 풀 컨텍스트로 추출됩니다.)")) return;
 
     btn.disabled = true;
     btn.style.background = '#ccc';
@@ -1086,8 +1085,9 @@ async function exportForAI() {
             db.collection("doseLogs").get()
         ]);
 
-        const cohortInfo = {};
-        cSnap.forEach(doc => { cohortInfo[doc.id] = doc.data().memo || "조건 미기재"; });
+        // 🌟 코호트 노트 전체를 그대로 보관 (memo, memo_G1~Gn, mrConfig, mrChecks 모두)
+        const cohortNotes = {};
+        cSnap.forEach(doc => { cohortNotes[doc.id] = doc.data() || {}; });
 
         const measData = {};
         mSnap.forEach(doc => { const d = doc.data(); if (!measData[d.ratId]) measData[d.ratId] = []; measData[d.ratId].push(d); });
@@ -1102,10 +1102,12 @@ async function exportForAI() {
         aiText += `당신은 세계 최고 수준의 신경외과 및 기초의학(Animal Model) 연구원입니다. 아래 제공되는 데이터는 뇌동맥류(Cerebral Aneurysm, ARE) 동물 모델(Rat)의 Raw Data입니다.\n\n`;
         aiText += `[🚨 매우 중요한 분석 지침 - 반드시 준수할 것]\n`;
         aiText += `1. **주령(Age in weeks, w)의 절대적 중요성**: 쥐의 주령은 뇌동맥류 발생 및 파열(사망)에 결정적인 생리학적 요인입니다. 단순히 W1, W2 같은 시점만 보지 말고, 각 측정 데이터에 함께 각인된 '주령(예: 10.2w)'을 집중적으로 추적하십시오.\n`;
-        aiText += `2. **시간축의 이중 이해 (Age & POD)**: 모든 개별 데이터에는 '(주령, POD/Ref.D)' 형태의 시간표표가 붙어있습니다. POD를 통해 질병 유도 후의 시간을 파악하고, Age를 통해 노화 상태를 교차 분석하십시오.\n`;
-        aiText += `3. **대조군(Sham/Naïve) 해석 주의**: 타임라인에 'Reference Date'가 기재된 개체는 수술을 받지 않은 대조군입니다. 이들을 절대 수술 개체로 착각하지 마십시오.\n`;
+        aiText += `2. **시간축의 이중 이해 (Age & POD)**: 모든 개별 데이터에는 '(주령, POD/Ref.D)' 형태의 시간표시가 붙어있습니다. POD를 통해 질병 유도 후의 시간을 파악하고, Age를 통해 노화 상태를 교차 분석하십시오.\n`;
+        aiText += `3. **대조군(Sham/Naïve) 해석 주의**: 'Reference Date'가 기재된 개체는 수술을 받지 않은 대조군입니다. 이들의 surgeryDate는 그래프 정렬용 가상 날짜이며, 실제 수술은 수행되지 않았습니다.\n`;
         aiText += `4. **데이터 환각(Hallucination) 절대 금지**: 데이터가 없으면 주변 개체값으로 유추하여 채우지 말고 '분석 불가'로 명시하십시오.\n`;
-        aiText += `5. **복합 사인 인지 (Primary & Secondary COD)**: 'Cause of Death' 항목이 Primary와 Secondary로 나뉘어 제공됩니다. Secondary(부원인/동반질환)에 기재된 질환(예: SAH, Infarction 등)도 해당 개체에서 확실히 발생한 것으로 간주하여 발생률 통계 및 교차 분석에 반드시 포함시키십시오.\n\n`;
+        aiText += `5. **복합 사인 인지 (Primary & Secondary COD)**: 'Cause of Death' 항목이 Primary와 Secondary로 나뉘어 제공됩니다. Secondary(부원인/동반질환)에 기재된 질환(예: SAH, Infarction 등)도 해당 개체에서 확실히 발생한 것으로 간주하여 발생률 통계 및 교차 분석에 반드시 포함시키십시오.\n`;
+        aiText += `6. **메모 절대 무시 금지**: General Memo, Daily Memo, Sample Memo, Photo Memo 등에는 수치로 환원되지 않는 핵심 임상 관찰(이상 행동, 출혈, 체중 급감 원인 등)이 적혀있습니다. 이 자유 서술 메모를 수치 데이터와 반드시 교차 참조하여 분석하십시오.\n`;
+        aiText += `7. **ARE 위치 정보 활용**: ARE List에 기재된 동맥(BA, A-com, ICA, MCA 등) 및 좌우(L/R) 정보는 동맥류 호발 부위 통계에 핵심입니다.\n\n`;
         aiText += `=================================================\n\n`;
         
         aiText += `[1. COHORT EXPERIMENTAL CONDITIONS (코호트별 실험 조건)]\n`;
@@ -1114,7 +1116,31 @@ async function exportForAI() {
         rSnap.forEach(doc => { const r = doc.data(); if (!ratsByCohort[r.cohort]) ratsByCohort[r.cohort] = []; ratsByCohort[r.cohort].push(r); });
         const sortedCohorts = Object.keys(ratsByCohort).sort((a,b) => Number(a) - Number(b));
 
-        sortedCohorts.forEach(c => { aiText += `- Cohort ${c}: ${cohortInfo[c] || '메모 없음'}\n`; });
+        sortedCohorts.forEach(c => {
+            const note = cohortNotes[c] || {};
+            aiText += `\n- Cohort ${c}:\n`;
+            aiText += `    * 전체 메모: ${note.memo || '메모 없음'}\n`;
+
+            // 🌟 [신규] 그룹별(G1, G2, ...) 메모 추출
+            const grpMemoKeys = Object.keys(note).filter(k => k.startsWith('memo_G')).sort();
+            if (grpMemoKeys.length > 0) {
+                grpMemoKeys.forEach(k => {
+                    const grp = k.replace('memo_', ''); // "G1"
+                    if (note[k]) aiText += `    * 그룹 ${grp} 메모: ${note[k]}\n`;
+                });
+            }
+
+            // 🌟 [신규] MR 촬영 스케줄(예정) + 실제 촬영 체크 여부
+            if (note.mrConfig && note.mrConfig.length > 0) {
+                aiText += `    * MR 촬영 예정 시점: [${note.mrConfig.join(', ')}]\n`;
+            }
+            if (note.mrChecks) {
+                const checkedTps = Object.keys(note.mrChecks).filter(tp => note.mrChecks[tp]);
+                if (checkedTps.length > 0) {
+                    aiText += `    * MR 촬영 완료(Cohort 단위 체크): [${checkedTps.join(', ')}]\n`;
+                }
+            }
+        });
         aiText += `\n=================================================\n\n`;
 
         aiText += `[2. RAT TIMELINES & ALL HIGH-DENSITY LOGS]\n`;
@@ -1124,7 +1150,9 @@ async function exportForAI() {
             const rats = ratsByCohort[c].sort((a, b) => a.ratId.localeCompare(b.ratId));
 
             rats.forEach(r => {
-                aiText += `\n▶ Rat ID: ${r.ratId}\n`;
+                aiText += `\n▶ Rat ID: ${r.ratId}`;
+                if (r.group) aiText += ` (Group: ${r.group})`; // 🌟 [신규] 명시적 group 출력
+                aiText += `\n`;
                 
                 const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
                 const arrDate = r.arrivalDate;
@@ -1155,24 +1183,35 @@ async function exportForAI() {
                 };
 
                 const cod = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '-');
-                const codSecStr = (r.codSec && r.codSec.length > 0) ? r.codSec.join(', ') : 'None'; // 🌟 부원인 추출
+                const codSecStr = (r.codSec && r.codSec.length > 0) ? r.codSec.join(', ') : 'None';
                 
                 const deathTempStr = r.deathDate ? getTemporalStr(r.deathDate) : '';
                 aiText += `  - Status: ${r.status} ${r.deathDate ? `(Death Date: ${r.deathDate}${deathTempStr})` : ''}\n`;
                 aiText += `  - Cause of Death: Primary [${cod}] / Secondary [${codSecStr}]\n`;
                 
+                // 🌟 [개선] ARE 요약 (counts) + 위치 상세 리스트 (areList) 둘 다 출력
                 let areStr = r.are || '-';
                 if (r.areCounts) {
                     areStr += ` (Micro: ${r.areCounts.micro || 0}, Macro: ${r.areCounts.macro || 0}, Unknown: ${r.areCounts.unk || 0})`;
                 }
-                aiText += `  - Aneurysm (ARE): ${areStr}\n`;
+                aiText += `  - Aneurysm (ARE) Summary: ${areStr}\n`;
+
+                if (r.areList && r.areList.length > 0) {
+                    const areLocStr = r.areList.map(a => {
+                        const loc = (a.side === 'BA' || a.side === 'A-com') ? a.side : `${a.side || '-'} ${a.art && a.art !== '-' ? a.art : ''}`.trim();
+                        return `${a.type || '?'}(${loc})`;
+                    }).join(', ');
+                    aiText += `  - Aneurysm (ARE) Locations: [${areLocStr}]\n`;
+                }
 
                 aiText += `  - Timeline Events:\n`;
                 aiText += `    * Arrival: ${r.arrivalDate || '-'} (Age: ${arrAge.toFixed(1)}w)\n`;
                 if (r.ovxDate) aiText += `    * OVX (Ovariectomy): ${r.ovxDate}${getTemporalStr(r.ovxDate)}\n`;
                 
                 if (r.isNonInduction) {
-                    aiText += `    * Reference Date (Sham/Naïve, NO Ligation): ${r.surgeryDate || '-'}${getTemporalStr(r.surgeryDate)}\n`;
+                    // 🌟 [개선] sham 개체의 refAge 명시
+                    const refAgeStr = r.refAge ? ` [Ref.Age: ${r.refAge}w]` : '';
+                    aiText += `    * Reference Date (Sham/Naïve, NO Ligation): ${r.surgeryDate || '-'}${getTemporalStr(r.surgeryDate)}${refAgeStr}\n`;
                 } else {
                     aiText += `    * Ligation Surgery (Day 0): ${r.surgeryDate || '-'}${getTemporalStr(r.surgeryDate)}\n`;
                 }
@@ -1196,6 +1235,13 @@ async function exportForAI() {
                 if (r.sampleType && r.sampleType !== 'Fail') {
                     aiText += `    * Sample Acquired: ${r.sampleType} on ${r.sampleDate || '-'}${getTemporalStr(r.sampleDate)} (Memo: ${r.sampleMemo || 'None'})\n`;
                 } else if (r.sampleType === 'Fail') { aiText += `    * Sample Acquired: Failed\n`; }
+
+                // 🌟 [신규] General Memo (상세페이지의 노란 자유서술 메모) 출력
+                if (r.generalMemo && r.generalMemo.trim()) {
+                    // 줄바꿈을 ' / '로 치환하여 한 줄로 압축 (AI 파싱 효율 향상)
+                    const compactMemo = r.generalMemo.replace(/\r?\n+/g, ' / ').trim();
+                    aiText += `  - 🟡 General Memo (실험 중 특이사항 자유서술): ${compactMemo}\n`;
+                }
 
                 const ratMeas = measData[r.ratId] || [];
                 if (ratMeas.length > 0) {
@@ -1233,10 +1279,13 @@ async function exportForAI() {
                     aiText += `  - Dosing History: ${doseStrArr.join(' | ')}\n`;
                 }
 
+                // 🌟 [개선] 사진 메모를 시점/날짜와 함께 출력 (메타데이터 포함)
                 if (r.photos && r.photos.length > 0) {
                     const photoStrs = r.photos.map(p => {
-                        let photoTemp = p.photoDate ? getTemporalStr(p.photoDate) : '';
-                        return `[${p.timepoint || p.photoDate || 'Unspecified'}${photoTemp}] ${p.memo || 'No memo'}`;
+                        const dateInfo = p.photoDate || '';
+                        const tempStr = p.photoDate ? getTemporalStr(p.photoDate) : '';
+                        const tpInfo = p.timepoint || 'Unspecified';
+                        return `[${tpInfo}${dateInfo ? ' / ' + dateInfo : ''}${tempStr}] ${p.memo || 'No memo'}`;
                     });
                     aiText += `  - Researcher Memos (from Photos): ${photoStrs.join(' | ')}\n`;
                 }
