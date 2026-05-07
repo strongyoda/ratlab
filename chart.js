@@ -482,7 +482,11 @@ async function loadDetailData(forceId = null) {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                     <div style="display:flex; align-items:center; gap:10px;">
                         <h3 style="margin:0; font-size:1.5rem; color:var(--navy);">${id}</h3>
-                        <span class="badge" style="background:#e3f2fd; color:#1565c0; border:1px solid #bbdefb; border-radius:6px; padding:2px 8px; font-weight:bold; font-size:0.85rem;">${rat.group || 'G1'}</span>
+                        <select onchange="changeRatGroup('${docId}', '${id}', this.value)"
+                                title="그룹 변경 (선택 시 모든 연동 데이터가 새 ID로 자동 이동)"
+                                style="background:#e3f2fd; color:#1565c0; border:1px solid #bbdefb; border-radius:6px; padding:2px 8px; font-weight:bold; font-size:0.85rem; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none; -moz-appearance:none; padding-right:22px; background-image:url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'10\\' viewBox=\\'0 0 24 24\\' fill=\\'%231565c0\\'><path d=\\'M7 10l5 5 5-5z\\'/></svg>'); background-repeat:no-repeat; background-position:right 6px center;">
+                            ${[0,1,2,3,4,5].map(n => `<option value="${n}" ${currentGroupNum == n ? 'selected' : ''}>G${n}</option>`).join('')}
+                        </select>
                     </div>
                     <button class="btn-small" onclick="openSimpleCod('${docId}', '${rat.cod || ''}', '${rat.are || ''}', '${rat.deathDate || getTodayStr()}')" 
                             style="background:${rat.status==='생존'?'var(--green)':'var(--red)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="클릭하여 사망 정보 수정">
