@@ -509,7 +509,7 @@ else if(view === 'daily') {
                         <input type="number" id="dc-c" placeholder="코호트" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:6px; border:1px solid #ccc; text-align:center; outline:none;">
                         <input type="number" id="dc-r" placeholder="번호" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:6px; border:1px solid #ccc; text-align:center; outline:none;">
                         <select id="dc-g" onchange="mkId('dc')" style="width:65px; padding:8px 4px; border-radius:6px; border:1px solid #ccc; outline:none; cursor:pointer;">
-                            <option value="1">G1</option><option value="2">G2</option><option value="3">G3</option>
+                            <option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option>
                             <option value="4">G4</option><option value="5">G5</option>
                         </select>
                     </div>
@@ -554,11 +554,11 @@ else if(view === 'daily') {
         document.getElementById('dc-date').value = getTodayStr();
     }
     else if(view === 'add') { 
-        main.innerHTML = `<div class="card"><h3>대량 등록</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><div class="input-group" style="flex:1;"><label>코호트</label><input type="number" id="add-c"></div><div class="input-group" style="flex:1;"><label>그룹</label><select id="add-g" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div></div><div style="display:flex; gap:10px;"><input type="number" id="add-s" placeholder="시작번호"><input type="number" id="add-e" placeholder="끝번호"></div><div class="input-group" style="margin-top:10px;"><label>반입일</label><input type="date" id="add-d"></div><button class="btn btn-green" onclick="saveBulk()">등록</button></div>`; 
+        main.innerHTML = `<div class="card"><h3>대량 등록</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><div class="input-group" style="flex:1;"><label>코호트</label><input type="number" id="add-c"></div><div class="input-group" style="flex:1;"><label>그룹</label><select id="add-g" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div></div><div style="display:flex; gap:10px;"><input type="number" id="add-s" placeholder="시작번호"><input type="number" id="add-e" placeholder="끝번호"></div><div class="input-group" style="margin-top:10px;"><label>반입일</label><input type="date" id="add-d"></div><button class="btn btn-green" onclick="saveBulk()">등록</button></div>`; 
         document.getElementById('add-d').value = getTodayStr(); 
     }
     else if(view === 'dose') { 
-        main.innerHTML = `<div class="card"><h3>투약 계산기</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><input type="number" id="ds-c" placeholder="코호트" oninput="upDose()" style="flex:1;"><select id="ds-g" onchange="upDose()" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div><table><thead><tr><th>번</th><th>WT(g)</th><th>ID</th></tr></thead><tbody>${Array.from({length:12},(_,i)=>`<tr><td><input type="number" class="dn" oninput="upDose()"></td><td><input type="number" class="dw"></td><td class="di">-</td></tr>`).join('')}</tbody></table><button class="btn btn-blue" onclick="saveDose()" style="margin-top:15px;">계산 및 저장</button><div id="dose-res" style="display:none;"></div></div>`; 
+        main.innerHTML = `<div class="card"><h3>투약 계산기</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><input type="number" id="ds-c" placeholder="코호트" oninput="upDose()" style="flex:1;"><select id="ds-g" onchange="upDose()" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div><table><thead><tr><th>번</th><th>WT(g)</th><th>ID</th></tr></thead><tbody>${Array.from({length:12},(_,i)=>`<tr><td><input type="number" class="dn" oninput="upDose()"></td><td><input type="number" class="dw"></td><td class="di">-</td></tr>`).join('')}</tbody></table><button class="btn btn-blue" onclick="saveDose()" style="margin-top:15px;">계산 및 저장</button><div id="dose-res" style="display:none;"></div></div>`; 
     }
     else if(view === 'rec') { 
         let timeOpts = `<option>Manual</option><option>Arrival</option><option>D00</option><option>D0</option><option>D2</option>`;
@@ -569,7 +569,7 @@ else if(view === 'daily') {
             <div style="display:flex; gap:10px;">
                 <input type="number" id="re-c" placeholder="C" oninput="mkId('re')">
                 <input type="number" id="re-r" placeholder="N" oninput="mkId('re')">
-                <select id="re-g" onchange="mkId('re')" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select>
+                <select id="re-g" onchange="mkId('re')" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select>
             </div>
             <input type="text" id="re-id" readonly style="background:#eee; margin:10px 0;">
             <label style="font-size:0.8rem; font-weight:bold; color:var(--navy);">시점 선택</label>
