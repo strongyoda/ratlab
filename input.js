@@ -98,6 +98,7 @@ async function saveDaily() {
 
         if (savedCount > 0) {
             clearRatsCache();
+            invalidateDashboardDom(); // 🌟 대시보드 색상 즉시 반영
             alert("입력하신 데이터가 성공적으로 저장되었습니다!");
             
             // 입력창 초기화
