@@ -301,6 +301,7 @@ async function saveTotalEdit(ratDocId) {
     try {
         await batch.commit();
         clearRatsCache();
+        invalidateDashboardDom(); // 🌟 대시보드 색상 즉시 반영
         alert("성공적으로 저장되었습니다.");
         searchForEdit(); 
     } catch(e) {
@@ -442,6 +443,30 @@ async function deleteSelectedLogs() {
 
     try {
         await batch.commit();
+
+        // 🌟 [신규] 삭제된 데일리 로그가 있으면 해당 쥐의 lastScore 재계산
+        //          (searchLogsDel은 단일 쥐 범위라 log-rat-id 인풋에서 ID 가져옴)
+        if (dailies.length > 0) {
+            const ratIdInput = document.getElementById('log-rat-id');
+            const ratId = ratIdInput ? ratIdInput.value.trim() : '';
+            if (ratId) {
+                const [remainSnap, ratSnap] = await Promise.all([
+                    db.collection('dailyLogs').where('ratId', '==', ratId).orderBy('date', 'desc').limit(1).get(),
+                    db.collection('rats').where('ratId', '==', ratId).get()
+                ]);
+                if (!ratSnap.empty) {
+                    const ratRef = ratSnap.docs[0].ref;
+                    if (remainSnap.empty) {
+                        await ratRef.update({ lastScore: firebase.firestore.FieldValue.delete() });
+                    } else {
+                        await ratRef.update({ lastScore: remainSnap.docs[0].data().totalScore });
+                    }
+                }
+            }
+        }
+
+        clearRatsCache();
+        invalidateDashboardDom(); // 🌟 대시보드 색상 즉시 반영
         alert(`${count}개의 로그가 삭제되었습니다.`);
         searchLogsDel(); // 목록 갱신
     } catch(e) {
