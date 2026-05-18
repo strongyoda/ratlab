@@ -204,7 +204,10 @@ async function saveTotalEdit(ratDocId) {
         areVal = 'X';
     }
 
-    batch.update(ratRef, {
+    // 🌟 [수정] 데일리 로그 변경 시 rats.lastScore 자동 동기화를 위해
+    //          rat 업데이트를 즉시 batch 에 넣지 않고 객체로 보관해뒀다가
+    //          데일리 로그 순회 후 lastScore 합쳐서 한 번에 batch.update.
+    const ratUpdate = {
         status: document.getElementById('ed-status').value,
         cod: codVal,
         codSec: codSecVal, // 🌟 DB에 Secondary Array 별도 저장
@@ -221,11 +224,14 @@ async function saveTotalEdit(ratDocId) {
         sampleDate: document.getElementById('ed-sample-date').value,
         sampleMemo: document.getElementById('ed-sample-memo').value,
         mrDates: mrDatesArr
-    });
+    };
 
     const tables = ['meas-tbody', 'daily-tbody'];
-    const ratIdStr = document.getElementById('edit-id').value; 
+    const ratIdStr = document.getElementById('edit-id').value;
 
+    // 🌟 [신규] 가장 최근 데일리 점수 추적기 (대시보드 색상 동기화용)
+    let latestDailyScore = null;
+    let latestDailyDate = '';
     tables.forEach(tbodyId => {
         const rows = document.querySelectorAll(`#${tbodyId} tr`);
         rows.forEach(row => {
@@ -260,12 +266,18 @@ async function saveTotalEdit(ratDocId) {
                     const eye = Number(row.querySelector('.row-eye').value);
                     const note = row.querySelector('.row-note').value;
                     if(!date) return;
+                    const totalScore = act + fur + eye;
                     data = {
                         ratId: ratIdStr, date: date,
                         scores: { activity: act, fur: fur, eye: eye },
-                        totalScore: act + fur + eye,
+                        totalScore: totalScore,
                         note: note
                     };
+                    // 🌟 [신규] 활성(비삭제) 데일리 로그 중 가장 최근 점수 추적
+                    if (!latestDailyDate || date > latestDailyDate) {
+                        latestDailyDate = date;
+                        latestDailyScore = totalScore;
+                    }
                 }
 
                 if (isNew) {
@@ -278,6 +290,13 @@ async function saveTotalEdit(ratDocId) {
             }
         });
     });
+
+    // 🌟 [신규] 추적된 최신 데일리 점수가 있으면 ratUpdate 에 lastScore 합치기
+    //          → 대시보드 빨간/노란/초록불이 편집 즉시 동기화됨
+    if (latestDailyScore !== null) {
+        ratUpdate.lastScore = latestDailyScore;
+    }
+    batch.update(ratRef, ratUpdate);
 
     try {
         await batch.commit();
