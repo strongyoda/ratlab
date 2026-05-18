@@ -195,6 +195,26 @@ function clearRatsCache() {
     console.log("♻️ 데이터 변경 감지: 캐시가 초기화되었습니다.");
 }
 
+// [신규] 대시보드 DOM 강제 새로고침 (열려있는 대시보드 탭이 있으면)
+//        - 현재 보고 있는 탭이면 즉시 다시 로드
+//        - 다른 탭이면 DOM 비워둬서 다음 전환 시 자동 새로 로드
+function invalidateDashboardDom() {
+    if (typeof appTabs === 'undefined' || !Array.isArray(appTabs)) return;
+    const dashTab = appTabs.find(t => t.view === 'dash');
+    if (!dashTab) return;
+    const viewDiv = document.getElementById('view_' + dashTab.id);
+    if (!viewDiv) return;
+
+    if (typeof activeTabId !== 'undefined' && dashTab.id === activeTabId) {
+        // 사용자가 지금 대시보드 보고 있음 → 즉시 새로고침
+        viewDiv.innerHTML = `<div id="dash-container">로딩 중...</div>`;
+        if (typeof loadDashboard === 'function') loadDashboard();
+    } else {
+        // 다른 탭 보는 중 → DOM 비워서 다음 switchTab 때 자동 재로드되게 함
+        viewDiv.innerHTML = '';
+    }
+}
+
 
 function getTodayStr() {
     const now = new Date();
