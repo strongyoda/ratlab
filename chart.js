@@ -729,21 +729,39 @@ async function loadDetailData(forceId = null) {
 
         const ms = await db.collection("measurements").where("ratId", "==", id).get();
         const ds = await db.collection("doseLogs").where("ratId", "==", id).get();
+
+        // 🌟 [신규] 라벨(D0~D4, W1~W50)이 붙은 측정은 "실제 기록 날짜" 대신
+        //          "수술일 + POD"로 X축 위치를 환산해서 표준 시점에 정렬한다.
+        //          (BP는 날짜 없이 라벨 위주로 입력하므로 라벨 기준 정렬이 이전 코호트 비교에 유리)
+        //          체중(Manual)·투약기록 등 라벨 없는 데이터는 기존처럼 실제 날짜 사용.
+        const _surgDate = rat.surgeryDate ? new Date(rat.surgeryDate) : null;
+        const effectiveDateFor = (timepoint, recordDate) => {
+            if (_surgDate && timepoint && globalPodMap.hasOwnProperty(timepoint)) {
+                const e = new Date(_surgDate);
+                e.setDate(e.getDate() + globalPodMap[timepoint]);
+                return e.toISOString().split('T')[0]; // 수술일 + POD
+            }
+            return recordDate; // Manual / 날짜라벨 / 수술일 없음 → 실제 날짜
+        };
+
         const dataMap = {};
         ms.forEach(doc => {
             const v = doc.data();
-            const date = v.date;
-            if (!dataMap[date]) dataMap[date] = { date: date, label: v.timepoint || date, sbp: null, dbp: null, mean: null, wt: null };
-            if (v.sbp) dataMap[date].sbp = v.sbp;
-            if (v.dbp) dataMap[date].dbp = v.dbp;
-            if (v.mean) dataMap[date].mean = v.mean;
-            if (v.weight) dataMap[date].wt = v.weight;
-            if (v.timepoint && !dataMap[date].label.includes('W') && v.timepoint.includes('W')) dataMap[date].label = v.timepoint; 
+            const isStdLabel = v.timepoint && globalPodMap.hasOwnProperty(v.timepoint);
+            const key = effectiveDateFor(v.timepoint, v.date); // 차트 X축 위치(환산일)
+            if (!dataMap[key]) dataMap[key] = { date: key, realDate: v.date, label: v.timepoint || key, sbp: null, dbp: null, mean: null, wt: null };
+            if (v.sbp) dataMap[key].sbp = v.sbp;
+            if (v.dbp) dataMap[key].dbp = v.dbp;
+            if (v.mean) dataMap[key].mean = v.mean;
+            if (v.weight) dataMap[key].wt = v.weight;
+            // 라벨 우선순위: 표준 시점 라벨(D0,W1..)이 있으면 그걸 대표 라벨로
+            if (isStdLabel) dataMap[key].label = v.timepoint;
+            else if (v.timepoint && !dataMap[key].label.includes('W') && v.timepoint.includes('W')) dataMap[key].label = v.timepoint;
         });
         ds.forEach(doc => {
             const v = doc.data();
-            const date = v.date;
-            if (!dataMap[date]) dataMap[date] = { date: date, label: date, sbp: null, dbp: null, mean: null, wt: null };
+            const date = v.date; // 투약 기록은 라벨 없음 → 실제 날짜
+            if (!dataMap[date]) dataMap[date] = { date: date, realDate: date, label: date, sbp: null, dbp: null, mean: null, wt: null };
             if (v.weight) dataMap[date].wt = v.weight;
         });
         globalBpData = Object.values(dataMap).sort((a,b) => new Date(a.date) - new Date(b.date));
