@@ -729,39 +729,21 @@ async function loadDetailData(forceId = null) {
 
         const ms = await db.collection("measurements").where("ratId", "==", id).get();
         const ds = await db.collection("doseLogs").where("ratId", "==", id).get();
-
-        // 🌟 [신규] 라벨(D0~D4, W1~W50)이 붙은 측정은 "실제 기록 날짜" 대신
-        //          "수술일 + POD"로 X축 위치를 환산해서 표준 시점에 정렬한다.
-        //          (BP는 날짜 없이 라벨 위주로 입력하므로 라벨 기준 정렬이 이전 코호트 비교에 유리)
-        //          체중(Manual)·투약기록 등 라벨 없는 데이터는 기존처럼 실제 날짜 사용.
-        const _surgDate = rat.surgeryDate ? new Date(rat.surgeryDate) : null;
-        const effectiveDateFor = (timepoint, recordDate) => {
-            if (_surgDate && timepoint && globalPodMap.hasOwnProperty(timepoint)) {
-                const e = new Date(_surgDate);
-                e.setDate(e.getDate() + globalPodMap[timepoint]);
-                return e.toISOString().split('T')[0]; // 수술일 + POD
-            }
-            return recordDate; // Manual / 날짜라벨 / 수술일 없음 → 실제 날짜
-        };
-
         const dataMap = {};
         ms.forEach(doc => {
             const v = doc.data();
-            const isStdLabel = v.timepoint && globalPodMap.hasOwnProperty(v.timepoint);
-            const key = effectiveDateFor(v.timepoint, v.date); // 차트 X축 위치(환산일)
-            if (!dataMap[key]) dataMap[key] = { date: key, realDate: v.date, label: v.timepoint || key, sbp: null, dbp: null, mean: null, wt: null };
-            if (v.sbp) dataMap[key].sbp = v.sbp;
-            if (v.dbp) dataMap[key].dbp = v.dbp;
-            if (v.mean) dataMap[key].mean = v.mean;
-            if (v.weight) dataMap[key].wt = v.weight;
-            // 라벨 우선순위: 표준 시점 라벨(D0,W1..)이 있으면 그걸 대표 라벨로
-            if (isStdLabel) dataMap[key].label = v.timepoint;
-            else if (v.timepoint && !dataMap[key].label.includes('W') && v.timepoint.includes('W')) dataMap[key].label = v.timepoint;
+            const date = v.date;
+            if (!dataMap[date]) dataMap[date] = { date: date, label: v.timepoint || date, sbp: null, dbp: null, mean: null, wt: null };
+            if (v.sbp) dataMap[date].sbp = v.sbp;
+            if (v.dbp) dataMap[date].dbp = v.dbp;
+            if (v.mean) dataMap[date].mean = v.mean;
+            if (v.weight) dataMap[date].wt = v.weight;
+            if (v.timepoint && !dataMap[date].label.includes('W') && v.timepoint.includes('W')) dataMap[date].label = v.timepoint; 
         });
         ds.forEach(doc => {
             const v = doc.data();
-            const date = v.date; // 투약 기록은 라벨 없음 → 실제 날짜
-            if (!dataMap[date]) dataMap[date] = { date: date, realDate: date, label: date, sbp: null, dbp: null, mean: null, wt: null };
+            const date = v.date;
+            if (!dataMap[date]) dataMap[date] = { date: date, label: date, sbp: null, dbp: null, mean: null, wt: null };
             if (v.weight) dataMap[date].wt = v.weight;
         });
         globalBpData = Object.values(dataMap).sort((a,b) => new Date(a.date) - new Date(b.date));
@@ -1271,6 +1253,20 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const dynamicArrivalPod = arrCnt > 0 ? Math.round(arrSum / arrCnt) : -7;
         const dynamicD00Pod = d00Cnt > 0 ? Math.round(d00Sum / d00Cnt) : null;
 
+        // 🌟 [신규] 하이브리드 시간축 모드
+        //   - 단일 코호트 분석 화면(fixedOptions === null)에서만 + 사용자가 토글로 켰을 때만 활성
+        //   - 수술 전: 코호트 앵커(가장 늦은 수술일) 기준 달력 오프셋 (같은 달력일은 같은 X)
+        //   - 수술 후: 본인 수술일 기준 POD (모든 D0이 X=0)
+        //   - 비교 화면(fixedOptions !== null) / 토글 OFF / 주령 모드: 자동으로 기존 POD 동작
+        const useHybridMode = !fixedOptions && !window.isAgeMode && window.isHybridMode === true;
+        let cohortAnchorMs = null;
+        if (useHybridMode) {
+            const surgMsArr = rats.map(r => r.surgeryDate ? new Date(r.surgeryDate).getTime() : null).filter(Boolean);
+            if (surgMsArr.length > 0) cohortAnchorMs = Math.max(...surgMsArr);
+        }
+        // 하이브리드 활성 + 앵커 유효한 경우에만 실제 적용
+        const hybridActive = useHybridMode && cohortAnchorMs !== null;
+
         let globalMinX = 9999, globalMaxX = -9999;
         const scatterDataWt = [], scatterDataSbp = []; const existTicksWt = new Set(), existTicksSbp = new Set(); const tickLabelMap = {};
         let maxDataPod = 0, minWt = 9999, maxWt = 0, minSbp = 9999, maxSbp = 0;
@@ -1285,6 +1281,22 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                 let xVal = null;
                 if (window.isAgeMode) {
                     if (arrDt && d.date) xVal = arrAge + (new Date(d.date) - arrDt) / (1000 * 60 * 60 * 24 * 7);
+                } else if (hybridActive && r.surgeryDate && d.date) {
+                    // 🌟 하이브리드: 수술 전 = 앵커 기준 달력 / 수술 후 = 본인 수술일 기준 POD
+                    const measMs = new Date(d.date).getTime();
+                    const surgMs = new Date(r.surgeryDate).getTime();
+                    if (measMs >= surgMs) {
+                        // 수술 후 (D0 포함): W1/D2 같은 표준 라벨이면 그 값 우선, 아니면 일수 계산
+                        if (globalPodMap.hasOwnProperty(d.timepoint)) xVal = globalPodMap[d.timepoint];
+                        else xVal = Math.floor((measMs - surgMs) / 86400000);
+                        if (!d.timepoint || d.timepoint === 'Manual') labelText = `D${xVal}`;
+                        else labelText = d.timepoint;
+                    } else {
+                        // 수술 전: 앵커 기준 달력 오프셋 (음수)
+                        xVal = Math.floor((measMs - cohortAnchorMs) / 86400000);
+                        const dt = new Date(d.date);
+                        labelText = `${dt.getMonth() + 1}/${dt.getDate()}`;
+                    }
                 } else {
                     if (d.timepoint === 'Arrival') { xVal = dynamicArrivalPod; labelText = 'Arrival'; } 
                     else if (d.timepoint === 'D00' && dynamicD00Pod !== null) { xVal = dynamicD00Pod; labelText = 'D00'; } 
@@ -1307,8 +1319,24 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const standardKeys = Object.keys(globalPodMap).filter(k => k === 'D0' || k === 'D2' || k.startsWith('W'));
         standardKeys.forEach(k => { tickLabelMap[globalPodMap[k]] = k; });
         
-        const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (val === dynamicD00Pod ? "D00" : (tickLabelMap[val] || `D${val}`)));
-        const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (pod === dynamicD00Pod ? "D00" : (tickLabelMap[pod] || `D${pod}`));
+        // 🌟 [신규] 하이브리드 모드: 음수 X는 "M/D" 달력 날짜로 표시
+        const formatHybridLabel = (val) => {
+            const dt = new Date(cohortAnchorMs + val * 86400000);
+            return `${dt.getMonth() + 1}/${dt.getDate()}`;
+        };
+        const getColLabel = (val) => {
+            if (window.isAgeMode) return `${val.toFixed(1)}w`;
+            if (hybridActive && val < 0) return formatHybridLabel(val);
+            if (val === dynamicArrivalPod) return "Arrival";
+            if (val === dynamicD00Pod) return "D00";
+            return tickLabelMap[val] || `D${val}`;
+        };
+        const podToLabel = (pod) => {
+            if (hybridActive && pod < 0) return formatHybridLabel(pod);
+            if (pod === dynamicArrivalPod) return "Arrival";
+            if (pod === dynamicD00Pod) return "D00";
+            return tickLabelMap[pod] || `D${pod}`;
+        };
 
         const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: actualMinX, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < actualMinX) ? (arr[0] - 2) : actualMinX; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
         const rangeWtX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksWt);
@@ -1425,9 +1453,26 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             finalHtml += `<div class="card" style="border-left:5px solid var(--red)">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
-        const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:#1565c0; color:#fff; transition:0.2s; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${window.isAgeMode ? '📈 주령(Age) 연속 보기' : '🕒 시점(POD) 보기'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
+        // 🌟 [신규] 하이브리드 토글 버튼 — 단일 코호트 분석 화면에서만 노출
+        const hybridBtnHtml = !fixedOptions
+            ? `<button class="hybrid-toggle-btn" onclick="toggleHybridMode()" title="수술 전=달력 / 수술 후=POD" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${window.isHybridMode ? '#7e57c2' : '#ddd'}; color:${window.isHybridMode ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${window.isHybridMode ? '🔀 하이브리드 ON' : '📏 순수 POD'}</button>`
+            : '';
+        const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:#1565c0; color:#fff; transition:0.2s; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${window.isAgeMode ? '📈 주령(Age) 연속 보기' : '🕒 시점(POD) 보기'}</button>${hybridBtnHtml}<span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
 
-        const sortedTicksSbp = Array.from(existTicksSbp).sort((a, b) => a - b);
+        // 🌟 [신규] 데이터 없는 POD 컬럼도 표시 (수술 전 주말 등 누락 한눈에 보임)
+        //          기존: existTicks 에 있는 값만 → D-13 누락 등이 자동 압축돼서 시각적으로 사라짐
+        //          신규: existTicks 의 min~max 사이 정수 POD 모두 포함하여 연속 그리드 제공
+        const fillTicksInRange = (existSet) => {
+            if (existSet.size === 0) return [];
+            const arr = Array.from(existSet).map(Number).filter(n => !isNaN(n)).sort((a,b) => a - b);
+            if (window.isAgeMode) return arr; // 주령 연속 모드는 기존 동작 유지
+            const filled = new Set(arr);
+            const minT = Math.floor(arr[0]), maxT = Math.ceil(arr[arr.length-1]);
+            for (let i = minT; i <= maxT; i++) filled.add(i);
+            return Array.from(filled).sort((a,b) => a - b);
+        };
+
+        const sortedTicksSbp = fillTicksInRange(existTicksSbp);
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
@@ -1435,7 +1480,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
-        const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
+        const sortedTicksWt = fillTicksInRange(existTicksWt);
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
@@ -1703,7 +1748,20 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:#1565c0; color:#fff; transition:0.2s; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${window.isAgeMode ? '📈 주령(Age) 연속 보기' : '🕒 시점(POD) 보기'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
 
-        const sortedTicksSbp = Array.from(existTicksSbp).sort((a, b) => a - b);
+        // 🌟 [신규] 데이터 없는 POD 컬럼도 표시 (수술 전 주말 등 누락 한눈에 보임)
+        //          기존: existTicks 에 있는 값만 → D-13 누락 등이 자동 압축돼서 시각적으로 사라짐
+        //          신규: existTicks 의 min~max 사이 정수 POD 모두 포함하여 연속 그리드 제공
+        const fillTicksInRange = (existSet) => {
+            if (existSet.size === 0) return [];
+            const arr = Array.from(existSet).map(Number).filter(n => !isNaN(n)).sort((a,b) => a - b);
+            if (window.isAgeMode) return arr; // 주령 연속 모드는 기존 동작 유지
+            const filled = new Set(arr);
+            const minT = Math.floor(arr[0]), maxT = Math.ceil(arr[arr.length-1]);
+            for (let i = minT; i <= maxT; i++) filled.add(i);
+            return Array.from(filled).sort((a,b) => a - b);
+        };
+
+        const sortedTicksSbp = fillTicksInRange(existTicksSbp);
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
@@ -1711,7 +1769,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
-        const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
+        const sortedTicksWt = fillTicksInRange(existTicksWt);
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
