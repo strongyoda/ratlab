@@ -1577,8 +1577,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             if (!syncChartsSbp.includes(bpChart)) syncChartsSbp.push(bpChart);
             let __zoomSyncLock = false;
             function syncZoomPeers(source, peers) { if (__zoomSyncLock) return; __zoomSyncLock = true; const sx = source.scales.x; const sy = source.scales.y; peers.forEach(t => { if (!t || t === source || t._destroyed) return; if (t._syncType !== source._syncType) return; t.options.scales.x.min = sx.min; t.options.scales.x.max = sx.max; t.options.scales.y.min = sy.min; t.options.scales.y.max = sy.max; t.update('none'); }); __zoomSyncLock = false; }
-            wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); wtChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
-            bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp); bpChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
+            //wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); wtChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
+            //bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp); bpChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
             wtChart.update('none'); bpChart.update('none');
         }
     } catch (e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
@@ -1850,8 +1850,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         if (!syncChartsSbp.includes(bpChart)) syncChartsSbp.push(bpChart);
         let __zoomSyncLock = false;
         function syncZoomPeers(source, peers) { if (__zoomSyncLock) return; __zoomSyncLock = true; const sx = source.scales.x; const sy = source.scales.y; peers.forEach(t => { if (!t || t === source || t._destroyed) return; if (t._syncType !== source._syncType) return; if (t._syncScope !== source._syncScope) return; t.options.scales.x.min = sx.min; t.options.scales.x.max = sx.max; t.options.scales.y.min = sy.min; t.options.scales.y.max = sy.max; t.update('none'); }); __zoomSyncLock = false; }
-        wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); wtChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
-        bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp); bpChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
+        //wtChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsWt); wtChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsWt);
+        //bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp); bpChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
         wtChart.update('none'); bpChart.update('none');
 
     } catch (e) { console.error(e); resDiv.innerHTML = headerHtml + `<p style="color:red">오류 발생: ${e.message}</p>`; }
