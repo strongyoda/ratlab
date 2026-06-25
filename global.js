@@ -262,3 +262,19 @@ function extractLegacyCod(fullStr) {
 
     return 'Unknown';
 }
+
+// [추가] 대시보드 DOM 강제 새로고침 (데이터 변경 시 빨간불 등 즉시 반영)
+function invalidateDashboardDom() {
+    if (typeof appTabs === 'undefined' || !Array.isArray(appTabs)) return;
+    const dashTab = appTabs.find(t => t.view === 'dash');
+    if (!dashTab) return;
+    const viewDiv = document.getElementById('view_' + dashTab.id);
+    if (!viewDiv) return;
+
+    if (typeof activeTabId !== 'undefined' && dashTab.id === activeTabId) {
+        viewDiv.innerHTML = `<div id="dash-container">로딩 중...</div>`;
+        if (typeof loadDashboard === 'function') loadDashboard();
+    } else {
+        viewDiv.innerHTML = '';
+    }
+}
