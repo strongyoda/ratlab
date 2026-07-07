@@ -1154,27 +1154,14 @@ async function analyzeTrend() {
             const maxInf = Math.max(0, ...Object.values(infStats)); if (maxInf > globalMaxInfLoc) globalMaxInfLoc = maxInf;
         });
 
-        // [핵심] 글로벌 최솟값 계산 (모든 차트 동기화 기준점)
-        let globalMinX = 9999;
-        [groupTarget, groupControl].forEach(grp => {
-            grp.forEach(r => {
-                if (r.arrivalDate && r.surgeryDate) {
-                    const arrPod = Math.floor((new Date(r.arrivalDate) - new Date(r.surgeryDate)) / 86400000);
-                    if (arrPod < globalMinX) globalMinX = arrPod;
-                }
-                if (measMap[r.ratId]) {
-                    Object.keys(measMap[r.ratId]).forEach(timeKey => {
-                        let podVal = null;
-                        if (globalPodMap.hasOwnProperty(timeKey)) podVal = globalPodMap[timeKey];
-                        else if (r.surgeryDate && timeKey.match(/^\d{4}-\d{2}-\d{2}$/)) podVal = Math.floor((new Date(timeKey) - new Date(r.surgeryDate)) / 86400000);
-                        if (podVal !== null && podVal < globalMinX) globalMinX = podVal;
-                    });
-                }
-            });
-        });
-        if (globalMinX === 9999) globalMinX = -7;
+        // [하이브리드] 비교되는 두 그룹 전체의 평균 반입→수술 간격(avgGap)을 공유 기준으로 사용 (모든 차트 동기화)
+        let gapSum = 0, gapCnt = 0;
+        [groupTarget, groupControl].forEach(grp => grp.forEach(r => {
+            if (r.arrivalDate && r.surgeryDate) { const g = Math.round((new Date(r.surgeryDate) - new Date(r.arrivalDate)) / 86400000); if (g > 0) { gapSum += g; gapCnt++; } }
+        }));
+        const avgGap = gapCnt > 0 ? Math.round(gapSum / gapCnt) : 7;
 
-        const fixedOptions = { labels: globalLabels, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, maxPod: globalMaxPod, minAge: globalMinAge, maxAge: globalMaxAge, maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc, minX: globalMinX - 2 };
+        const fixedOptions = { labels: globalLabels, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, maxPod: globalMaxPod, minAge: globalMinAge, maxAge: globalMaxAge, maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc, minX: -avgGap - 2, avgGap: avgGap };
 
         const getTitleStr = (c, grpName) => {
             let parts = [];
@@ -1243,31 +1230,31 @@ async function loadGroupComparison() {
         const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
         const measSnaps = await Promise.all(measPromises);
 
-        let globalMinX = 0; let globalMaxX = 0; const unionStandardTicks = new Set(); 
-
+        let globalMaxX = 0; const unionStandardTicks = new Set();
         measSnaps.forEach((snap, i) => {
             const r = allRatsObj[i];
-            // [핵심] 진짜 날짜(True Date) 기반으로 통합 글로벌 minX 계산
-            if (r.arrivalDate && r.surgeryDate) {
-                const arrPod = Math.floor((new Date(r.arrivalDate) - new Date(r.surgeryDate)) / 86400000);
-                if (arrPod < globalMinX) globalMinX = arrPod;
-            }
-
             snap.forEach(d => {
                 const v = d.data();
                 let pod = null;
                 if (v.timepoint === 'Arrival') pod = (r.arrivalDate && r.surgeryDate) ? Math.floor((new Date(r.arrivalDate) - new Date(r.surgeryDate)) / 86400000) : null;
                 else if (globalPodMap.hasOwnProperty(v.timepoint)) pod = globalPodMap[v.timepoint];
                 else if (r.surgeryDate && v.date) pod = Math.floor((new Date(v.date) - new Date(r.surgeryDate)) / 86400000);
-                
-                if (pod !== null) { if (pod < globalMinX) globalMinX = pod; if (pod > globalMaxX) globalMaxX = pod; }
+
+                if (pod !== null) { if (pod > globalMaxX) globalMaxX = pod; }
                 if (v.sbp) { const s = Number(v.sbp); if (s > globalMaxSbp) globalMaxSbp = s; if (s < globalMinSbp) globalMinSbp = s; }
                 if (v.weight) { const w = Number(v.weight); if (w > globalMaxWt) globalMaxWt = w; if (w < globalMinWt) globalMinWt = w; }
                 if (v.timepoint && globalPodMap.hasOwnProperty(v.timepoint)) unionStandardTicks.add(v.timepoint);
             });
         });
 
-        const fixedOptions = { minX: globalMinX - 2, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks) };
+        // [하이브리드] 비교되는 모든 쥐 전체의 평균 반입→수술 간격(avgGap) 공유
+        let gapSum = 0, gapCnt = 0;
+        allRatsObj.forEach(r => {
+            if (r.arrivalDate && r.surgeryDate) { const g = Math.round((new Date(r.surgeryDate) - new Date(r.arrivalDate)) / 86400000); if (g > 0) { gapSum += g; gapCnt++; } }
+        });
+        const avgGap = gapCnt > 0 ? Math.round(gapSum / gapCnt) : 7;
+
+        const fixedOptions = { minX: -avgGap - 2, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), avgGap: avgGap };
 
         container.innerHTML = ''; 
         const grpColors = ['#E6194B', '#3CB44B', '#4363D8'];
@@ -1321,16 +1308,15 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
         const snapshots = await Promise.all(promises);
 
-        // [핵심] 그룹 내부의 진짜(True) Arrival과 D00 평균 위치를 계산
-        let arrSum = 0, arrCnt = 0; let d00Sum = 0, d00Cnt = 0;
-        snapshots.forEach((snap, idx) => {
-            const r = rats[idx];
-            if (r.arrivalDate && r.surgeryDate) { const pod = Math.floor((new Date(r.arrivalDate) - new Date(r.surgeryDate)) / 86400000); arrSum += pod; arrCnt++; }
-            snap.forEach(doc => { const d = doc.data(); if (d.timepoint === 'D00' && r.surgeryDate && d.date) { const pod = Math.floor((new Date(d.date) - new Date(r.surgeryDate)) / 86400000); d00Sum += pod; d00Cnt++; } });
+        // [하이브리드] 수술 후 = 실제 POD(수술일 기준), 수술 전 = 반입→수술 구간을 '전체 평균 간격(avgGap)'에 비율 정규화.
+        // → Arrival(반입)은 모든 쥐가 x=-avgGap 한 점에, D0(수술)는 모두 x=0에 정렬됨. 개체별 간격 차이는 pre-op 구간에서 미세 변형으로만 흡수.
+        let gapSum = 0, gapCnt = 0;
+        rats.forEach(r => {
+            if (r.arrivalDate && r.surgeryDate) { const g = Math.round((new Date(r.surgeryDate) - new Date(r.arrivalDate)) / 86400000); if (g > 0) { gapSum += g; gapCnt++; } }
         });
-
-        const dynamicArrivalPod = arrCnt > 0 ? Math.round(arrSum / arrCnt) : -7;
-        const dynamicD00Pod = d00Cnt > 0 ? Math.round(d00Sum / d00Cnt) : null;
+        const avgGap = (fixedOptions && fixedOptions.avgGap !== undefined) ? fixedOptions.avgGap : (gapCnt > 0 ? Math.round(gapSum / gapCnt) : 7);
+        const dynamicArrivalPod = -avgGap;   // Arrival 앵커 위치 (틱/라벨용)
+        const dynamicD00Pod = null;           // D00도 날짜대로 정규화되므로 평균 스냅 안 함
 
         let globalMinX = 9999, globalMaxX = -9999;
         const scatterDataWt = [], scatterDataSbp = []; const existTicksWt = new Set(), existTicksSbp = new Set(); const tickLabelMap = {};
@@ -1346,16 +1332,25 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                 let xVal = null;
                 if (window.isAgeMode) {
                     if (arrDt && d.date) xVal = arrAge + (new Date(d.date) - arrDt) / (1000 * 60 * 60 * 24 * 7);
+                } else if (d.timepoint === 'Arrival') {
+                    xVal = dynamicArrivalPod; labelText = 'Arrival';
                 } else {
-                    if (d.timepoint === 'Arrival') { xVal = dynamicArrivalPod; labelText = 'Arrival'; } 
-                    else if (d.timepoint === 'D00' && dynamicD00Pod !== null) { xVal = dynamicD00Pod; labelText = 'D00'; } 
-                    else { xVal = getPodForLabel(d.timepoint, r.surgeryDate, d.date); if ((d.timepoint === 'Manual' || !d.timepoint) && xVal !== null) labelText = `D${xVal}`; }
+                    const rawPod = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
+                    if (rawPod === null) { xVal = null; }
+                    else if (rawPod >= 0) { xVal = rawPod; if (d.timepoint === 'Manual' || !d.timepoint) labelText = `D${rawPod}`; } // 수술 후: 실제 POD 그대로
+                    else { // 수술 전: 반입 후 경과일(k)/개체 간격(g)로 [-avgGap, 0] 구간에 비율 정규화
+                        const g = arrDt ? Math.round((new Date(r.surgeryDate) - arrDt) / 86400000) : 0;
+                        const k = (arrDt && d.date) ? Math.round((new Date(d.date) - arrDt) / 86400000) : null;
+                        if (arrDt && g > 0 && k !== null) { const kk = Math.max(0, Math.min(k, g)); xVal = -avgGap * (1 - kk / g); }
+                        else { xVal = rawPod; }
+                        if (d.timepoint === 'Manual' || !d.timepoint) labelText = `D${rawPod}`; // 툴팁엔 진짜 POD
+                    }
                 }
 
                 if (xVal !== null) {
                     if (xVal > maxDataPod) maxDataPod = xVal; if (xVal < globalMinX) globalMinX = xVal; if (xVal > globalMaxX) globalMaxX = xVal;
-                    const jitter = window.isAgeMode ? 0 : (Math.random() - 0.5) * 0.4; const groupX = window.isAgeMode ? Math.round(xVal * 7) / 7 : xVal;
-                    
+                    const jitter = window.isAgeMode ? 0 : (Math.random() - 0.5) * 0.4; const groupX = window.isAgeMode ? Math.round(xVal * 7) / 7 : Math.round(xVal);
+
                     if (d.weight) { scatterDataWt.push({ x: xVal + jitter, y: d.weight, rid: rid, label: labelText, realX: xVal }); existTicksWt.add(groupX); if (d.weight < minWt) minWt = d.weight; if (d.weight > maxWt) maxWt = d.weight; }
                     if (d.sbp) { scatterDataSbp.push({ x: xVal + jitter, y: d.sbp, rid: rid, label: labelText, realX: xVal }); existTicksSbp.add(groupX); if (d.sbp < minSbp) minSbp = d.sbp; if (d.sbp > maxSbp) maxSbp = d.sbp; }
                     if (!window.isAgeMode && (!tickLabelMap[groupX] || globalPodMap.hasOwnProperty(labelText))) tickLabelMap[groupX] = labelText;
@@ -1368,8 +1363,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const standardKeys = Object.keys(globalPodMap).filter(k => k === 'D0' || k === 'D2' || k.startsWith('W'));
         standardKeys.forEach(k => { tickLabelMap[globalPodMap[k]] = k; });
         
-        const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (val === dynamicD00Pod ? "D00" : (tickLabelMap[val] || `D${val}`)));
-        const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (pod === dynamicD00Pod ? "D00" : (tickLabelMap[pod] || `D${pod}`));
+        const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (val < 0 ? `D${val}` : (tickLabelMap[val] || `D${val}`)));
+        const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (pod < 0 ? `D${pod}` : (tickLabelMap[pod] || `D${pod}`));
 
         const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: actualMinX, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < actualMinX) ? (arr[0] - 2) : actualMinX; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
         const rangeWtX = fixedOptions ? { min: fixedOptions.minX, max: fixedOptions.maxX } : getRangeX(existTicksWt);
@@ -1380,7 +1375,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const rangeSbpY = (fixedOptions && fixedOptions.maxSbp !== undefined) ? calcYRange(fixedOptions.minSbp !== undefined ? fixedOptions.minSbp : minSbp, fixedOptions.maxSbp, 0, 250) : calcYRange(minSbp, maxSbp, 0, 250);
 
         const avgsWt = {}, avgsSbp = {};
-        const calcAvg = (dataset, targetObj, isInt) => { const map = {}; dataset.forEach(p => { const roundedX = window.isAgeMode ? (Math.round(p.realX * 7) / 7) : Math.round(p.x); if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 }; map[roundedX].sum += p.y; map[roundedX].cnt++; }); Object.keys(map).forEach(x => { targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1); }); };
+        const calcAvg = (dataset, targetObj, isInt) => { const map = {}; dataset.forEach(p => { const roundedX = window.isAgeMode ? (Math.round(p.realX * 7) / 7) : Math.round(p.realX); if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 }; map[roundedX].sum += p.y; map[roundedX].cnt++; }); Object.keys(map).forEach(x => { targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1); }); };
         calcAvg(scatterDataWt, avgsWt, false); calcAvg(scatterDataSbp, avgsSbp, true);
 
         const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
@@ -1492,7 +1487,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${bpChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : d.x; return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${bpChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
         bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
@@ -1500,7 +1495,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${wtChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : d.x; return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${wtChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
         wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
@@ -1601,15 +1596,14 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
         const snapshots = await Promise.all(promises);
 
-        let arrSum = 0, arrCnt = 0; let d00Sum = 0, d00Cnt = 0;
-        snapshots.forEach((snap, idx) => {
-            const r = ratDataList[idx];
-            if (r.arrivalDate && r.surgeryDate) { const pod = Math.floor((new Date(r.arrivalDate) - new Date(r.surgeryDate)) / 86400000); arrSum += pod; arrCnt++; }
-            snap.forEach(doc => { const d = doc.data(); if (d.timepoint === 'D00' && r.surgeryDate && d.date) { const pod = Math.floor((new Date(d.date) - new Date(r.surgeryDate)) / 86400000); d00Sum += pod; d00Cnt++; } });
+        // [하이브리드] 수술 후 = 실제 POD, 수술 전 = 반입→수술 구간을 '전체 평균 간격(avgGap)'에 비율 정규화. (runCohortAnalysis와 동일)
+        let gapSum = 0, gapCnt = 0;
+        ratDataList.forEach(r => {
+            if (r.arrivalDate && r.surgeryDate) { const g = Math.round((new Date(r.surgeryDate) - new Date(r.arrivalDate)) / 86400000); if (g > 0) { gapSum += g; gapCnt++; } }
         });
-
-        const dynamicArrivalPod = arrCnt > 0 ? Math.round(arrSum / arrCnt) : -7;
-        const dynamicD00Pod = d00Cnt > 0 ? Math.round(d00Sum / d00Cnt) : null;
+        const avgGap = (fixedOptions && fixedOptions.avgGap !== undefined) ? fixedOptions.avgGap : (gapCnt > 0 ? Math.round(gapSum / gapCnt) : 7);
+        const dynamicArrivalPod = -avgGap;
+        const dynamicD00Pod = null;
 
         let globalMinX = 9999, globalMaxX = -9999;
         const scatterDataWt = [], scatterDataSbp = []; const existTicksWt = new Set(), existTicksSbp = new Set(); const tickLabelMap = {};
@@ -1625,15 +1619,24 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 let xVal = null;
                 if (window.isAgeMode) {
                     if (arrDt && d.date) xVal = arrAge + (new Date(d.date) - arrDt) / (1000 * 60 * 60 * 24 * 7);
+                } else if (d.timepoint === 'Arrival') {
+                    xVal = dynamicArrivalPod; labelText = 'Arrival';
                 } else {
-                    if (d.timepoint === 'Arrival') { xVal = dynamicArrivalPod; labelText = 'Arrival'; } 
-                    else if (d.timepoint === 'D00' && dynamicD00Pod !== null) { xVal = dynamicD00Pod; labelText = 'D00'; } 
-                    else { xVal = getPodForLabel(d.timepoint, r.surgeryDate, d.date); if ((d.timepoint === 'Manual' || !d.timepoint) && xVal !== null) labelText = `D${xVal}`; }
+                    const rawPod = getPodForLabel(d.timepoint, r.surgeryDate, d.date);
+                    if (rawPod === null) { xVal = null; }
+                    else if (rawPod >= 0) { xVal = rawPod; if (d.timepoint === 'Manual' || !d.timepoint) labelText = `D${rawPod}`; } // 수술 후: 실제 POD
+                    else { // 수술 전: 반입 후 경과일(k)/개체 간격(g)로 [-avgGap, 0]에 비율 정규화
+                        const g = arrDt ? Math.round((new Date(r.surgeryDate) - arrDt) / 86400000) : 0;
+                        const k = (arrDt && d.date) ? Math.round((new Date(d.date) - arrDt) / 86400000) : null;
+                        if (arrDt && g > 0 && k !== null) { const kk = Math.max(0, Math.min(k, g)); xVal = -avgGap * (1 - kk / g); }
+                        else { xVal = rawPod; }
+                        if (d.timepoint === 'Manual' || !d.timepoint) labelText = `D${rawPod}`;
+                    }
                 }
 
                 if (xVal !== null) {
                     if (xVal > maxDataPod) maxDataPod = xVal; if (xVal < globalMinX) globalMinX = xVal; if (xVal > globalMaxX) globalMaxX = xVal;
-                    const jitter = window.isAgeMode ? 0 : (Math.random() - 0.5) * 0.4; const groupX = window.isAgeMode ? Math.round(xVal * 7) / 7 : xVal;
+                    const jitter = window.isAgeMode ? 0 : (Math.random() - 0.5) * 0.4; const groupX = window.isAgeMode ? Math.round(xVal * 7) / 7 : Math.round(xVal);
 
                     if (d.weight) { scatterDataWt.push({ x: xVal + jitter, y: d.weight, rid: rid, label: labelText, realX: xVal }); existTicksWt.add(groupX); if (d.weight < minWt) minWt = d.weight; if (d.weight > maxWt) maxWt = d.weight; }
                     if (d.sbp) { scatterDataSbp.push({ x: xVal + jitter, y: d.sbp, rid: rid, label: labelText, realX: xVal }); existTicksSbp.add(groupX); if (d.sbp < minSbp) minSbp = d.sbp; if (d.sbp > maxSbp) maxSbp = d.sbp; }
@@ -1647,8 +1650,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const standardKeys = Object.keys(globalPodMap).filter(k => k === 'D0' || k === 'D2' || k.startsWith('W'));
         standardKeys.forEach(k => { tickLabelMap[globalPodMap[k]] = k; });
         
-        const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (val === dynamicD00Pod ? "D00" : (tickLabelMap[val] || `D${val}`)));
-        const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (pod === dynamicD00Pod ? "D00" : (tickLabelMap[pod] || `D${pod}`));
+        const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (val < 0 ? `D${val}` : (tickLabelMap[val] || `D${val}`)));
+        const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (pod < 0 ? `D${pod}` : (tickLabelMap[pod] || `D${pod}`));
 
         const getRangeX = (ticksSet) => { if (ticksSet.size === 0) return { min: actualMinX, max: 14 }; const arr = Array.from(ticksSet).sort((a, b) => a - b); const minVal = (arr[0] < actualMinX) ? (arr[0] - 2) : actualMinX; return { min: minVal, max: arr[arr.length - 1] + 2 }; };
         const rangeWtX = getRangeX(existTicksWt); const rangeSbpX = getRangeX(existTicksSbp);
@@ -1657,7 +1660,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const rangeSbpY = (fixedOptions && fixedOptions.maxSbp !== undefined) ? calcYRange(fixedOptions.minSbp !== undefined ? fixedOptions.minSbp : minSbp, fixedOptions.maxSbp, 0, 250) : calcYRange(minSbp, maxSbp, 0, 250);
 
         const avgsWt = {}, avgsSbp = {};
-        const calcAvg = (dataset, targetObj, isInt) => { const map = {}; dataset.forEach(p => { const roundedX = window.isAgeMode ? (Math.round(p.realX * 7) / 7) : Math.round(p.x); if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 }; map[roundedX].sum += p.y; map[roundedX].cnt++; }); Object.keys(map).forEach(x => { targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1); }); };
+        const calcAvg = (dataset, targetObj, isInt) => { const map = {}; dataset.forEach(p => { const roundedX = window.isAgeMode ? (Math.round(p.realX * 7) / 7) : Math.round(p.realX); if (!map[roundedX]) map[roundedX] = { sum: 0, cnt: 0 }; map[roundedX].sum += p.y; map[roundedX].cnt++; }); Object.keys(map).forEach(x => { targetObj[x] = isInt ? Math.round(map[x].sum / map[x].cnt) : (map[x].sum / map[x].cnt).toFixed(1); }); };
         calcAvg(scatterDataWt, avgsWt, false); calcAvg(scatterDataSbp, avgsSbp, true);
         const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
         const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
@@ -1768,7 +1771,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${bpChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : d.x; return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${bpChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
         bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
@@ -1776,7 +1779,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${wtChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : d.x; return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${wtChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
         wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
@@ -2447,21 +2450,12 @@ async function loadCohortComparison() {
 
         let globalMinX = 0, globalMaxX = 0, globalMaxSbp = 0, globalMaxWt = 0;
         let globalMinSbp = 9999, globalMinWt = 9999; 
-        const unionStandardTicks = new Set(); 
-        let realMinPod = 9999; // 추가됨
+        const unionStandardTicks = new Set();
 
         measSnaps.forEach((snap, i) => {
             const r = allRats[i];
             snap.forEach(d => {
                 const v = d.data();
-                
-                // 최솟값 계산 추가됨
-                if (v.timepoint !== 'Arrival') {
-                    let podVal = null;
-                    if (globalPodMap.hasOwnProperty(v.timepoint)) podVal = globalPodMap[v.timepoint];
-                    else if (r.surgeryDate && v.date) podVal = Math.floor((new Date(v.date) - new Date(r.surgeryDate)) / 86400000);
-                    if (podVal !== null && podVal < realMinPod) realMinPod = podVal;
-                }
 
                 const pod = getPodForLabel(v.timepoint, r.surgeryDate, v.date);
                 if (pod !== null) {
@@ -2473,10 +2467,14 @@ async function loadCohortComparison() {
                 if (v.timepoint && globalPodMap.hasOwnProperty(v.timepoint)) unionStandardTicks.add(v.timepoint);
             });
         });
-        
-        if (realMinPod === 9999) realMinPod = -7;
-        const dynamicArrivalPod = realMinPod - 3;
-        const actualMinX = dynamicArrivalPod - 2;
+
+        // [하이브리드] 비교되는 모든 쥐 전체의 평균 반입→수술 간격(avgGap) 공유
+        let gapSum = 0, gapCnt = 0;
+        allRats.forEach(r => {
+            if (r.arrivalDate && r.surgeryDate) { const g = Math.round((new Date(r.surgeryDate) - new Date(r.arrivalDate)) / 86400000); if (g > 0) { gapSum += g; gapCnt++; } }
+        });
+        const avgGap = gapCnt > 0 ? Math.round(gapSum / gapCnt) : 7;
+        const actualMinX = -avgGap - 2;
 
         let globalMaxAreLoc = 0; let globalMaxInfLoc = 0; const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
 
@@ -2502,7 +2500,7 @@ async function loadCohortComparison() {
             const maxInf = Math.max(0, ...Object.values(infStats)); if (maxInf > globalMaxInfLoc) globalMaxInfLoc = maxInf;
         });
 
-        const fixedOptions = { minX: actualMinX, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc, dynamicArrivalPod: dynamicArrivalPod };
+        const fixedOptions = { minX: actualMinX, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc, avgGap: avgGap };
         container.innerHTML = ''; 
         const colors = ['#E6194B', '#3CB44B', '#4363D8', '#F58231', '#911EB4', '#46F0F0'];
         
