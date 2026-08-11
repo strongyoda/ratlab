@@ -1,6 +1,86 @@
 
-async function deleteRat() { const id=document.getElementById('del-id').value; if(!id||!confirm("삭제?"))return; (await db.collection("rats").where("ratId","==",id).get()).forEach(d=>d.ref.delete()); ["dailyLogs","doseLogs","measurements"].forEach(async c=>(await db.collection(c).where("ratId","==",id).get()).forEach(d=>d.ref.delete())); clearRatsCache(); alert("삭제됨"); }
-async function deleteCohort() { const c=document.getElementById('del-cohort').value; if(!c||!confirm("전체삭제?"))return; (await db.collection("rats").where("cohort","==",c).get()).forEach(d=>d.ref.delete()); alert("삭제됨(로그제외)"); } 
+// [안전장치] 삭제는 되돌릴 수 없다. 확인창 한 번으로 코호트가 통째로 날아가던 것을 막는다.
+// 기본은 '숨김(보관)'이고, 진짜 삭제는 대상을 직접 타이핑해야 진행된다.
+
+async function deleteRat() {
+    const id = (document.getElementById('del-id').value || '').trim();
+    if (!id) return alert('랫드 ID를 입력하세요.');
+
+    const snap = await db.collection('rats').where('ratId', '==', id).get();
+    if (snap.empty) return alert(`'${id}' 개체를 찾을 수 없습니다.`);
+
+    const counts = {};
+    for (const c of ['dailyLogs', 'doseLogs', 'measurements']) {
+        counts[c] = (await db.collection(c).where('ratId', '==', id).get()).size;
+    }
+    const summary = `측정 ${counts.measurements}건 · 일일기록 ${counts.dailyLogs}건 · 투약 ${counts.doseLogs}건`;
+
+    const mode = prompt(
+        `'${id}' 처리 방법을 고르세요.\n\n` +
+        `연결된 데이터: ${summary}\n\n` +
+        `  숨김  → 목록에서만 감춤 (되돌릴 수 있음)\n` +
+        `  삭제  → 영구 삭제 (되돌릴 수 없음)\n\n` +
+        `'숨김' 또는 '삭제'를 입력하세요.`, '숨김');
+    if (mode === null) return;
+
+    if (mode.trim() === '숨김') {
+        for (const d of snap.docs) await d.ref.update({ archived: true, archivedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        clearRatsCache();
+        return alert(`'${id}'를 숨김 처리했습니다. 데이터는 그대로 있습니다.`);
+    }
+    if (mode.trim() !== '삭제') return alert('취소되었습니다.');
+
+    const typed = prompt(`영구 삭제를 진행하려면 랫드 ID를 그대로 입력하세요.\n\n삭제 대상: ${id}\n${summary}`);
+    if (typed === null) return;
+    if (typed.trim() !== id) return alert('입력이 일치하지 않아 취소되었습니다.');
+
+    try {
+        for (const c of ['dailyLogs', 'doseLogs', 'measurements']) {
+            const s = await db.collection(c).where('ratId', '==', id).get();
+            for (const d of s.docs) await d.ref.delete();
+        }
+        const hs = await db.collection('ratHousing').where('ratId', '==', id).get();
+        for (const d of hs.docs) await d.ref.delete();
+        for (const d of snap.docs) await d.ref.delete();
+        clearRatsCache();
+        alert(`'${id}' 및 연결 데이터를 삭제했습니다.`);
+    } catch (e) { console.error(e); alert('삭제 실패: ' + e.message); }
+}
+
+async function deleteCohort() {
+    const c = (document.getElementById('del-cohort').value || '').trim();
+    if (!c) return alert('코호트 번호를 입력하세요.');
+
+    const snap = await db.collection('rats').where('cohort', '==', c).get();
+    if (snap.empty) return alert(`코호트 ${c}에 개체가 없습니다.`);
+
+    const mode = prompt(
+        `코호트 ${c} 처리 방법을 고르세요.\n\n` +
+        `대상 개체: ${snap.size}마리\n\n` +
+        `  숨김  → 목록에서만 감춤 (되돌릴 수 있음)\n` +
+        `  삭제  → 영구 삭제 (되돌릴 수 없음)\n\n` +
+        `'숨김' 또는 '삭제'를 입력하세요.`, '숨김');
+    if (mode === null) return;
+
+    if (mode.trim() === '숨김') {
+        for (const d of snap.docs) await d.ref.update({ archived: true, archivedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        clearRatsCache();
+        return alert(`코호트 ${c} (${snap.size}마리)를 숨김 처리했습니다.`);
+    }
+    if (mode.trim() !== '삭제') return alert('취소되었습니다.');
+
+    const typed = prompt(
+        `코호트 ${c}의 개체 ${snap.size}마리를 영구 삭제합니다.\n되돌릴 수 없습니다.\n\n` +
+        `진행하려면 아래를 그대로 입력하세요:\n\n코호트 ${c} 삭제`);
+    if (typed === null) return;
+    if (typed.trim() !== `코호트 ${c} 삭제`) return alert('입력이 일치하지 않아 취소되었습니다.');
+
+    try {
+        for (const d of snap.docs) await d.ref.delete();
+        clearRatsCache();
+        alert(`코호트 ${c} 개체 ${snap.size}마리를 삭제했습니다.\n(측정·일일기록 등 로그는 남아 있습니다)`);
+    } catch (e) { console.error(e); alert('삭제 실패: ' + e.message); }
+}
 
 
 
@@ -18,9 +98,11 @@ function markRowDel(btn) {
     }
 }
 
-async function searchForEdit() {
-    const id = document.getElementById('edit-id').value.trim();
-    if(!id) return alert("ID를 입력하세요");
+async function searchForEdit(ratId) {
+    // 목록에서 누르면 ID가 넘어오고, 예전처럼 검색창을 쓰면 거기서 읽는다
+    const inp = document.getElementById('edit-id');
+    const id = (ratId || (inp ? inp.value : '') || '').trim();
+    if(!id) return alert("수정할 개체를 선택하세요");
     const resDiv = document.getElementById('edit-result');
     resDiv.innerHTML = '<div class="loader"></div> 데이터를 불러오는 중...';
     try {

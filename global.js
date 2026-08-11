@@ -10,6 +10,10 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 console.log("🔥 파이어베이스 초기화 성공!"); // <- 이 줄을 추가!
 
+// [로그인 유지] 세션을 기기에 저장 → 탭이 닫히거나 폰이 잠겨도 로그인 상태 유지
+firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+    .catch(e => console.error("로그인 유지 설정 실패:", e));
+
 let currentScores = { act: 0, fur: 0, eye: 0 };
 let allBPData = [];
 let bpChartInstance = null;
@@ -61,9 +65,6 @@ let minW = 9999;
 
 
 // --- 프레젠테이션 & 데이터 ---
-let pptSlides = [];
-let currentPptIndex = 0;
-let pptChart = null;
 let csvUploadData = [];
 let bpAllData = [];
 
@@ -196,9 +197,9 @@ async function getRatsWithCache(forceRefresh = false) {
     console.log("🔥 Firestore에서 데이터 로드 중...");
     const snap = await db.collection("rats").orderBy("ratId").get();
 
-    // 결과 변수에 저장
+    // 결과 변수에 저장 (숨김 처리된 개체는 목록에서 제외. 데이터는 지워지지 않음)
     cachedRatsList = [];
-    snap.forEach(doc => cachedRatsList.push(doc.data()));
+    snap.forEach(doc => { const d = doc.data(); if (!d.archived) cachedRatsList.push(d); });
     lastCacheTime = now;
 
     return cachedRatsList;

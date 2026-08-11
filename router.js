@@ -119,10 +119,55 @@ function closeTab(tId, event) {
 }
 
 function getTitleForView(view) {
-    const map = { 'dash':'대시보드', 'detail':'랫드 상세', 'cohort':'코호트 분석', 'compare':'코호트 비교', 'trend':'조건분석', 'daily':'데일리', 'add':'신규등록', 'dose':'투약', 'rec':'혈압/체중', 'bp':'BP계산기', 'admin':'데이터관리' };
+    const map = { 'dash':'대시보드', 'detail':'랫드 상세', 'cohort':'코호트 분석', 'compare':'코호트 비교', 'trend':'조건분석', 'daily':'데일리', 'add':'신규등록', 'rec':'혈압/체중', 'bp':'BP계산기', 'admin':'데이터관리', 'cohortcfg':'코호트 설정', 'cages':'케이지 현황', 'cageinput':'케이지별 입력', 'intake':'섭취량·투여량', 'batch':'일괄 입력' };
     return map[view] || '새 탭';
 }
 // ==========================================
+
+// [로그인 유지] 화면 전환을 한 곳으로 모음 (로그인 직후 / 세션 복원 둘 다 여기로)
+let appEntered = false;
+
+// 이 파일은 <head>에서 로드되므로, 화면을 건드리기 전에 DOM이 준비됐는지 확인해야 함
+function onDomReady(fn) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
+    else fn();
+}
+
+function enterApp() {
+    if (appEntered) return;   // 중복 진입 방지 (initTabs가 두 번 돌지 않도록)
+    appEntered = true;
+
+    const splash = document.getElementById('auth-splash');
+    const loginScreen = document.getElementById('login-screen');
+    const mainApp = document.getElementById('main-app');
+    if (splash) splash.style.display = 'none';
+    if (loginScreen) loginScreen.style.display = 'none';
+    if (mainApp) mainApp.style.display = 'block';
+    const aiFab = document.getElementById('ai-chat-fab');
+    if (aiFab) aiFab.style.display = 'block';
+    setTimeout(() => initTabs(), 50);
+}
+
+function showLogin() {
+    appEntered = false;
+
+    const splash = document.getElementById('auth-splash');
+    const loginScreen = document.getElementById('login-screen');
+    const mainApp = document.getElementById('main-app');
+    if (splash) splash.style.display = 'none';
+    if (loginScreen) loginScreen.style.display = 'flex';
+    if (mainApp) mainApp.style.display = 'none';
+}
+
+// [로그인 유지] 페이지가 열릴 때 저장된 세션이 있으면 로그인 화면을 건너뜀
+let authResolved = false;
+firebase.auth().onAuthStateChanged((user) => {
+    authResolved = true;
+    onDomReady(() => { if (user) enterApp(); else showLogin(); });
+});
+
+// 안전장치: 네트워크 문제 등으로 확인이 안 끝나면 로그인 화면이라도 띄움
+setTimeout(() => { if (!authResolved) onDomReady(showLogin); }, 5000);
 
 async function login() {
     const id = document.getElementById('uid').value.trim();
@@ -130,13 +175,7 @@ async function login() {
 
     try {
         await firebase.auth().signInWithEmailAndPassword(id, pw);
-
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('main-app').style.display = 'block';
-        // 로그인 성공 시 챗봇 플로팅 버튼 보이기
-        const aiFab = document.getElementById('ai-chat-fab');
-        if(aiFab) aiFab.style.display = 'block';
-        setTimeout(() => initTabs(), 50); 
+        enterApp();
     } catch (e) {
         console.error(e);
         alert('로그인 실패: ' + (e && e.message ? e.message : e));
@@ -372,11 +411,32 @@ async function go(view, targetId = null, specificTabId = null) {
             </div>
             
             <div id="tab-edit" style="display:none;">
-                <div class="input-group">
-                    <label>랫드 ID 검색 (전체 데이터 수정)</label>
-                    <div style="display:flex; gap:10px;"><input type="text" id="edit-id" placeholder="C1101"><button class="btn btn-blue btn-small" onclick="searchForEdit()">검색</button></div>
+                <div class="tab-container" style="margin-bottom:10px;">
+                    <div id="de-tab-rat" class="tab active" onclick="deSubTab('rat')">랫드 수정</div>
+                    <div id="de-tab-cage" class="tab" onclick="deSubTab('cage')">케이지 수정</div>
                 </div>
-                <div id="edit-result"></div>
+
+                <div id="de-pane-rat">
+                    <div class="input-group">
+                        <label>코호트를 고르면 개체 목록이 나옵니다</label>
+                        <select id="de-rat-cohort" style="width:100%; padding:9px; border-radius:6px; border:1px solid #ccc;">
+                            <option value="">로딩 중...</option>
+                        </select>
+                    </div>
+                    <div id="de-rat-list"></div>
+                    <div id="edit-result" style="margin-top:12px;"></div>
+                </div>
+
+                <div id="de-pane-cage" style="display:none;">
+                    <div class="input-group">
+                        <label>코호트를 고르면 케이지 목록이 나옵니다</label>
+                        <select id="de-cage-cohort" style="width:100%; padding:9px; border-radius:6px; border:1px solid #ccc;">
+                            <option value="">로딩 중...</option>
+                        </select>
+                    </div>
+                    <div id="de-cage-list"></div>
+                    <div id="de-cage-records"></div>
+                </div>
             </div>
             
             <div id="tab-logs" style="display:none;">
@@ -422,6 +482,36 @@ async function go(view, targetId = null, specificTabId = null) {
 
 
     // 3. Cohort Analysis (코호트 분석)
+    // 코호트 설정 (군 · 시점 · 사육 기본값 · 약물 프로토콜)
+    if (view === 'cohortcfg') {
+        await renderCohortConfigView(main);
+        return;
+    }
+
+    // 케이지 현황 (배정 · 이동 · 추가/삭제)
+    if (view === 'cages') {
+        await renderCageStatusView(main);
+        return;
+    }
+
+    // 케이지별 입력 (매일 도는 루틴)
+    if (view === 'cageinput') {
+        await renderCageInputView(main);
+        return;
+    }
+
+    // 일괄 입력 (수술 · MR)
+    if (view === 'batch') {
+        await renderBatchEntryView(main);
+        return;
+    }
+
+    // 섭취량 · 투여량 분석
+    if (view === 'intake') {
+        await renderIntakeView(main);
+        return;
+    }
+
     if(view === 'cohort') {
         main.innerHTML = `
         <div class="card">
@@ -557,9 +647,6 @@ else if(view === 'daily') {
         main.innerHTML = `<div class="card"><h3>대량 등록</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><div class="input-group" style="flex:1;"><label>코호트</label><input type="number" id="add-c"></div><div class="input-group" style="flex:1;"><label>그룹</label><select id="add-g" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div></div><div style="display:flex; gap:10px;"><input type="number" id="add-s" placeholder="시작번호"><input type="number" id="add-e" placeholder="끝번호"></div><div class="input-group" style="margin-top:10px;"><label>반입일</label><input type="date" id="add-d"></div><button class="btn btn-green" onclick="saveBulk()">등록</button></div>`; 
         document.getElementById('add-d').value = getTodayStr(); 
     }
-    else if(view === 'dose') { 
-        main.innerHTML = `<div class="card"><h3>투약 계산기</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><input type="number" id="ds-c" placeholder="코호트" oninput="upDose()" style="flex:1;"><select id="ds-g" onchange="upDose()" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div><table><thead><tr><th>번</th><th>WT(g)</th><th>ID</th></tr></thead><tbody>${Array.from({length:12},(_,i)=>`<tr><td><input type="number" class="dn" oninput="upDose()"></td><td><input type="number" class="dw"></td><td class="di">-</td></tr>`).join('')}</tbody></table><button class="btn btn-blue" onclick="saveDose()" style="margin-top:15px;">계산 및 저장</button><div id="dose-res" style="display:none;"></div></div>`; 
-    }
     else if(view === 'rec') { 
         let timeOpts = `<option>Manual</option><option>Arrival</option><option>D00</option><option>D0</option><option>D2</option>`;
         for(let i=1; i<=30; i++) { timeOpts += `<option>W${i}</option>`; }
@@ -624,6 +711,17 @@ function toggleDetails(detailId, btnId) {
     }
 }
 
+// 데이터 수정 안의 하위 탭 (랫드 / 케이지)
+function deSubTab(mode) {
+    ['rat', 'cage'].forEach(m => {
+        const btn = document.getElementById('de-tab-' + m);
+        const pane = document.getElementById('de-pane-' + m);
+        if (btn) btn.classList.toggle('active', m === mode);
+        if (pane) pane.style.display = (m === mode) ? 'block' : 'none';
+    });
+    if (mode === 'rat') deInitRatEdit(); else deInitCageEdit();
+}
+
 function admTab(mode) {
     // 1. 모든 탭 버튼의 활성화(active) 상태 해제
     document.querySelectorAll('.tab-container .tab').forEach(t => t.classList.remove('active'));
@@ -639,6 +737,9 @@ function admTab(mode) {
             el.style.display = (m === mode) ? 'block' : 'none';
         }
     });
+
+    // 수정 탭을 열면 코호트 목록을 채워둔다
+    if (mode === 'edit') deSubTab('rat');
 }
 
 

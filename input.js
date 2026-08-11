@@ -114,33 +114,6 @@ async function saveDaily() {
     } catch(e) { console.error(e); alert("에러: " + e.message); }
 }
 
-function upDose() { const ns=document.getElementsByClassName('dn'), c=document.getElementById('ds-c').value, g=document.getElementById('ds-g').value || '1'; for(let i=0; i<ns.length; i++) document.getElementsByClassName('di')[i].innerText = (c&&ns[i].value)?`C${c.padStart(2,'0')}${ns[i].value.padStart(2,'0')}G${g}`:'-'; }
-
-async function saveDose() { 
-    const c = document.getElementById('ds-c').value;
-    const ws = document.getElementsByClassName('dw');
-    const is = document.getElementsByClassName('di');
-    
-    let cnt = 0; let indivList = ''; let tMg = 0; let tVol = 0;
-    try {
-        for(let i=0; i<ws.length; i++) { 
-            if(ws[i].value && is[i].innerText!=='-') { 
-                const ratId = is[i].innerText;
-                if(!(await checkRatValid(ratId))) continue; 
-                const w = Number(ws[i].value); const mg = (w/1000)*4*1.15; const vol = mg/2.5;        
-                tMg += mg; tVol += vol; cnt++;
-                indivList += `<div style="padding:4px 0; border-bottom:1px solid #eee; display:flex; justify-content:space-between;"><span>${ratId}</span><span style="font-weight:bold;">${vol.toFixed(2)} ml</span></div>`;
-                await db.collection("doseLogs").add({ ratId:ratId, cohort:c, weight:w, doseMg:mg, volMl:vol, date:new Date().toISOString().split('T')[0] }); 
-            } 
-        }
-        if(cnt) {
-            const resBox = document.getElementById('dose-res');
-            resBox.style.display = 'block'; 
-            resBox.innerHTML = `<div style="margin-bottom:20px;"><h4 style="color:var(--navy); margin-bottom:10px;">📊 오늘 소분 용량</h4><div style="background:white; padding:10px; border-radius:8px; border:1px solid #eee;">${indivList}</div></div><div style="background:#e8f5e9; padding:15px; border-radius:8px; border:1px solid #c8e6c9;"><h4 style="color:#2e7d32; margin:0 0 10px 0;">🧪 오늘 준비량</h4><div style="display:flex; justify-content:space-between; margin-bottom:5px;"><span>약물 총량:</span><b>${tMg.toFixed(2)} mg</b></div><div style="display:flex; justify-content:space-between;"><span>용액 총량:</span><b>${tVol.toFixed(2)} ml</b></div></div>`;
-            alert("저장되었습니다.");
-        } else { alert("유효한 입력 데이터가 없습니다."); }
-    } catch(e) { console.error(e); alert("저장 중 오류 발생: " + e.message); }
-}
 
 async function saveRec() { 
     const id=document.getElementById('re-id').value; 
@@ -154,38 +127,9 @@ async function saveRec() {
 //  신규 데이터 필드 제어 함수 (반입주령, OVX, MR, 샘플)
 // ==========================================
 
-async function upArrivalAge(did) {
-    const val = document.getElementById('arr-age').value;
-    try {
-        await db.collection("rats").doc(did).update({ arrivalAge: Number(val) });
-        clearRatsCache(); 
-        alert("저장되었습니다."); 
-        loadDetailData();
-    } catch(e) { console.error(e); alert("오류: " + e.message); }
-}
-
-async function upOvx(did) {
-    const val = document.getElementById('ovx-d').value;
-    try {
-        await db.collection("rats").doc(did).update({ ovxDate: val });
-        clearRatsCache(); 
-        alert("저장되었습니다."); 
-        loadDetailData();
-    } catch(e) { console.error(e); alert("오류: " + e.message); }
-}
 
 
-async function upSampleInfo(did) {
-    const tp = document.getElementById('sample-tp').value;
-    const dt = document.getElementById('sample-d').value;
-    const memo = document.getElementById('sample-memo').value;
-    try {
-        await db.collection("rats").doc(did).update({ sampleType: tp, sampleDate: dt, sampleMemo: memo });
-        clearRatsCache(); 
-        alert("샘플 정보가 저장되었습니다."); 
-        loadDetailData();
-    } catch(e) { console.error(e); alert("오류: " + e.message); }
-}
+
 
 // [교체] MR 추가 함수
 async function addMrDate(did) {
@@ -223,12 +167,6 @@ async function removeMrDate(did, idx) {
 }
 
 
-async function upDoseStart(did) {
-    const doc = await db.collection("rats").doc(did).get();
-    if(doc.exists) { const ratId = doc.data().ratId; if(!(await checkRatValid(ratId))) return; }
-    await db.collection("rats").doc(did).update({ doseStartDate: document.getElementById('dose-start-d').value });
-    alert("저장되었습니다."); loadDetailData();
-}
 
 async function upSurg(did) { 
     const doc = await db.collection("rats").doc(did).get();

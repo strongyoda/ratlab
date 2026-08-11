@@ -18,18 +18,29 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
-    <script src="global.js"></script>
-    <script src="router.js"></script>
-    <script src="input.js"></script>
-    <script src="chart.js"></script>
-    <script src="media.js"></script>
-    <script src="admin.js"></script>
+    <script src="global.js?v=20260810g"></script>
+    <script src="router.js?v=20260810g"></script>
+    <script src="input.js?v=20260810g"></script>
+    <script src="chart.js?v=20260810g"></script>
+    <script src="cohort_config.js?v=20260810g"></script>
+    <script src="cage_manager.js?v=20260810g"></script>
+    <script src="cage_input.js?v=20260810g"></script>
+    <script src="intake_analysis.js?v=20260810g"></script>
+    <script src="rat_detail.js?v=20260810g"></script>
+    <script src="data_edit.js?v=20260810g"></script>
+    <script src="batch_entry.js?v=20260810g"></script>
+    <script src="media.js?v=20260810g"></script>
+    <script src="admin.js?v=20260810g"></script>
     
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260810g">
 </head>
 <body>
 
-    <div id="login-screen">
+    <div id="auth-splash" style="display:flex; justify-content:center; align-items:center; height:100vh; background:var(--navy); position:fixed; width:100%; top:0; left:0; z-index:10000; color:#fff; font-size:0.95rem;">
+        로그인 확인 중...
+    </div>
+
+    <div id="login-screen" style="display:none;">
         <div class="login-box">
             <h2 style="color:var(--navy)">LAB MANAGER</h2>
             <input type="text" id="uid" placeholder="ID" style="margin-bottom:10px">
@@ -71,17 +82,28 @@
         <div id="overlay" onclick="toggleMenu()"></div>
 
         <nav id="sidebar">
+            <div class="nav-section">기록</div>
+            <div class="nav-item" onclick="go('cageinput')"><i class="material-icons">assignment_turned_in</i>케이지별 입력</div>
+            <div class="nav-item" onclick="go('batch')"><i class="material-icons">bolt</i>일괄 입력 (수술·MR)</div>
+            <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>상태 &amp; 체중 기록</div>
+            <div class="nav-item" onclick="go('bp')"><i class="material-icons">analytics</i>BP 계산 &amp; 입력</div>
+
+            <div class="nav-section">현황</div>
             <div class="nav-item" onclick="go('dash')"><i class="material-icons">dashboard</i>대시보드</div>
+            <div class="nav-item" onclick="go('cages')"><i class="material-icons">grid_view</i>케이지 현황</div>
             <div class="nav-item" onclick="go('detail')"><i class="material-icons">search</i>랫드 상세보기</div>
+
+            <div class="nav-section">분석</div>
+            <div class="nav-item" onclick="go('intake')"><i class="material-icons">local_drink</i>섭취량 · 투여량</div>
             <div class="nav-item" onclick="go('cohort')"><i class="material-icons">bar_chart</i>코호트 분석</div>
             <div class="nav-item" onclick="go('compare')"><i class="material-icons">compare_arrows</i>코호트 비교</div>
             <div class="nav-item" onclick="go('trend')"><i class="material-icons">trending_up</i>조건분석</div>
-            <div class="nav-item" onclick="openPptSetup()"><i class="material-icons">slideshow</i>프레젠테이션</div>
-            <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>상태 & 체중 기록</div>
+
+            <div class="nav-section">설정</div>
+            <div class="nav-item" onclick="go('cohortcfg')"><i class="material-icons">settings</i>코호트 설정</div>
             <div class="nav-item" onclick="go('add')"><i class="material-icons">add_circle</i>신규 등록</div>
-            <div class="nav-item" onclick="go('dose')"><i class="material-icons">science</i>투약 계산기</div>
-            <div class="nav-item" onclick="go('bp')"><i class="material-icons">analytics</i>BP 계산 & 입력</div>
             <div class="nav-item" onclick="go('admin')"><i class="material-icons">admin_panel_settings</i>데이터 관리</div>
+
             <div class="nav-item" onclick="logout()" style="margin-top:auto"><i class="material-icons">logout</i>로그아웃</div>
         </nav>
 
@@ -235,40 +257,8 @@
         <img id="photo-viewer-img" draggable="false" style="max-width:90%; max-height:90%; transition: transform 0.1s; cursor:grab; user-select:none; -webkit-user-drag:none;" src="">
     </div>
 
-    <div id="ppt-setup-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; align-items:center; justify-content:center;">
-        <div style="background:white; padding:20px; border-radius:12px; width:90%; max-width:400px; box-shadow:0 4px 20px rgba(0,0,0,0.2);">
-            <h3 style="margin-top:0; color:var(--navy);">📽️ 프레젠테이션 모드</h3>
-            <p style="font-size:0.9rem; color:#666;">발표를 진행할 코호트를 선택하세요.</p>
-            
-            <select id="ppt-cohort-sel" style="width:100%; padding:10px; margin-bottom:15px; border:1px solid #ccc; border-radius:6px; font-size:1rem;">
-                <option value="">데이터 불러오는 중...</option>
-            </select>
 
-            <div style="display:flex; gap:10px;">
-                <button class="btn btn-blue" style="flex:1;" onclick="startPpt()">시작하기</button>
-                <button class="btn" style="flex:1; background:#eee; color:#333;" onclick="document.getElementById('ppt-setup-modal').style.display='none'">취소</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="ppt-main-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#fff; z-index:11000; flex-direction:column;">
-        
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 30px; background:var(--navy); color:white; box-shadow:0 2px 10px rgba(0,0,0,0.2); z-index:11001;">
-            <div id="ppt-header-info" style="font-size:1.5rem; font-weight:bold;">Cohort Presentation</div>
-            <div style="display:flex; align-items:center; gap:20px;">
-                <span id="ppt-progress" style="font-size:1.2rem; font-weight:bold; background:rgba(255,255,255,0.2); padding:5px 15px; border-radius:20px;">1 / 10</span>
-                <button onclick="closePpt()" style="background:var(--red); color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:1rem;">✖ 종료 (ESC)</button>
-            </div>
-        </div>
-
-        <div id="ppt-slide-container" style="flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; padding:20px; background:#f4f6f9;">
-            </div>
-
-        <button onclick="prevPptSlide()" style="position:absolute; top:50%; left:20px; transform:translateY(-50%); background:rgba(0,0,0,0.3); color:white; border:none; width:60px; height:60px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:11001; transition:0.3s;" onmouseover="this.style.background='rgba(0,0,0,0.7)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'">◀</button>
-        <button onclick="nextPptSlide()" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(0,0,0,0.3); color:white; border:none; width:60px; height:60px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:11001; transition:0.3s;" onmouseover="this.style.background='rgba(0,0,0,0.7)'" onmouseout="this.style.background='rgba(0,0,0,0.3)'">▶</button>
-    </div>
-
-<script src="ai_assistant.js"></script>
+<script src="ai_assistant.js?v=20260810g"></script>
 
 
 </body>

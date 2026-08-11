@@ -574,7 +574,14 @@ async function loadDetailData(forceId = null) {
                 </div>
                 
                 <div class="info-row-container">${infoBoxes.join('')}</div>
-                
+
+                <div style="background:#f8f9fa; padding:12px 15px; border-radius:12px; border:1px solid #eee; margin-bottom:15px;">
+                    <h4 style="margin:0 0 8px 0; font-size:0.9rem; color:var(--navy);">
+                        <i class="material-icons" style="font-size:18px; vertical-align:middle;">grid_view</i> 케이지 · 섭취량
+                    </h4>
+                    <div id="rd-cage-info"><span style="font-size:0.85rem; color:#888;">불러오는 중...</span></div>
+                </div>
+
                 <div style="display:flex; gap:20px; align-items: stretch; flex-wrap:wrap;">
                     
                     <div style="flex:6; min-width:300px; display:flex; flex-direction:column; gap:15px;">
@@ -582,48 +589,45 @@ async function loadDetailData(forceId = null) {
                         <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee; display:flex; flex-wrap:wrap; gap:10px;">
                             <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">반입주령</span>
-                                <select id="arr-age" style="border:none; background:none; font-weight:bold; outline:none;">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}</select>
-                                <button class="btn-small btn-blue" onclick="upArrivalAge('${docId}')" style="padding:4px 8px;">저장</button>
+                                <select id="arr-age" onchange="rdSet('arrivalAge', this.value)" style="border:none; background:none; font-weight:bold; outline:none;">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}</select>
                             </div>
                             <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">OVX일자</span>
-                                <input type="date" id="ovx-d" value="${rat.ovxDate||''}" style="border:none; font-size:0.85rem; outline:none;">
-                                <button class="btn-small btn-blue" onclick="upOvx('${docId}')" style="padding:4px 8px;">저장</button>
+                                <input type="date" id="ovx-d" value="${rat.ovxDate||''}" onchange="rdSet('ovxDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
                             </div>
                             <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">투약시작</span>
-                                <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" style="border:none; font-size:0.85rem; outline:none;">
-                                <button class="btn-small btn-blue" onclick="upDoseStart('${docId}')" style="padding:4px 8px;">저장</button>
+                                <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" onchange="rdSet('doseStartDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
                             </div>
                             
                             <div style="width:100%; display:flex; align-items:center; gap:15px; background:#fff3e0; padding:10px 12px; border-radius:8px; border:1px solid #ffcc80; flex-wrap:wrap;">
                                 <label style="cursor:pointer; font-size:0.85rem; color:var(--red); font-weight:bold; display:flex; align-items:center;">
                                     <input type="checkbox" id="chk-sham" ${rat.isNonInduction ? 'checked' : ''} 
-                                        onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none';" style="transform:scale(1.2); margin-right:6px;">
+                                        onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none'; rdSet('isNonInduction', this.checked);" style="transform:scale(1.2); margin-right:6px;">
                                     Ligation 안 함 (Sham/Naïve)
                                 </label>
                                 <div id="surg-date-wrapper" style="display:${rat.isNonInduction ? 'none' : 'flex'}; align-items:center; gap:6px;">
                                     <span style="font-size:0.85rem; font-weight:bold;">수술일자</span>
-                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" style="border:1px solid #ccc; border-radius:4px; padding:4px;">
+                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" onchange="rdSet('surgeryDate', this.value)" style="border:1px solid #ccc; border-radius:4px; padding:4px;">
                                 </div>
                                 <div id="sham-ref-wrapper" style="display:${rat.isNonInduction ? 'flex' : 'none'}; align-items:center; gap:6px;">
                                     <span style="font-size:0.85rem; font-weight:bold; color:var(--red);">비교 기준 주령</span>
-                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
+                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" onchange="rdSet('refAge', this.value)" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
                                 </div>
-                                <button class="btn-small btn-red" onclick="saveSurgAndSham('${docId}', '${rat.arrivalDate || ''}', ${arrivalAgeNum||6})" style="margin-left:auto; padding:4px 10px;">저장</button>
+                                
                             </div>
 
                             <div style="width:100%; display:flex; align-items:center; gap:6px; background:#e3f2fd; padding:10px 12px; border-radius:8px; border:1px solid #bbdefb; flex-wrap:wrap;">
                                 <span style="font-size:0.85rem; font-weight:bold; color:var(--navy);">얻은 샘플</span>
-                                <select id="sample-tp" style="padding:4px; border-radius:4px; border:1px solid #ccc;">
+                                <select id="sample-tp" onchange="rdSet('sampleType', this.value)" style="padding:4px; border-radius:4px; border:1px solid #ccc;">
                                     <option value="">-</option>
                                     <option value="Histology" ${rat.sampleType==='Histology'?'selected':''}>Histology</option>
                                     <option value="Cast" ${rat.sampleType==='Cast'?'selected':''}>Cast</option>
                                     <option value="Fail" ${rat.sampleType==='Fail'?'selected':''}>못함</option>
                                 </select>
-                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
-                                <input type="text" id="sample-memo" value="${rat.sampleMemo||''}" placeholder="메모" style="flex:1; min-width:120px; padding:4px; border:1px solid #ccc; border-radius:4px;">
-                                <button class="btn-small btn-blue" onclick="upSampleInfo('${docId}')" style="padding:4px 10px;">저장</button>
+                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" onchange="rdSet('sampleDate', this.value)" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                <input type="text" id="sample-memo" value="${rat.sampleMemo||''}" placeholder="메모" oninput="rdSet('sampleMemo', this.value)" style="flex:1; min-width:120px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                
                             </div>
                         </div>
 
@@ -679,9 +683,9 @@ async function loadDetailData(forceId = null) {
                     <div style="flex:4; min-width:250px; display:flex; flex-direction:column; background:#fffde7; border:1px solid #fff59d; border-radius:12px; padding:15px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                             <span style="font-weight:bold; color:#f57f17; display:flex; align-items:center; gap:5px;"><i class="material-icons" style="font-size:18px;">note</i> 개체 자유 메모</span>
-                            <button class="btn-small btn-green" onclick="saveGeneralMemo('${docId}')" style="padding:4px 12px;">메모 저장</button>
+                            
                         </div>
-                        <textarea id="general-memo-area" style="flex:1; width:100%; border:1px solid #ffe082; border-radius:8px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${rat.generalMemo || ''}</textarea>
+                        <textarea id="general-memo-area" oninput="rdSet('generalMemo', this.value)" style="flex:1; width:100%; border:1px solid #ffe082; border-radius:8px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${rat.generalMemo || ''}</textarea>
                     </div>
                 </div>
             </div>
@@ -773,7 +777,12 @@ async function loadDetailData(forceId = null) {
             </div>
 
             <div class="card"><h4>투약 이력</h4><div id="dose-logs"></div></div>
-            <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`;
+            <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`
+            + rdSaveBarHtml();
+
+        // 항목별 저장 버튼 대신, 고친 것을 모아뒀다가 한 번에 저장한다
+        rdInit(docId, rat);
+        rdRenderCageInfo(id, 'rd-cage-info');
 
         // 기존 차트 그리기 로직 등등 (생략 없이 유지)
         const logs = await db.collection("dailyLogs").where("ratId", "==", id).get();
@@ -2855,40 +2864,6 @@ function renderUnifiedTimeline(groupsData, container) {
 }
 
 // 👇 [신규 추가] Sham 대조군 가상 기준일 자동 계산 및 저장 👇
-window.saveSurgAndSham = async function(docId, arrDateStr, arrAgeNum) {
-    const isSham = document.getElementById('chk-sham').checked;
-    let updateData = { isNonInduction: isSham };
-    
-    if (isSham) {
-        const refAge = Number(document.getElementById('sham-ref-age').value) || 9;
-        updateData.refAge = refAge;
-        
-        if (arrDateStr) {
-            // 가상 수술일 계산: 반입일 + (기준주령 - 반입주령)*7 일
-            const arrDate = new Date(arrDateStr);
-            const diffDays = (refAge - arrAgeNum) * 7;
-            arrDate.setDate(arrDate.getDate() + diffDays);
-            const virtualDateStr = arrDate.toISOString().split('T')[0];
-            updateData.surgeryDate = virtualDateStr; // 차트를 속이기 위한 가상 날짜 (그래프 동기화용)
-        } else {
-            alert("가상 기준일을 계산하려면 반입일(Arrival Date)이 먼저 입력되어 있어야 합니다.");
-            return;
-        }
-    } else {
-        updateData.surgeryDate = document.getElementById('surg-d').value;
-        updateData.refAge = firebase.firestore.FieldValue.delete();
-    }
-    
-    try {
-        await db.collection("rats").doc(docId).update(updateData);
-        alert("저장되었습니다.");
-        clearRatsCache();
-        loadDetailData();
-    } catch(e) {
-        console.error(e);
-        alert("저장 실패: " + e.message);
-    }
-};
 
 // ====== Infarction 팝업 관련 신규 함수들 ======
 
@@ -2988,17 +2963,6 @@ function openRatModal(ratId) {
 // ==========================================
 // 랫드 개체 상세보기 전용: 자유 메모장 저장
 // ==========================================
-window.saveGeneralMemo = async function(docId) {
-    const memoVal = document.getElementById('general-memo-area').value;
-    try {
-        await db.collection("rats").doc(docId).update({ generalMemo: memoVal });
-        alert("메모가 저장되었습니다.");
-        clearRatsCache();
-    } catch(e) {
-        console.error(e);
-        alert("메모 저장 실패: " + e.message);
-    }
-};
 
 
 // ==========================================
