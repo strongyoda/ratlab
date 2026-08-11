@@ -127,9 +127,45 @@ function rdSaveBarHtml() {
 // ---------- 상세 화면의 케이지 · 섭취량 요약 ----------
 // 개체가 지금 어느 케이지에 있는지, 그 케이지가 최근 얼마나 먹고 마셨는지 보여준다.
 // 섭취량은 케이지 단위 값이므로 '케이지 평균'임을 명시한다.
+// 투약 상태는 저장된 값이 아니라 수술일 + 코호트 설정에서 매번 계산한다.
+// (계산 함수는 cage_input.js와 공용)
+async function rdDoseStatusHtml() {
+    try {
+        if (typeof ciDoseWindow !== 'function' || !rdRat || !rdRat.cohort) return '';
+        const cfg = await getCohortConfig(rdRat.cohort);
+        const gkey = rdRat.group ? ('G' + String(rdRat.group).replace(/^G/, '')) : 'G1';
+        const rule = ((cfg && cfg.dosing) || []).find(d =>
+            d.medium === 'water' && (d.groups || []).includes(gkey) && Number(d.value) > 0);
+        if (!rule) return '';
+
+        const win = ciDoseWindow(rdRat, rule);
+        const d = ciDaysFromStart(rdRat, rule);
+        const anchor = { ligation: '수술일', ovx: 'OVX', arrival: '반입일' }[rule.startAnchor] || rule.startAnchor;
+
+        const view = {
+            nodate: { c:'#c62828', bg:'#ffebee', t:'투약 시작일을 알 수 없음',
+                      s:`${anchor}이 비어 있습니다. 넣기 전까지 투약이 시작되지 않습니다.` },
+            before: { c:'#e65100', bg:'#fff3e0', t:`투약 시작까지 ${d === null ? '-' : -d}일`,
+                      s:`${anchor} +${rule.startOffset}일부터 시작합니다.` },
+            on:     { c:'#0d47a1', bg:'#e3f2fd', t: d === 0 ? '오늘 투약 시작' : `투약 중 · ${d}일째`,
+                      s:`${rule.value} ${rule.unit || 'mg/kg/day'} · 음수 투여` },
+            after:  { c:'#666',    bg:'#f5f5f5', t:'투약 종료', s:'설정된 투약 구간이 끝났습니다.' }
+        }[win];
+
+        return `
+        <div style="background:${view.bg}; border:1px solid ${view.c}33; border-radius:8px;
+                    padding:10px 12px; margin-bottom:10px;">
+            <div style="font-size:0.72rem; color:${view.c}; opacity:0.8;">${rule.substance}</div>
+            <div style="font-size:1.05rem; font-weight:bold; color:${view.c}; margin:2px 0;">${view.t}</div>
+            <div style="font-size:0.76rem; color:${view.c}; opacity:0.85;">${view.s}</div>
+        </div>`;
+    } catch (e) { console.error(e); return ''; }
+}
+
 async function rdRenderCageInfo(ratId, containerId) {
     const box = document.getElementById(containerId);
     if (!box) return;
+    const doseHtml = await rdDoseStatusHtml();
 
     try {
         const hs = await db.collection('ratHousing').where('ratId', '==', ratId).get();
@@ -139,7 +175,7 @@ async function rdRenderCageInfo(ratId, containerId) {
         const current = recs.find(r => !r.to);
 
         if (!current) {
-            box.innerHTML = `<div style="color:#888; font-size:0.85rem;">
+            box.innerHTML = doseHtml + `<div style="color:#888; font-size:0.85rem;">
                 배정된 케이지가 없습니다. ${recs.length ? `(지난 재실 ${recs.length}건)` : ''}</div>`;
             return;
         }
@@ -159,7 +195,7 @@ async function rdRenderCageInfo(ratId, containerId) {
         const last = rows[0];
         const since = current.from?.toDate ? current.from.toDate().toISOString().slice(0, 10) : '-';
 
-        box.innerHTML = `
+        box.innerHTML = doseHtml + `
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <div style="flex:1; min-width:110px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center;">
                 <div style="font-size:0.75rem; color:#888;">현재 케이지</div>

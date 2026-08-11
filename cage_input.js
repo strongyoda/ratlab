@@ -139,8 +139,13 @@ function ciRenderList() {
     }
 
     const done = ciCages.filter(c => ciDoneToday.has(String(c.id))).length;
+    const states = {};
+    ciCages.forEach(c => { states[c.id] = ciCageDoseState(c.id); });
+
     body.innerHTML = `
     ${ciLastSavedBanner()}
+    ${ciPrepPreviewCard()}
+    ${ciDoseAlertBanner(states)}
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
             <h4 style="margin:0; color:var(--navy);">오늘 진행</h4>
@@ -153,12 +158,18 @@ function ciRenderList() {
             ${ciCages.map(c => {
                 const isDone = ciDoneToday.has(String(c.id));
                 const n = ciOccupants(c.id).length;
+                const st = states[c.id];
+                // 오늘 시작이거나 날짜가 비어 있으면 테두리로 눈에 띄게 한다
+                const urgent = st && (st.key === 'nodate' || st.today);
                 return `<button onclick="ciOpen('${c.id}')"
-                    style="padding:12px 6px; border-radius:8px; cursor:pointer; font-size:0.95rem;
-                           border:1px solid ${isDone ? '#a5d6a7' : '#ccc'};
+                    style="padding:10px 6px; border-radius:8px; cursor:pointer; font-size:0.95rem; line-height:1.35;
+                           border:${urgent ? '2px' : '1px'} solid ${urgent ? st.color : (isDone ? '#a5d6a7' : '#ccc')};
                            background:${isDone ? '#e8f5e9' : '#fff'}; color:${isDone ? '#2e7d32' : '#333'};">
                     <b>${c.number}번</b><br>
                     <span style="font-size:0.75rem;">${isDone ? '입력 완료' : n + '마리'}</span>
+                    ${st ? `<br><span style="display:inline-block; margin-top:3px; padding:1px 6px; border-radius:9px;
+                                 font-size:0.68rem; font-weight:bold; background:${st.bg}; color:${st.color};">
+                        ${st.label}${st.partial ? ' ⚠' : ''}</span>` : ''}
                 </button>`;
             }).join('')}
         </div>
@@ -167,6 +178,92 @@ function ciRenderList() {
     <div class="card" style="background:#e8f5e9; border:1px solid #a5d6a7;">
         <b style="color:#2e7d32;">오늘 입력이 모두 끝났습니다.</b>
     </div>` : ''}`;
+}
+
+// ---------- 오늘 조제량 미리보기 ----------
+// 사육실에 가기 전 벤치에서 만들어야 하므로, 라운드를 돌기 전에 필요량을 알아야 한다.
+// 지난 라운드의 체중(sumBW)과 마리당 섭취량으로 추정한다. 정확할 수는 없으니 여유를 얹는다.
+function ciPrepPlan() {
+    const fill = Number((ciConfig && ciConfig.housing && ciConfig.housing.waterFill)) || 700;
+    const rows = [];
+    let stock = null;
+
+    ciCages.forEach(cage => {
+        if (ciDoneToday.has(String(cage.id))) return;      // 이미 넣은 케이지는 뺀다
+        const st = ciCageDoseState(cage.id);
+        if (!st || st.key !== 'on') return;
+
+        stock = Number(st.rule.stockConc) || stock;
+        const n = ciOccupants(cage.id).length;
+        const bw = (ciLastFeed[cage.id] || {}).sumBW;
+        const pc = ciRecentPc[cage.id];
+
+        rows.push({
+            number: cage.number,
+            mg: (bw && pc && n) ? Number(st.rule.value) * (bw / 1000) * (fill / (pc * n)) : null
+        });
+    });
+    return { rows, stock, fill };
+}
+
+function ciPrepPreviewCard() {
+    const { rows, stock } = ciPrepPlan();
+    if (!rows.length || !stock) return '';
+
+    const known = rows.filter(r => r.mg !== null);
+    const unknown = rows.filter(r => r.mg === null);
+    if (!known.length) return '';
+
+    // 모르는 케이지는 아는 케이지의 평균으로 메운다
+    const avg = known.reduce((a, r) => a + r.mg, 0) / known.length;
+    const totalMg = known.reduce((a, r) => a + r.mg, 0) + unknown.length * avg;
+    const needCc = totalMg / stock;
+    const makeCc = Math.ceil((needCc * 1.3) / 10) * 10;    // 30% 여유 후 10 mL 단위
+
+    return `
+    <div class="card" style="background:#0d47a1; color:#fff; padding:14px 16px;">
+        <div style="font-size:0.78rem; opacity:0.85;">사육실 가기 전 · 오늘 만들 원액</div>
+        <div style="font-size:1.35rem; font-weight:bold; margin:6px 0;">
+            가루 ${(makeCc * stock / 1000).toFixed(1)} g &nbsp;+&nbsp; 증류수로 총 ${makeCc} mL 눈금까지
+        </div>
+        <div style="font-size:0.78rem; opacity:0.9;">
+            투약 케이지 ${rows.length}개 · 예상 사용 ${needCc.toFixed(0)} cc · 원액 ${stock} mg/mL
+            ${unknown.length ? ` · ${unknown.length}개는 지난 기록이 없어 평균으로 추정` : ''}
+        </div>
+        <div style="font-size:0.73rem; opacity:0.75; margin-top:5px;">
+            물 ${makeCc} mL에 녹이는 게 아니라, 가루를 넣고 눈금 ${makeCc} mL까지 채웁니다.
+            지난 체중 기준 추정이라 30% 여유를 얹었습니다.
+        </div>
+    </div>`;
+}
+
+// 목록 맨 위에 오늘 챙겨야 할 것만 모아 띄운다.
+// 케이지를 하나씩 열어봐야 알 수 있으면 놓치기 쉬운 것들이다.
+function ciDoseAlertBanner(states) {
+    const pick = fn => ciCages.filter(c => states[c.id] && fn(states[c.id]))
+                              .map(c => c.number + '번');
+    const noDate = pick(s => s.key === 'nodate' || s.noDateMixed);
+    const today  = pick(s => s.today);
+    const soon   = pick(s => s.soon);
+
+    if (!noDate.length && !today.length && !soon.length) return '';
+
+    const row = (color, bg, title, list, desc) => !list.length ? '' : `
+        <div style="padding:9px 11px; border-radius:6px; background:${bg}; margin-bottom:6px;">
+            <b style="color:${color}; font-size:0.88rem;">${title} · ${list.join(', ')}</b>
+            <div style="font-size:0.76rem; color:${color}; opacity:0.85; margin-top:2px;">${desc}</div>
+        </div>`;
+
+    return `
+    <div class="card" style="padding:12px 13px;">
+        <div style="font-size:0.78rem; color:#999; margin-bottom:7px;">투약 알림</div>
+        ${row('#c62828', '#ffebee', '기준 날짜 없음', noDate,
+              '수술일이 비어 있어 투약이 시작되지 않습니다. 날짜를 먼저 넣으세요.')}
+        ${row('#0d47a1', '#e3f2fd', '오늘 투약 시작', today,
+              '오늘부터 물에 원액을 넣습니다.')}
+        ${row('#e65100', '#fff3e0', '곧 시작', soon,
+              '3일 이내에 시작합니다. 원액을 미리 준비하세요.')}
+    </div>`;
 }
 
 // 방금 끝낸 케이지의 조제 지시. 다음 케이지를 입력하는 동안에도 계속 떠 있어야
@@ -213,6 +310,7 @@ function ciOpen(cageId) {
         foodGiven: last ? (last.foodGiven ?? h.foodFill ?? 150) : (h.foodFill ?? 150),
         bottleCount: last ? (last.bottleCount ?? h.bottleCount ?? 1) : (h.bottleCount ?? 1),
         note: '', flags: [], noRefill: false, waterScale: '',
+        handlings: '',              // 비우면 경과일수로 자동
         rats: {}
     };
     ciOccupants(cageId).forEach(r => {
@@ -238,6 +336,11 @@ function ciRenderForm() {
     const lastStr = last && last.at && last.at.toDate
         ? last.at.toDate().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
         : '이전 기록 없음';
+
+    // 물통 탈착 횟수 기본값 (매일 만지므로 경과일수 기준)
+    const hoursSince = (last && last.at && last.at.toDate)
+        ? (Date.now() - last.at.toDate().getTime()) / 3600000 : 0;
+    const autoHandlings = Math.max(1, Math.round(hoursSince / 24));
 
     body.innerHTML = `
     ${ciLastSavedBanner()}
@@ -282,6 +385,18 @@ function ciRenderForm() {
             <span style="font-size:0.85rem; color:#888; width:52px;">g 잔량</span>
         </div>
 
+        ${(Number(h.lossPerHandling) > 0 && last) ? `
+        <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+            <span style="width:52px; font-size:0.9rem; color:#555;">탈착</span>
+            <input type="number" inputmode="numeric" min="1" value="${ciForm.handlings}"
+                   oninput="ciSet('handlings', this.value)" placeholder="${autoHandlings} (자동)"
+                   style="flex:1; height:38px; font-size:0.95rem;">
+            <span style="font-size:0.85rem; color:#888; width:52px;">회</span>
+        </div>
+        <div style="font-size:0.75rem; color:#888; margin:4px 0 0 62px;">
+            지난 기록 이후 물통을 뗐다 낀 횟수. 비워두면 경과일수로 ${autoHandlings}회로 잡습니다.
+        </div>` : ''}
+
         <div id="ci-consume" style="margin-top:10px;"></div>
     </div>
 
@@ -290,7 +405,7 @@ function ciRenderForm() {
         <label style="display:block; margin-bottom:10px; font-size:0.88rem;">
             <input type="checkbox" ${ciForm.noRefill ? 'checked' : ''}
                    onchange="ciToggleNoRefill(this.checked)" style="width:auto;">
-            물 안 채우고 그대로 둠 <span style="color:#888; font-size:0.8rem;">(2일에 한 번 갈 때)</span>
+            물·사료 안 채우고 그대로 둠 <span style="color:#888; font-size:0.8rem;">(체중만 재는 날)</span>
         </label>
         <div style="display:flex; gap:10px; flex-wrap:wrap; ${ciForm.noRefill ? 'opacity:0.45; pointer-events:none;' : ''}">
             <div style="flex:1; min-width:120px;">
@@ -312,8 +427,9 @@ function ciRenderForm() {
         </div>
         ${ciForm.noRefill ? `
         <div style="margin-top:8px; padding:8px 10px; background:#f5f5f5; border-radius:6px; font-size:0.8rem; color:#666;">
-            잰 물통을 그대로 다시 겁니다. 약도 새로 넣지 않습니다.
-            내일 섭취량은 오늘 잔량(<b>${ciForm.waterRemaining || '-'} g</b>)을 기준으로 계산됩니다.
+            잰 물통과 사료를 그대로 다시 넣습니다. 약도 새로 넣지 않습니다.
+            다음 섭취량은 오늘 잔량(물 <b>${ciForm.waterRemaining || '-'} g</b> ·
+            사료 <b>${ciForm.foodRemaining || '-'} g</b>)을 기준으로 계산됩니다.
         </div>` : ''}
     </div>
 
@@ -386,7 +502,10 @@ function ciRatBlock(rat) {
 function ciSet(key, val) {
     ciForm[key] = val;
     // 그대로 두는 날은 '준 양'이 곧 지금 남은 양이므로 같이 따라가야 한다
-    if (key === 'waterRemaining' && ciForm.noRefill) ciForm.waterGiven = val === '' ? 0 : Number(val);
+    if (ciForm.noRefill) {
+        if (key === 'waterRemaining') ciForm.waterGiven = val === '' ? 0 : Number(val);
+        if (key === 'foodRemaining')  ciForm.foodGiven  = val === '' ? 0 : Number(val);
+    }
     ciUpdateCalc();
 }
 // 저울에 올린 값(물통째)에서 빈 통 무게를 빼 물 양을 구한다
@@ -408,14 +527,18 @@ function ciScore(ratId, key, n) {
     f[key] = (f[key] === n) ? 0 : n;
     ciRenderForm();
 }
-// 물을 안 갈고 그대로 두는 날: 다음 구간의 '준 양'은 지금 남아있는 양이 된다.
+// 물·사료를 안 갈고 그대로 두는 날: 다음 구간의 '준 양'은 지금 남아있는 양이 된다.
+// 사료도 물과 같은 날 함께 채우므로 물만 처리하면 다음 구간 섭취량이 부풀려진다.
 function ciToggleNoRefill(on) {
     ciForm.noRefill = on;
-    if (on) ciForm.waterGiven = ciForm.waterRemaining === '' ? 0 : Number(ciForm.waterRemaining);
-    else {
-        const h = (ciConfig && ciConfig.housing) || {};
-        const last = ciLastFeed[ciCurrent];
+    const h = (ciConfig && ciConfig.housing) || {};
+    const last = ciLastFeed[ciCurrent];
+    if (on) {
+        ciForm.waterGiven = ciForm.waterRemaining === '' ? 0 : Number(ciForm.waterRemaining);
+        ciForm.foodGiven  = ciForm.foodRemaining  === '' ? 0 : Number(ciForm.foodRemaining);
+    } else {
         ciForm.waterGiven = last ? (last.waterGiven ?? h.waterFill ?? 600) : (h.waterFill ?? 600);
+        ciForm.foodGiven  = last ? (last.foodGiven  ?? h.foodFill  ?? 250) : (h.foodFill  ?? 250);
     }
     ciRenderForm();
 }
@@ -444,7 +567,16 @@ function ciComputeIntake() {
     const lossPerHandling = Number(cfgH.lossPerHandling) || 0;
     const bottles = Number(last.bottleCount) || 1;
 
-    const loss = (evapPerHour * hours + lossPerHandling) * bottles;
+    // 물통을 뗐다 낄 때마다 로스가 난다.
+    // 물은 월·수·금만 갈지만 체중은 매일 재므로, 기록 사이에 체중만 잰 날이 있으면
+    // 그날의 탈착도 세야 한다. 매일 만지는 프로토콜이라 경과일수로 기본값을 잡는다.
+    const autoHandlings = Math.max(1, Math.round(hours / 24));
+    const handlings = (ciForm.handlings === '' || ciForm.handlings === undefined)
+        ? autoHandlings : Math.max(1, Number(ciForm.handlings) || 1);
+
+    const evapLoss = evapPerHour * hours * bottles;
+    const handLoss = lossPerHandling * handlings * bottles;
+    const loss = evapLoss + handLoss;
     const water = Number(last.waterGiven) - wr - loss;
     const food = (ciForm.foodRemaining === '' || isNaN(fr)) ? null : Number(last.foodGiven) - fr;
 
@@ -468,7 +600,8 @@ function ciComputeIntake() {
     const n = ciOccupants(ciCurrent).length;
 
     return {
-        hours, days, loss, water, food, n, animalDays, housingChanged: changed,
+        hours, days, loss, evapLoss, handLoss, handlings, autoHandlings,
+        water, food, n, animalDays, housingChanged: changed,
         waterPc: animalDays > 0 ? water / animalDays : null,
         foodPc: (food !== null && animalDays > 0) ? food / animalDays : null,
         lossKnown: (evapPerHour > 0 || lossPerHandling > 0)
@@ -499,7 +632,9 @@ function ciUpdateCalc() {
             &nbsp;·&nbsp; 마리당 <b>${c.waterPc ? c.waterPc.toFixed(0) : '-'} mL/day</b>
             <div style="font-size:0.75rem; opacity:0.85; margin-top:3px;">
                 ${c.hours.toFixed(1)}시간 · ${c.animalDays.toFixed(2)} 마리·일
-                ${c.lossKnown ? `· 로스 ${c.loss.toFixed(1)}g 보정` : '· <b>로스 상수 미설정</b>'}
+                ${c.lossKnown ? `· 로스 ${c.loss.toFixed(1)}g
+                    <span style="opacity:0.8;">(증발 ${c.evapLoss.toFixed(1)} + 탈착 ${c.handLoss.toFixed(1)}, ${c.handlings}회)</span>`
+                    : '· <b>로스 상수 미설정</b>'}
                 ${c.housingChanged ? '<br>구간 중 재실 변동이 있어 이 구간은 예상치 계산에서 제외됩니다.' : ''}
                 ${bad ? '<br><b>잔량이 채운 양보다 많습니다. 입력을 확인하세요.</b>' : ''}
             </div>
@@ -510,27 +645,104 @@ function ciUpdateCalc() {
 
 // ---------- 메트포민 지시량 ----------
 // 물에 타므로 '마신 양'만큼 들어간다 → 안 마시고 버려지는 몫까지 감안해 진하게 탄다
-function ciGetMetforminRule() {
+function ciGetMetforminRule(cageId) {
     if (!ciConfig || !ciConfig.dosing) return null;
-    const cage = ciCages.find(c => String(c.id) === ciCurrent);
-    const occ = ciOccupants(ciCurrent);
-    if (!occ.length) return null;
+    const id = String(cageId === undefined ? ciCurrent : cageId);
+    const cage = ciCages.find(c => String(c.id) === id);
+    const occ = ciOccupants(id);
+    if (!cage || !occ.length) return null;
     const gkey = cage.group || ('G' + String(occ[0].group || 1).replace(/^G/, ''));
 
     return ciConfig.dosing.find(d =>
         d.medium === 'water' && (d.groups || []).includes(gkey) && Number(d.value) > 0) || null;
 }
 
-// 기준 이벤트 + 오프셋으로 투약 시작일을 개체별로 계산
-function ciDoseStarted(rat, rule) {
-    if (!rule) return false;
-    const base = rule.startAnchor === 'ligation' ? rat.surgeryDate
-               : rule.startAnchor === 'ovx'      ? rat.ovxDate
-               : rule.startAnchor === 'arrival'  ? rat.arrivalDate : null;
-    if (!base) return false;
-    const start = new Date(base);
-    start.setDate(start.getDate() + (Number(rule.startOffset) || 0));
-    return new Date() >= start;
+// 'YYYY-MM-DD' 문자열끼리 비교한다.
+// new Date('2026-08-25')는 UTC 자정으로 파싱되어 KST로는 오전 9시가 된다.
+// 아침에 도는 라운드가 시작일 당일인데도 '시작 전'으로 나오던 원인.
+function ciDateStr(v) {
+    if (!v) return null;
+    if (typeof v === 'string') return v.slice(0, 10);
+    if (v.toDate) {
+        const d = v.toDate();
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    }
+    return null;
+}
+function ciShiftDate(dateStr, days) {
+    const d = new Date(dateStr + 'T00:00:00');           // 로컬 자정으로 고정
+    d.setDate(d.getDate() + (Number(days) || 0));
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+}
+
+// 기준 이벤트 + 오프셋으로 개체별 투약 구간을 판정한다.
+// 'nodate' 기준 날짜가 비어 있음 | 'before' 시작 전 | 'on' 투약 중 | 'after' 종료됨
+function ciDoseWindow(rat, rule) {
+    if (!rule) return 'nodate';
+    const pick = a => ciDateStr(a === 'ligation' ? rat.surgeryDate
+                             : a === 'ovx'      ? rat.ovxDate
+                             : a === 'arrival'  ? rat.arrivalDate : null);
+
+    const base = pick(rule.startAnchor);
+    if (!base) return 'nodate';
+
+    const today = getTodayStr();
+    if (today < ciShiftDate(base, rule.startOffset)) return 'before';
+
+    // endAnchor가 'end'면 실험 종료까지 계속 투약한다
+    if (rule.endAnchor && rule.endAnchor !== 'end') {
+        const eb = pick(rule.endAnchor);
+        if (eb && today > ciShiftDate(eb, rule.endOffset)) return 'after';
+    }
+    return 'on';
+}
+
+// ---------- 투약 상태 (목록·랫드 상세에서 공용) ----------
+// 상태를 따로 저장하지 않는다. ligation 날짜 + 코호트 설정 오프셋으로 매번 계산한다.
+// 저장해두면 수술일을 고치거나 설정을 바꿨을 때 조용히 어긋난다.
+
+// 오늘이 투약 시작일로부터 며칠째인가. 음수면 아직 시작 전.
+function ciDaysFromStart(rat, rule) {
+    if (!rule) return null;
+    const base = ciDateStr(rule.startAnchor === 'ligation' ? rat.surgeryDate
+                         : rule.startAnchor === 'ovx'      ? rat.ovxDate
+                         : rule.startAnchor === 'arrival'  ? rat.arrivalDate : null);
+    if (!base) return null;
+    const start = ciShiftDate(base, rule.startOffset);
+    return Math.round((new Date(getTodayStr() + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000);
+}
+
+// 케이지 단위 상태. 한 케이지에 여러 상태가 섞이면 급한 쪽을 대표로 삼는다.
+function ciCageDoseState(cageId, rats) {
+    const occ = rats || ciOccupants(cageId);
+    const rule = ciGetMetforminRule(cageId);
+    if (!occ.length || !rule) return null;
+
+    const wins = occ.map(r => ciDoseWindow(r, rule));
+    const days = occ.map(r => ciDaysFromStart(r, rule)).filter(v => v !== null);
+    const partial = !wins.every(w => w === wins[0]);
+
+    // 한 마리라도 투약 중이면 물통을 공유하므로 케이지 전체가 투약된다.
+    // 날짜 없는 개체가 섞여 있어도 '오늘 할 일'은 투약이므로 이쪽이 우선이다.
+    // (날짜 누락 자체는 위쪽 알림 배너에서 따로 짚는다)
+    if (wins.includes('on')) {
+        const d = Math.max(...days);
+        return { key:'on', today: d === 0, rule, partial,
+                 noDateMixed: wins.includes('nodate'),
+                 label: d === 0 ? '오늘 투약 시작' : `투약 중 D+${d}`,
+                 color:'#0d47a1', bg:'#e3f2fd' };
+    }
+
+    if (wins.includes('nodate'))
+        return { key:'nodate', label:'날짜 없음', color:'#c62828', bg:'#ffebee', rule, partial };
+
+    if (wins.every(w => w === 'after'))
+        return { key:'after', label:'투약 종료', color:'#666', bg:'#f5f5f5', rule, partial:false };
+
+    const d = Math.max(...days);                 // 시작 전이므로 음수, 가장 임박한 개체
+    const soon = d >= -3;
+    return { key:'before', soon, rule, partial,
+             label:`투약 시작 D${d}`, color: soon ? '#e65100' : '#888', bg: soon ? '#fff3e0' : '#fafafa' };
 }
 
 function ciUpdateDose() {
@@ -550,12 +762,31 @@ function ciUpdateDose() {
         return;
     }
 
-    const started = occ.filter(r => ciDoseStarted(r, rule));
+    const win = new Map(occ.map(r => [r.ratId, ciDoseWindow(r, rule)]));
+    const started = occ.filter(r => win.get(r.ratId) === 'on');
     if (!started.length) {
-        box.innerHTML = `<div class="card" style="background:#f5f5f5;">
-            <b style="color:#666;">${rule.substance} 아직 시작 전</b>
-            <div style="font-size:0.8rem; color:#888; margin-top:4px;">물만 채우세요.</div>
-        </div>`;
+        ciForm._doseCc = 0;
+        // 기준 날짜가 비어 있으면 영영 시작되지 않는다. '시작 전'과 구분해서 알린다.
+        const noDate = occ.filter(r => win.get(r.ratId) === 'nodate');
+        if (noDate.length) {
+            box.innerHTML = `<div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
+                <b style="color:#7a5c00;">${rule.substance} 투약 시작일을 판정할 수 없습니다</b>
+                <div style="font-size:0.8rem; color:#7a5c00; margin-top:4px;">
+                    ${noDate.map(r => r.ratId).join(', ')} 의 ${rule.startAnchor} 날짜가 비어 있습니다.<br>
+                    날짜를 넣기 전까지 투약이 시작되지 않습니다.
+                </div>
+            </div>`;
+        } else if (occ.every(r => win.get(r.ratId) === 'after')) {
+            box.innerHTML = `<div class="card" style="background:#f5f5f5;">
+                <b style="color:#666;">${rule.substance} 투약 종료</b>
+                <div style="font-size:0.8rem; color:#888; margin-top:4px;">물만 채우세요.</div>
+            </div>`;
+        } else {
+            box.innerHTML = `<div class="card" style="background:#f5f5f5;">
+                <b style="color:#666;">${rule.substance} 아직 시작 전</b>
+                <div style="font-size:0.8rem; color:#888; margin-top:4px;">물만 채우세요.</div>
+            </div>`;
+        }
         return;
     }
 
@@ -603,7 +834,10 @@ function ciUpdateDose() {
             · 예상섭취 ${expectedIntake.toFixed(0)}mL · 원액 ${stock}mg/mL
         </div>
         ${partial ? `<div style="font-size:0.78rem; color:#b71c1c; margin-top:5px;">
-            ⚠️ 같은 케이지인데 투약 시작일이 다른 개체가 있습니다 (${started.length}/${occ.length}).
+            ⚠️ 같은 케이지인데 투약 구간이 아닌 개체가 있습니다 (투약 중 ${started.length}/${occ.length}).
+            ${occ.filter(r => win.get(r.ratId) !== 'on').map(r => `${r.ratId}(${
+                { before: '시작 전', after: '종료', nodate: '날짜 없음' }[win.get(r.ratId)]
+            })`).join(', ')}<br>
             물통을 공유하므로 전원에게 들어갑니다.</div>` : ''}
     </div>`;
 }
@@ -646,6 +880,8 @@ async function ciSave() {
             by: by
         };
         if (c && !c.tooShort) {
+            feed.handlings = c.handlings;
+            feed.lossTotal = Number(c.loss.toFixed(2));
             feed.intervalHours = Number(c.hours.toFixed(2));
             feed.waterConsumed = Number(c.water.toFixed(1));
             feed.foodConsumed = c.food === null ? null : Number(c.food.toFixed(1));
@@ -656,6 +892,10 @@ async function ciSave() {
         if (ciForm._doseCc) {
             feed.doseCc = ciForm._doseCc; feed.doseMg = ciForm._doseMg; feed.stockConc = ciForm._stockConc;
         }
+        // 다음 라운드 조제량을 미리 계산하려면 체중이 필요하다.
+        // 투약을 아직 안 하는 케이지도 남겨둬야 '이번에 새로 시작하는 케이지'까지 예측된다.
+        const bwSum = occ.reduce((a, r) => a + (Number(ciForm.rats[r.ratId].weight) || 0), 0);
+        if (bwSum > 0) feed.sumBW = Number(bwSum.toFixed(0));
 
         // 오늘 이미 입력한 케이지면 새로 만들지 않고 덮어쓴다.
         // (두 줄이 생기면 다음 구간이 '몇 분짜리'로 잡혀 섭취량 계산이 망가짐)
@@ -807,7 +1047,9 @@ async function ciShowPrepSheet() {
 }
 
 // 원액은 사육실에 가기 전에 만들어야 하는데, 정확한 필요량은 그날 체중을 재봐야 안다.
-// 그래서 오늘 쓴 양을 보여주고 그걸 기준으로 내일 만들 양을 제안한다.
+// 그래서 오늘 쓴 양을 보여주고 그걸 기준으로 다음 교체일에 만들 양을 제안한다.
+// 조제는 '물 N mL에 녹이기'가 아니라 '눈금 N mL까지 채우기'다.
+// 가루가 부피를 차지하므로 전자는 농도가 몇 % 묽어진다.
 function ciStockSummary(dosed, stock) {
     if (!dosed.length || !stock) return '';
     const usedCc = dosed.reduce((a, r) => a + r.cc, 0);
@@ -818,11 +1060,15 @@ function ciStockSummary(dosed, stock) {
     return `
     <div style="margin-top:10px; padding:11px 13px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px;">
         <div style="font-size:0.85rem; color:#1b5e20;">
-            오늘 쓴 원액 <b>${usedCc.toFixed(1)} cc</b> (메트포민 ${usedG.toFixed(2)} g)
+            오늘 쓴 원액 <b>${usedCc.toFixed(1)} cc</b> (가루 ${usedG.toFixed(2)} g)
         </div>
-        <div style="font-size:0.85rem; color:#1b5e20; margin-top:5px;">
-            내일 만들 양 <b>${suggestCc} mL</b> · 메트포민 <b>${suggestG.toFixed(1)} g</b>을 물에 녹여 ${suggestCc} mL
+        <div style="font-size:0.85rem; color:#1b5e20; margin-top:6px;">
+            다음 교체일 조제 &nbsp;·&nbsp; 가루 <b>${suggestG.toFixed(1)} g</b>
+            &nbsp;+&nbsp; 증류수로 <b>총 ${suggestCc} mL 눈금까지</b>
             <span style="font-size:0.75rem; opacity:0.8;">(오늘보다 30% 여유)</span>
+        </div>
+        <div style="font-size:0.75rem; color:#2e7d32; margin-top:5px; opacity:0.9;">
+            물 ${suggestCc} mL에 녹이는 게 아니라, 가루를 넣고 눈금 ${suggestCc} mL까지 채웁니다.
         </div>
     </div>`;
 }
