@@ -129,49 +129,110 @@ function deRowHtml(r, i) {
     </tr>`;
 }
 
-// 고친 값으로 그 구간의 섭취량을 다시 계산한다.
-// 직전 방문의 '채운 양'에서 이번 '잔량'과 로스를 뺀다 — 입력 화면과 같은 방식.
+// 한 구간(row)의 파생값을 '직전 기록(prev)' 기준으로 전부 다시 계산해 저장한다.
+// 케이지별 입력과 같은 식: 섭취 = prev.채움 − row.잔량 − 로스,
+// 로스 = 증발×시간 + 탈착×횟수, 마리·일 = 재실 겹침 합.
+// keepHandlings: 구간이 안 바뀌는 단순 수정이면 손으로 넣었던 탈착 횟수를 유지한다.
+async function deRecomputeRow(row, prev, keepHandlings) {
+    const payload = {};
+    const rowAt = row.at && row.at.toMillis ? row.at.toMillis() : null;
+    const prevAt = prev && prev.at && prev.at.toMillis ? prev.at.toMillis() : null;
+
+    let hours = (rowAt && prevAt) ? (rowAt - prevAt) / 3600000
+              : (typeof row.intervalHours === 'number' ? row.intervalHours : null);
+
+    if (hours !== null && hours > 0) {
+        const hnd = (keepHandlings && Number(row.handlings))
+            ? Number(row.handlings) : Math.max(1, Math.round(hours / 24));
+        const loss = ((row.evapPerHour || 0) * hours
+                    + (row.lossPerHandling || 0) * hnd) * (prev.bottleCount || 1);
+
+        // 마리·일: 이 케이지의 재실 기록과 구간의 겹침 (구간 도중 사망·이동 반영)
+        let animalDays = row.animalDays || null;
+        if (rowAt && prevAt) {
+            const hs = await db.collection('ratHousing').where('cageId', '==', String(row.cageId)).get();
+            let animalHours = 0;
+            hs.forEach(d => {
+                const h = d.data();
+                const from = h.from && h.from.toMillis ? h.from.toMillis() : 0;
+                const to = h.to && h.to.toMillis ? h.to.toMillis() : rowAt;
+                const ov = Math.min(rowAt, to) - Math.max(prevAt, from);
+                if (ov > 0) animalHours += ov / 3600000;
+            });
+            animalDays = animalHours / 24;
+        }
+
+        payload.intervalHours = Number(hours.toFixed(2));
+        payload.handlings = hnd;
+        payload.lossTotal = Number(loss.toFixed(2));
+        payload.animalDays = animalDays === null ? null : Number(animalDays.toFixed(3));
+
+        if (typeof prev.waterGiven === 'number' && typeof row.waterRemaining === 'number') {
+            const wc = prev.waterGiven - row.waterRemaining - loss;
+            payload.waterConsumed = Number(wc.toFixed(1));
+            payload.waterPerCapita = (animalDays > 0) ? Number((wc / animalDays).toFixed(1)) : null;
+        }
+        if (typeof prev.foodGiven === 'number' && typeof row.foodRemaining === 'number') {
+            const fc = prev.foodGiven - row.foodRemaining;
+            payload.foodConsumed = Number(fc.toFixed(1));
+            payload.foodPerCapita = (animalDays > 0) ? Number((fc / animalDays).toFixed(1)) : null;
+        }
+    }
+
+    if (Object.keys(payload).length) {
+        await db.collection('cageFeeding').doc(row._id).set(payload, { merge: true });
+        Object.assign(row, payload);
+    }
+    return payload;
+}
+
+// 고친 값으로 그 구간을 다시 계산하고, 이 행의 '채움'을 기준으로 삼는
+// 다음(뒤) 구간까지 같이 다시 계산한다 — 안 하면 뒤 구간에 낡은 값이 남는다.
 async function deSaveRow(i) {
     const r = deCageRows[i];
     const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? Number(el.value) : null; };
     const wr = g(`de-wr-${i}`), wg = g(`de-wg-${i}`), fr = g(`de-fr-${i}`), fg = g(`de-fg-${i}`);
 
-    const payload = { waterRemaining: wr, waterGiven: wg, foodRemaining: fr, foodGiven: fg };
-
-    // 시간순으로 바로 앞 기록 (배열은 최신순이라 i+1)
-    const prev = deCageRows[i + 1];
-    if (prev && typeof r.intervalHours === 'number' && r.animalDays) {
-        const loss = ((r.evapPerHour || 0) * r.intervalHours + (r.lossPerHandling || 0)) * (prev.bottleCount || 1);
-        if (typeof prev.waterGiven === 'number' && wr !== null) {
-            const consumed = prev.waterGiven - wr - loss;
-            payload.waterConsumed = Number(consumed.toFixed(1));
-            payload.waterPerCapita = Number((consumed / r.animalDays).toFixed(1));
-        }
-        if (typeof prev.foodGiven === 'number' && fr !== null) {
-            const fc = prev.foodGiven - fr;
-            payload.foodConsumed = Number(fc.toFixed(1));
-            payload.foodPerCapita = Number((fc / r.animalDays).toFixed(1));
-        }
-    }
-    payload.editedAt = firebase.firestore.FieldValue.serverTimestamp();
-    payload.editedBy = (firebase.auth().currentUser && firebase.auth().currentUser.email) || null;
+    const base = {
+        waterRemaining: wr, waterGiven: wg, foodRemaining: fr, foodGiven: fg,
+        editedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        editedBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || null
+    };
 
     try {
-        await db.collection('cageFeeding').doc(r._id).set(payload, { merge: true });
-        Object.assign(deCageRows[i], payload);
-        document.getElementById(`de-row-${i}`).outerHTML = deRowHtml(deCageRows[i], i);
-        if (typeof cfgToast === 'function') cfgToast('저장되었습니다');
+        await db.collection('cageFeeding').doc(r._id).set(base, { merge: true });
+        Object.assign(r, { waterRemaining: wr, waterGiven: wg, foodRemaining: fr, foodGiven: fg });
+
+        const prev = deCageRows[i + 1];               // 배열은 최신순 → i+1이 시간상 이전
+        if (prev) await deRecomputeRow(r, prev, true);
+
+        const later = deCageRows[i - 1];              // 시간상 다음 구간
+        if (later) {
+            await deRecomputeRow(later, r, true);
+            const el = document.getElementById(`de-row-${i - 1}`);
+            if (el) el.outerHTML = deRowHtml(later, i - 1);
+        }
+
+        document.getElementById(`de-row-${i}`).outerHTML = deRowHtml(r, i);
+        if (typeof cfgToast === 'function') cfgToast(later ? '저장 · 뒤 구간도 다시 계산됨' : '저장되었습니다');
     } catch (e) { console.error(e); alert('저장 실패: ' + e.message); }
 }
 
 async function deDeleteRow(i) {
     const r = deCageRows[i];
-    if (!confirm(`${r.dateStr} 기록을 삭제할까요?\n이 구간이 사라지면 앞뒤 구간이 하나로 이어져 계산됩니다.`)) return;
+    if (!confirm(`${r.dateStr} 기록을 삭제할까요?\n이 구간이 사라지면 앞뒤 구간이 하나로 이어져 다시 계산됩니다.`)) return;
     try {
+        const later = deCageRows[i - 1];              // 시간상 다음 구간
+        const newPrev = deCageRows[i + 1];            // 시간상 이전 구간
         await db.collection('cageFeeding').doc(r._id).delete();
         deCageRows.splice(i, 1);
+
+        // 다음 구간이 삭제된 행을 기준으로 계산돼 있었다면, 새 이전 행 기준으로 잇는다.
+        // (구간 시간·마리일·로스가 전부 달라지므로 탈착 횟수도 새로 추정)
+        if (later && newPrev) await deRecomputeRow(later, newPrev, false);
+
         const cohort = document.getElementById('de-cage-cohort').value;
         await deLoadCageRecords(deCageId, cohort);
-        if (typeof cfgToast === 'function') cfgToast('삭제되었습니다');
+        if (typeof cfgToast === 'function') cfgToast(later && newPrev ? '삭제 · 다음 구간 다시 계산됨' : '삭제되었습니다');
     } catch (e) { console.error(e); alert('삭제 실패: ' + e.message); }
 }

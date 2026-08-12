@@ -15,7 +15,8 @@ let ciCages = [];        // 이 코호트 쥐가 들어있는 케이지만
 let ciHousing = [];
 let ciAllHousing = [];   // 끝난 재실 포함 (구간 중 변동을 반영하려면 필요)
 let ciRats = [];
-let ciLastFeed = {};     // cageId -> 직전 방문 기록
+let ciLastFeed = {};     // cageId -> 직전 방문 기록 (오늘 것일 수도 있음)
+let ciPrevFeed = {};     // cageId -> 오늘 이전의 마지막 기록 (오늘 재입력 시 비교 기준)
 let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day)
 let ciCurrent = null;    // 지금 입력 중인 케이지 id
 let ciDoneToday = new Set();
@@ -94,7 +95,7 @@ async function ciLoad() {
 // 케이지별 직전 방문 + 최근 마리당 섭취량
 // 마리당으로 기억해야 케이지를 합치거나 개체가 죽어도 예상치가 어긋나지 않는다.
 async function ciLoadHistory() {
-    ciLastFeed = {}; ciRecentPc = {};
+    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {};
     const todayStr = getTodayStr();
 
     // 케이지별로 따로 조회하면 복합 인덱스가 필요하고 읽기 횟수도 많아진다.
@@ -116,6 +117,11 @@ async function ciLoadHistory() {
         rows.sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
 
         ciLastFeed[cage.id] = rows[0];
+        // 오늘 기록을 다시 여는 경우, 섭취량은 '오늘 이전 마지막 기록'과 비교해야 한다.
+        // 오늘 자신과 비교하면 몇 분짜리 구간이 되어 계산이 통째로 빠지고,
+        // 덮어쓰기 시 낡은 파생값이 남는다.
+        const prevRow = rows.find(r => r.dateStr !== todayStr);
+        if (prevRow) ciPrevFeed[cage.id] = prevRow;
         if (rows[0].dateStr === todayStr) ciDoneToday.add(String(cage.id));
 
         // 예상 섭취량은 '마리당'으로 기억 → 합치거나 죽어도 어긋나지 않음.
@@ -291,6 +297,14 @@ function ciOccupants(cageId) {
         .filter(r => r && r.status !== '사망');
 }
 
+// 섭취량 계산의 비교 기준 기록.
+// 최신 기록이 오늘 것이면(재입력) 오늘 이전 기록을 쓴다 — 오늘 방문을 '교체'하는 의미.
+function ciBaseline(cageId) {
+    const last = ciLastFeed[cageId];
+    if (last && last.dateStr === getTodayStr()) return ciPrevFeed[cageId] || null;
+    return last || null;
+}
+
 // ---------- 입력 폼 ----------
 function ciOpen(cageId) {
     const cage = ciCages.find(c => String(c.id) === String(cageId));
@@ -311,6 +325,7 @@ function ciOpen(cageId) {
         bottleCount: last ? (last.bottleCount ?? h.bottleCount ?? 1) : (h.bottleCount ?? 1),
         note: '', flags: [], noRefill: false, waterScale: '',
         handlings: '',              // 비우면 경과일수로 자동
+        bottleSwap: false, newTare: '',   // 오늘 물통을 갈았는가 + 새 통 무게
         rats: {}
     };
     ciOccupants(cageId).forEach(r => {
@@ -324,11 +339,13 @@ function ciRenderForm() {
     const cage = ciCages.find(c => String(c.id) === ciCurrent);
     if (!cage) { ciCurrent = null; ciRenderList(); return; }
     const occ = ciOccupants(ciCurrent);
-    const last = ciLastFeed[ciCurrent];
+    const last = ciBaseline(ciCurrent);           // 오늘 재입력이면 어제 기록이 기준
+    const redo = ciDoneToday.has(String(ciCurrent));
     const h = (ciConfig && ciConfig.housing) || {};
     const showBottle = Number(ciForm.bottleCount) > 1 || Number(h.bottleCount || 1) > 1;
     // 빈 물통 무게가 설정돼 있으면 저울에 올린 값을 그대로 받고 물 양은 앱이 뺀다
-    const tare = Number(h.bottleTare) || 0;
+    const tare = ciTareOf(ciCurrent);
+    const tareIsOwn = Number(cage.bottleTare) > 0;   // 이 자리 실측값인지, 코호트 기본값인지
 
     const idx = ciCages.findIndex(c => String(c.id) === ciCurrent);
     const next = ciCages[idx + 1];
@@ -354,6 +371,10 @@ function ciRenderForm() {
             ${occ.length}마리 · 지난 급여 ${lastStr}
             ${last ? `· 물 ${last.waterGiven}mL / 사료 ${last.foodGiven}g 채움` : ''}
         </div>
+        ${redo ? `<div style="margin-top:6px; padding:6px 9px; background:#fff8e1; border-radius:5px; font-size:0.78rem; color:#7a5c00;">
+            오늘 이미 저장한 케이지입니다. 다시 저장하면 오늘 기록을 <b>교체</b>하며,
+            섭취량·투약량은 ${lastStr} 기록과 비교해 다시 계산됩니다.
+        </div>` : ''}
     </div>
 
     <div class="card">
@@ -367,8 +388,9 @@ function ciRenderForm() {
                    style="flex:1; height:44px; font-size:1.05rem;">
             <span style="font-size:0.85rem; color:#888; width:52px;">g 통째</span>
         </div>
-        <div style="font-size:0.8rem; color:#666; margin:0 0 10px 62px;">
+        <div style="font-size:0.8rem; color:${tareIsOwn ? '#666' : '#c62828'}; margin:0 0 10px 62px;">
             빈 통 ${tare} g 제외 → 물 <b>${ciForm.waterRemaining === '' ? '-' : ciForm.waterRemaining} g</b>
+            ${tareIsOwn ? '' : '<br>이 자리의 물통 무게가 등록되지 않아 <b>코호트 기본값</b>을 씁니다. 케이지 현황에서 실측값을 넣어주세요.'}
         </div>` : `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
             <span style="width:52px; font-size:0.9rem; color:#555;">물</span>
@@ -384,6 +406,28 @@ function ciRenderForm() {
                    style="flex:1; height:44px; font-size:1.05rem;">
             <span style="font-size:0.85rem; color:#888; width:52px;">g 잔량</span>
         </div>
+
+        ${tare > 0 ? `
+        <div style="margin-top:2px; padding-top:8px; border-top:1px dashed #eee;">
+            <label style="display:block; font-size:0.85rem;">
+                <input type="checkbox" ${ciForm.bottleSwap ? 'checked' : ''}
+                       onchange="ciToggleBottleSwap(this.checked)" style="width:auto;">
+                오늘 물통을 새것으로 갈았음
+            </label>
+            ${ciForm.bottleSwap ? `
+            <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+                <span style="width:52px; font-size:0.85rem; color:#555;">새 통</span>
+                <input type="number" step="any" inputmode="decimal" value="${ciForm.newTare}"
+                       oninput="ciSet('newTare', this.value)" placeholder="빈 통 무게"
+                       style="flex:1; height:38px; font-size:0.95rem;">
+                <span style="font-size:0.85rem; color:#888; width:52px;">g</span>
+            </div>
+            <div style="font-size:0.75rem; color:#7a5c00; margin:5px 0 0 62px; background:#fff8e1;
+                        padding:6px 9px; border-radius:5px;">
+                방금 잰 건 <b>떼어낸 옛 통(${tare} g)</b>이라 그 값으로 계산합니다.
+                새 통 무게는 <b>저장할 때</b> 이 자리에 등록되어 다음 회차부터 쓰입니다.
+            </div>` : ''}
+        </div>` : ''}
 
         ${(Number(h.lossPerHandling) > 0 && last) ? `
         <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
@@ -508,10 +552,18 @@ function ciSet(key, val) {
     }
     ciUpdateCalc();
 }
+// 빈 물통 무게는 통마다 다르다. 그 자리에 등록된 값이 우선이고,
+// 없으면 코호트 기본값으로 넘어간다.
+function ciTareOf(cageId) {
+    const cage = ciCages.find(c => String(c.id) === String(cageId));
+    if (cage && Number(cage.bottleTare) > 0) return Number(cage.bottleTare);
+    return Number((ciConfig && ciConfig.housing && ciConfig.housing.bottleTare) || 0);
+}
+
 // 저울에 올린 값(물통째)에서 빈 통 무게를 빼 물 양을 구한다
 function ciSetScale(val) {
     ciForm.waterScale = val;
-    const tare = Number((ciConfig && ciConfig.housing && ciConfig.housing.bottleTare) || 0);
+    const tare = ciTareOf(ciCurrent);
     const water = (val === '' || isNaN(Number(val))) ? '' : Math.round((Number(val) - tare) * 10) / 10;
     ciForm.waterRemaining = water === '' ? '' : String(water);
     if (ciForm.noRefill) ciForm.waterGiven = water === '' ? 0 : water;
@@ -532,7 +584,7 @@ function ciScore(ratId, key, n) {
 function ciToggleNoRefill(on) {
     ciForm.noRefill = on;
     const h = (ciConfig && ciConfig.housing) || {};
-    const last = ciLastFeed[ciCurrent];
+    const last = ciBaseline(ciCurrent);
     if (on) {
         ciForm.waterGiven = ciForm.waterRemaining === '' ? 0 : Number(ciForm.waterRemaining);
         ciForm.foodGiven  = ciForm.foodRemaining  === '' ? 0 : Number(ciForm.foodRemaining);
@@ -543,6 +595,15 @@ function ciToggleNoRefill(on) {
     ciRenderForm();
 }
 
+// 물통을 가는 날: 지금 저울에 올린 건 '떼어낸 옛 통'이므로 계산은 옛 무게로 하고,
+// 새 통 무게는 저장할 때 이 자리에 등록해 다음 회차부터 쓰이게 한다.
+// (케이지 현황에서 미리 바꿔두면 그날 측정이 새 통 무게로 계산되어 어긋난다)
+function ciToggleBottleSwap(on) {
+    ciForm.bottleSwap = on;
+    if (!on) ciForm.newTare = '';
+    ciRenderForm();
+}
+
 function ciToggleFlag(flag, on) {
     if (on) { if (!ciForm.flags.includes(flag)) ciForm.flags.push(flag); }
     else ciForm.flags = ciForm.flags.filter(f => f !== flag);
@@ -550,8 +611,9 @@ function ciToggleFlag(flag, on) {
 }
 
 // 마신 양 = 지난번 채운 양 − 이번 잔량 − 로스
+// 기준은 ciBaseline: 오늘 재입력이면 오늘 이전 기록과 비교해 파생값을 새로 만든다.
 function ciComputeIntake() {
-    const last = ciLastFeed[ciCurrent];
+    const last = ciBaseline(ciCurrent);
     if (!last) return null;
 
     const wr = Number(ciForm.waterRemaining);
@@ -751,7 +813,7 @@ function ciUpdateDose() {
 
     const rule = ciGetMetforminRule();
     const occ = ciOccupants(ciCurrent);
-    if (!rule || !occ.length) { box.innerHTML = ''; return; }
+    if (!rule || !occ.length) { ciForm._doseCc = 0; box.innerHTML = ''; return; }
 
     // 물을 안 갈면 약도 새로 넣지 않는다
     if (ciForm.noRefill) {
@@ -790,9 +852,20 @@ function ciUpdateDose() {
         return;
     }
 
+    // 지금 채우는 물은 앞으로 며칠간 마실 물이다.
+    // 오늘 사망으로 표시한 개체는 그 물을 마시지 않으므로 계산에서 뺀다.
+    const alive = occ.filter(r => !ciForm.rats[r.ratId].dead);
+    if (!alive.length) {
+        ciForm._doseCc = 0; ciForm._doseMg = 0;
+        box.innerHTML = `<div class="card" style="background:#f5f5f5;">
+            <b style="color:#666;">이 케이지에 남는 개체가 없어 ${rule.substance}을 넣지 않습니다.</b>
+        </div>`;
+        return;
+    }
+
     // 체중은 오늘 입력한 값 우선, 없으면 계산 불가
     let sumBW = 0, missing = [];
-    occ.forEach(r => {
+    alive.forEach(r => {
         const w = Number(ciForm.rats[r.ratId].weight);
         if (w > 0) sumBW += w; else missing.push(r.ratId);
     });
@@ -803,6 +876,9 @@ function ciUpdateDose() {
     const stock = Number(rule.stockConc) || 0;
 
     if (missing.length || !expectedPc || !stock || !fill) {
+        // 계산 못 하면 지시량도 0으로 — 이전 계산값이 남은 채 저장되면
+        // 화면엔 지시가 없었는데 기록에는 투약한 것으로 남는다
+        ciForm._doseCc = 0; ciForm._doseMg = 0;
         box.innerHTML = `<div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
             <b style="color:#7a5c00;">${rule.substance} 지시량 계산 대기</b>
             <div style="font-size:0.8rem; color:#7a5c00; margin-top:4px;">
@@ -814,15 +890,16 @@ function ciUpdateDose() {
         return;
     }
 
-    // 예상 섭취량은 '마리당 × 현재 마리수' → 합치거나 죽어도 자동으로 맞음
-    const expectedIntake = expectedPc * occ.length;
+    // 예상 섭취량은 '마리당 × 앞으로 남는 마리수' → 합치거나 죽어도 자동으로 맞음
+    const expectedIntake = expectedPc * alive.length;
     const needMg = Number(rule.value) * (sumBW / 1000) * (fill / expectedIntake);
     const cc = needMg / stock;
     ciForm._doseCc = Number(cc.toFixed(1));
     ciForm._doseMg = Number(needMg.toFixed(1));
     ciForm._stockConc = stock;
 
-    const partial = started.length !== occ.length;
+    const deadNow = occ.length - alive.length;
+    const partial = started.filter(r => !ciForm.rats[r.ratId].dead).length !== alive.length;
     box.innerHTML = `
     <div class="card" style="background:#e3f2fd; border:1px solid #90caf9;">
         <div style="font-size:0.85rem; color:#0d47a1;">오늘 이 케이지</div>
@@ -832,10 +909,11 @@ function ciUpdateDose() {
         <div style="font-size:0.75rem; color:#1565c0;">
             총체중 ${sumBW.toFixed(0)}g · 목표 ${rule.value} mg/kg/day · 필요 ${needMg.toFixed(0)}mg
             · 예상섭취 ${expectedIntake.toFixed(0)}mL · 원액 ${stock}mg/mL
+            ${deadNow ? `<br>사망 표시한 ${deadNow}마리는 빼고 ${alive.length}마리 기준으로 계산했습니다.` : ''}
         </div>
         ${partial ? `<div style="font-size:0.78rem; color:#b71c1c; margin-top:5px;">
-            ⚠️ 같은 케이지인데 투약 구간이 아닌 개체가 있습니다 (투약 중 ${started.length}/${occ.length}).
-            ${occ.filter(r => win.get(r.ratId) !== 'on').map(r => `${r.ratId}(${
+            ⚠️ 같은 케이지인데 투약 구간이 아닌 개체가 있습니다 (투약 중 ${started.filter(r => !ciForm.rats[r.ratId].dead).length}/${alive.length}).
+            ${alive.filter(r => win.get(r.ratId) !== 'on').map(r => `${r.ratId}(${
                 { before: '시작 전', after: '종료', nodate: '날짜 없음' }[win.get(r.ratId)]
             })`).join(', ')}<br>
             물통을 공유하므로 전원에게 들어갑니다.</div>` : ''}
@@ -861,8 +939,12 @@ async function ciSave() {
     try {
         const cfgH = (ciConfig && ciConfig.housing) || {};
         // 계산에 쓴 상수를 그 기록에 함께 남긴다 → 나중에 설정을 바꿔도 과거가 변하지 않음
+        const cageDoc = ciCages.find(x => String(x.id) === ciCurrent);
         const feed = {
             cageId: String(ciCurrent), cohort: String(ciCohort),
+            // 군을 기록 자체에 박아둔다. 케이지가 비면 케이지의 군은 해제되므로
+            // 분석이 '현재 케이지 상태'에 기대면 코호트가 끝난 순간 과거가 전부 미지정이 된다.
+            group: (cageDoc && cageDoc.group) || (occ.length ? ('G' + String(occ[0].group || 1).replace(/^G/, '')) : null),
             at: now, dateStr: dateStr,
             waterRemaining: ciForm.waterRemaining === '' ? null : Number(ciForm.waterRemaining),
             foodRemaining: ciForm.foodRemaining === '' ? null : Number(ciForm.foodRemaining),
@@ -873,6 +955,10 @@ async function ciSave() {
             ratIds: occ.map(r => r.ratId),
             evapPerHour: Number(cfgH.evapPerHour) || 0,
             lossPerHandling: Number(cfgH.lossPerHandling) || 0,
+            // 저울에 찍힌 원본값과 그때 쓴 빈 통 무게를 같이 남긴다.
+            // 나중에 빈 통 무게가 틀린 걸로 밝혀져도 원본이 있으면 되돌려 계산할 수 있다.
+            waterScale: ciForm.waterScale === '' ? null : Number(ciForm.waterScale),
+            bottleTare: ciTareOf(ciCurrent),        // 이 측정에 실제로 쓴 값 (자리별 → 없으면 기본값)
             flags: ciForm.flags.concat(
                 (c && !c.tooShort && c.housingChanged) ? ['재실변동'] : [],
                 Object.values(ciForm.rats).some(f => f.dead) ? ['사망발생'] : []),
@@ -888,14 +974,36 @@ async function ciSave() {
             feed.animalDays = Number(c.animalDays.toFixed(3));
             feed.waterPerCapita = c.waterPc === null ? null : Number(c.waterPc.toFixed(1));
             feed.foodPerCapita = c.foodPc === null ? null : Number(c.foodPc.toFixed(1));
+        } else {
+            // 계산 못 한 저장(잔량 미입력 등)이 오늘 기록을 덮어쓸 때,
+            // merge로 이전 파생값이 살아남으면 실제 입력과 어긋난 값이 남는다. 명시적으로 비운다.
+            feed.handlings = null; feed.lossTotal = null; feed.intervalHours = null;
+            feed.waterConsumed = null; feed.foodConsumed = null; feed.animalDays = null;
+            feed.waterPerCapita = null; feed.foodPerCapita = null;
         }
-        if (ciForm._doseCc) {
-            feed.doseCc = ciForm._doseCc; feed.doseMg = ciForm._doseMg; feed.stockConc = ciForm._stockConc;
-        }
+        // 투약량도 항상 이번 화면이 계산한 값으로 쓴다 (0이면 0으로 — 낡은 값 잔존 방지)
+        feed.doseCc = Number(ciForm._doseCc) || 0;
+        feed.doseMg = Number(ciForm._doseMg) || 0;
+        feed.stockConc = feed.doseCc > 0 ? (ciForm._stockConc || null) : null;
         // 다음 라운드 조제량을 미리 계산하려면 체중이 필요하다.
         // 투약을 아직 안 하는 케이지도 남겨둬야 '이번에 새로 시작하는 케이지'까지 예측된다.
-        const bwSum = occ.reduce((a, r) => a + (Number(ciForm.rats[r.ratId].weight) || 0), 0);
+        // 오늘 사망한 개체는 다음 구간에 없으므로 예측용 합계에서 뺀다.
+        // (개체별 체중은 measurements에 그대로 남으므로 기록이 사라지진 않는다)
+        const aliveNow = occ.filter(r => !ciForm.rats[r.ratId].dead);
+        const bwSum = aliveNow.reduce((a, r) => a + (Number(ciForm.rats[r.ratId].weight) || 0), 0);
+        const bwAll = occ.reduce((a, r) => a + (Number(ciForm.rats[r.ratId].weight) || 0), 0);
         if (bwSum > 0) feed.sumBW = Number(bwSum.toFixed(0));
+        if (bwAll > 0) feed.sumBWMeasured = Number(bwAll.toFixed(0));   // 그날 실제로 잰 전체 합
+
+        // 물통 교체: 새 통 무게는 이 자리에 등록해 '다음 회차부터' 적용한다.
+        // 오늘 측정은 위에서 이미 옛 통 무게로 계산됐다.
+        let swapTo = null;
+        if (ciForm.bottleSwap) {
+            swapTo = Number(ciForm.newTare);
+            if (!(swapTo > 0)) return alert('새 물통의 빈 통 무게를 입력하세요.');
+            feed.bottleSwapped = true;
+            feed.newBottleTare = swapTo;
+        }
 
         // 오늘 이미 입력한 케이지면 새로 만들지 않고 덮어쓴다.
         // (두 줄이 생기면 다음 구간이 '몇 분짜리'로 잡혀 섭취량 계산이 망가짐)
@@ -953,7 +1061,16 @@ async function ciSave() {
             }
         }
 
+        if (swapTo) {
+            await db.collection('cages').doc(String(ciCurrent)).set({ bottleTare: swapTo }, { merge: true });
+            const cg = ciCages.find(x => String(x.id) === ciCurrent);
+            if (cg) cg.bottleTare = swapTo;
+        }
+
         clearRatsCache();
+        // 오늘 이전 기록은 재입력의 비교 기준으로 계속 필요하다 — 오늘 것으로 덮기 전에 보존
+        const lf = ciLastFeed[ciCurrent];
+        if (lf && lf.dateStr !== dateStr) ciPrevFeed[ciCurrent] = lf;
         ciLastFeed[ciCurrent] = feed;
         ciDoneToday.add(String(ciCurrent));
 
@@ -989,12 +1106,7 @@ async function ciSave() {
 async function ciMarkDead(rat, dateStr, now) {
     const snap = await db.collection('rats').where('ratId', '==', rat.ratId).get();
     if (!snap.empty) await snap.docs[0].ref.update({ status: '사망', deathDate: dateStr, deathFoundAt: now });
-
-    const hs = await db.collection('ratHousing')
-        .where('ratId', '==', rat.ratId).where('to', '==', null).get();
-    const batch = db.batch();
-    hs.forEach(d => batch.update(d.ref, { to: now, endReason: '사망' }));
-    await batch.commit();
+    await closeOpenHousing(rat.ratId, '사망');   // 재실 종료 + 빈 케이지 군 해제 (공용 헬퍼)
 }
 
 // ---------- 조제 지시 요약 ----------

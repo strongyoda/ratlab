@@ -25,6 +25,8 @@ async function deleteRat() {
 
     if (mode.trim() === '숨김') {
         for (const d of snap.docs) await d.ref.update({ archived: true, archivedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        // 숨긴 개체가 케이지에 남아 있으면 마리·일에 계속 잡혀 섭취량이 어긋난다
+        await closeOpenHousing(id, '숨김');
         clearRatsCache();
         return alert(`'${id}'를 숨김 처리했습니다. 데이터는 그대로 있습니다.`);
     }
@@ -63,7 +65,10 @@ async function deleteCohort() {
     if (mode === null) return;
 
     if (mode.trim() === '숨김') {
-        for (const d of snap.docs) await d.ref.update({ archived: true, archivedAt: firebase.firestore.FieldValue.serverTimestamp() });
+        for (const d of snap.docs) {
+            await d.ref.update({ archived: true, archivedAt: firebase.firestore.FieldValue.serverTimestamp() });
+            if (d.data().ratId) await closeOpenHousing(d.data().ratId, '숨김');
+        }
         clearRatsCache();
         return alert(`코호트 ${c} (${snap.size}마리)를 숨김 처리했습니다.`);
     }
@@ -76,9 +81,13 @@ async function deleteCohort() {
     if (typed.trim() !== `코호트 ${c} 삭제`) return alert('입력이 일치하지 않아 취소되었습니다.');
 
     try {
+        // 재실 기록을 먼저 지운다 — 안 지우면 열린 재실이 영구히 남아
+        // 같은 케이지를 다음 코호트가 쓸 때 마리·일 계산을 오염시킨다
+        const hs = await db.collection('ratHousing').where('cohort', '==', String(c)).get();
+        for (const d of hs.docs) await d.ref.delete();
         for (const d of snap.docs) await d.ref.delete();
         clearRatsCache();
-        alert(`코호트 ${c} 개체 ${snap.size}마리를 삭제했습니다.\n(측정·일일기록 등 로그는 남아 있습니다)`);
+        alert(`코호트 ${c} 개체 ${snap.size}마리와 재실 기록 ${hs.size}건을 삭제했습니다.\n(측정·일일기록 등 로그는 남아 있습니다)`);
     } catch (e) { console.error(e); alert('삭제 실패: ' + e.message); }
 }
 
@@ -1172,11 +1181,14 @@ async function saveCodFinal() {
         closeCod();
     } else if(codTargetDocId) {
         try {
-            await db.collection("rats").doc(codTargetDocId).update({ 
+            await db.collection("rats").doc(codTargetDocId).update({
                 codFull: finalStr,
-                status: '사망', 
-                
+                status: '사망',
+
             });
+            // 사망 처리 시 케이지 재실도 닫는다
+            const rdoc = await db.collection("rats").doc(codTargetDocId).get();
+            if (rdoc.exists && rdoc.data().ratId) await closeOpenHousing(rdoc.data().ratId, '사망');
             alert(`저장됨: ${finalStr}`);
             closeCod();
             loadDetailData(); 
@@ -1775,6 +1787,11 @@ window.saveSimpleCod = async function() {
 
     try {
         await db.collection("rats").doc(activeCodRatId).update(updateData);
+        // 사망 처리면 케이지 재실도 닫는다 (열려 있으면 섭취량 마리·일이 계속 잡힘)
+        if (updateData.status === '사망') {
+            const rdoc = await db.collection("rats").doc(activeCodRatId).get();
+            if (rdoc.exists && rdoc.data().ratId) await closeOpenHousing(rdoc.data().ratId, '사망');
+        }
         alert("저장되었습니다.");
         document.getElementById('simple-cod-modal').style.display = 'none';
         clearRatsCache();

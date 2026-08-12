@@ -84,9 +84,12 @@ function iaUsable(r) {
 }
 
 function iaGroupOf(row) {
+    // 기록에 저장된 군이 우선이다. 케이지의 현재 군은 비우면 해제되고
+    // 나중에 다른 군이 쓸 수도 있으므로 과거 기록의 근거가 못 된다.
+    if (row.group) return row.group;
     const cage = iaCages[String(row.cageId)];
     if (cage && cage.group) return cage.group;
-    return row.group || '미지정';
+    return '미지정';
 }
 
 function iaGroupName(key) {
@@ -146,6 +149,16 @@ function iaRender() {
     const usable = iaRows.filter(iaUsable);
     const excluded = iaRows.length - usable.length;
 
+    // 이 구간에 마신 물은 '지난 방문 때 탄' 물이다.
+    // 오늘 행의 doseMg는 다음 구간용이므로, 농도는 같은 케이지의 직전 행에서 가져온다.
+    // (안 그러면 투약 첫날 — 약 없는 물을 마신 구간 — 이 투약된 것으로 잡힌다)
+    const prevByCage = {};
+    iaRows.forEach(r => {                  // iaRows는 시간순 정렬됨
+        const c = String(r.cageId);
+        r.__prev = prevByCage[c] || null;
+        prevByCage[c] = r;
+    });
+
     // 군별로 케이지 평균을 낸 뒤, 그 케이지 값들로 통계 (n = 케이지 수)
     const byGroup = {};
     usable.forEach(r => {
@@ -156,12 +169,15 @@ function iaRender() {
         byGroup[g][c].water.push(r.waterPerCapita);
         if (typeof r.foodPerCapita === 'number') byGroup[g][c].food.push(r.foodPerCapita);
 
-        // 메트포민: 실제로 마신 물 × 그날 탄 농도 ÷ 케이지 총 체중
-        if (r.doseMg && r.waterGiven && typeof r.waterConsumed === 'number') {
+        // 메트포민: 실제로 마신 물 × '지난 방문 때 탄' 농도 ÷ 케이지 총 체중
+        const p = r.__prev;
+        if (p && p.doseMg && p.waterGiven && typeof r.waterConsumed === 'number') {
             const bw = iaCageBW(r);
             const days = r.animalDays / (r.ratCount || 1);
             if (bw && days > 0) {
-                const conc = r.doseMg / r.waterGiven;                    // mg/mL
+                // 원액 부피도 전체 부피에 포함 (700 mL 물 + 7 cc 원액 = 707 mL)
+                const totalVol = Number(p.waterGiven) + (Number(p.doseCc) || 0);
+                const conc = p.doseMg / totalVol;                        // mg/mL
                 const taken = conc * r.waterConsumed;                    // mg
                 byGroup[g][c].met.push(taken / (bw / 1000) / days);
             }
@@ -198,24 +214,28 @@ function iaRender() {
         </tr>`;
     }).join('');
 
-    // 목표 대비 도달률
-    const metRule = (iaConfig && iaConfig.dosing || []).find(d => d.medium === 'water');
+    // 목표 대비 도달률 — 물 투약 규칙이 군마다 따로 있으므로(G2 조기·G3 후기)
+    // 규칙 하나만 찾으면 나머지 군의 도달률이 표시되지 않는다. 군별로 규칙을 매칭한다.
+    const waterRules = ((iaConfig && iaConfig.dosing) || []).filter(d => d.medium === 'water');
+    const metRule = waterRules[0] || null;   // 문장 생성 등에서 대표로 쓰는 규칙
     let achievedHtml = '';
-    if (metRule) {
-        const parts = groupKeys.filter(g => (metRule.groups || []).includes(g)).map(g => {
+    if (waterRules.length) {
+        const parts = groupKeys.map(g => {
+            const rule = waterRules.find(d => (d.groups || []).includes(g));
+            if (!rule) return null;
             const m = cageMean(byGroup[g], 'met');
             if (!m) return null;
-            const pct = (m.mean / Number(metRule.value)) * 100;
+            const pct = (m.mean / Number(rule.value)) * 100;
             const off = Math.abs(pct - 100) > 15;
             return `<div style="display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #eee;">
                 <span>${iaGroupName(g)}</span>
                 <span><b style="color:${off ? 'var(--red)' : '#2e7d32'};">${m.mean.toFixed(0)}</b>
-                <span style="color:#888;"> / 목표 ${metRule.value} mg/kg/day (${pct.toFixed(0)}%)</span></span>
+                <span style="color:#888;"> / 목표 ${rule.value} mg/kg/day (${pct.toFixed(0)}%)</span></span>
             </div>`;
         }).filter(Boolean).join('');
         if (parts) achievedHtml = `
         <div class="card">
-            <h4 style="margin-top:0; color:var(--navy);">🎯 ${metRule.substance} 목표 대비 실제 도달</h4>
+            <h4 style="margin-top:0; color:var(--navy);">🎯 ${waterRules[0].substance} 목표 대비 실제 도달</h4>
             ${parts}
             <div style="font-size:0.78rem; color:#888; margin-top:8px;">
                 실제 마신 물의 양으로 역산한 값입니다. 목표에서 15% 이상 벗어나면 빨갛게 표시됩니다.
@@ -249,7 +269,7 @@ function iaRender() {
     <div class="card">
         <h4 style="margin-top:0; color:var(--navy);">📄 논문용 문장</h4>
         <div style="background:#f8f9fa; border:1px solid #eee; border-radius:6px; padding:12px; font-size:0.85rem; line-height:1.7;">
-            ${iaPaperText(byGroup, groupKeys, cageMean, metRule, usable.length, excluded)}
+            ${iaPaperText(byGroup, groupKeys, cageMean, waterRules, usable.length, excluded)}
         </div>
     </div>
 
@@ -277,7 +297,7 @@ function iaExcludeReasons() {
     return Object.entries(counts).map(([k, v]) => `${k} ${v}건`).join(' · ');
 }
 
-function iaPaperText(byGroup, groupKeys, cageMean, metRule, used, excluded) {
+function iaPaperText(byGroup, groupKeys, cageMean, waterRules, used, excluded) {
     const lines = [];
     groupKeys.forEach(g => {
         const w = cageMean(byGroup[g], 'water');
@@ -288,12 +308,14 @@ function iaPaperText(byGroup, groupKeys, cageMean, metRule, used, excluded) {
     });
 
     let metLine = '';
-    if (metRule) {
-        const gs = groupKeys.filter(g => (metRule.groups || []).includes(g));
-        const vals = gs.map(g => ({ g, m: cageMean(byGroup[g], 'met') })).filter(x => x.m);
+    if (waterRules && waterRules.length) {
+        const rule0 = waterRules[0];
+        const vals = groupKeys
+            .filter(g => waterRules.some(d => (d.groups || []).includes(g)))
+            .map(g => ({ g, m: cageMean(byGroup[g], 'met') })).filter(x => x.m);
         if (vals.length) {
-            metLine = `${metRule.substance} was administered in drinking water, with the amount adjusted ` +
-                `to a target of ${metRule.value} mg/kg/day based on measured water intake and body weight. ` +
+            metLine = `${rule0.substance} was administered in drinking water, with the amount adjusted ` +
+                `to a target of ${rule0.value} mg/kg/day based on measured water intake and body weight. ` +
                 `Achieved intake was ` + vals.map(x => `${x.m.mean.toFixed(0)} ± ${x.m.sd.toFixed(0)}`).join(', ') +
                 ` mg/kg/day.`;
         }

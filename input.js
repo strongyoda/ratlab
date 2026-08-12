@@ -75,9 +75,12 @@ async function saveDaily() {
             });
             
             const rSnap = await db.collection("rats").where("ratId", "==", id).get();
-            if(!rSnap.empty) { 
-                if(dead) { await rSnap.docs[0].ref.update({ status: '사망', deathDate: date }); } 
-                else { await rSnap.docs[0].ref.update({ lastScore: total }); } 
+            if(!rSnap.empty) {
+                if(dead) {
+                    await rSnap.docs[0].ref.update({ status: '사망', deathDate: date });
+                    await closeOpenHousing(id, '사망');   // 케이지 재실도 닫아야 섭취량 계산이 안 어긋남
+                }
+                else { await rSnap.docs[0].ref.update({ lastScore: total }); }
             }
             savedCount++;
         }

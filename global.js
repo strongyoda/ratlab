@@ -220,6 +220,58 @@ function getTodayStr() {
     return kstDate.toISOString().split('T')[0];
 }
 
+// 'YYYY-MM-DD'를 로컬 자정으로 파싱한다.
+// new Date('2026-08-25')는 UTC 자정으로 해석되어 한국시간으로는 오전 9시가 된다.
+// 그래서 이 값을 '지금'과 빼면 오전 9시 이전에는 하루가 모자라게 나온다.
+function parseDateLocal(v) {
+    if (!v) return null;
+    if (v instanceof Date) return v;
+    if (v.toDate) return v.toDate();
+    const d = new Date(String(v).slice(0, 10) + 'T00:00:00');
+    return isNaN(d.getTime()) ? null : d;
+}
+
+// 달력 기준 일수 차이. to를 생략하면 오늘.
+function daysBetween(from, to) {
+    const a = parseDateLocal(from);
+    const b = to ? parseDateLocal(to) : parseDateLocal(getTodayStr());
+    if (!a || !b) return null;
+    return Math.round((b - a) / 86400000);
+}
+
+// 열린 재실 기록을 전부 닫는다. 사망·희생을 기록하는 모든 화면이 이걸 불러야
+// 죽은 개체가 마리·일(animal_days)에 계속 잡혀 섭취량이 낮게 계산되는 걸 막는다.
+// 비게 된 케이지는 군 배정도 풀어준다 — 안 풀면 빈 케이지가 예전 군에 묶여
+// 다음 배정이 '군이 다릅니다'로 영영 차단된다.
+async function closeOpenHousing(ratId, endReason) {
+    try {
+        const now = firebase.firestore.Timestamp.now();
+        const hs = await db.collection('ratHousing')
+            .where('ratId', '==', ratId).where('to', '==', null).get();
+        if (hs.empty) return 0;
+
+        const cages = new Set();
+        const batch = db.batch();
+        hs.forEach(d => {
+            cages.add(String(d.data().cageId));
+            batch.update(d.ref, { to: now, endReason: endReason || '종료' });
+        });
+        await batch.commit();
+
+        for (const cid of cages) {
+            const remain = await db.collection('ratHousing')
+                .where('cageId', '==', cid).where('to', '==', null).get();
+            if (remain.empty) {
+                await db.collection('cages').doc(cid).set({ group: null, cohort: null }, { merge: true });
+            }
+        }
+        return hs.size;
+    } catch (e) {
+        console.error('재실 종료 실패:', ratId, e);
+        return -1;
+    }
+}
+
 // [수정] 라벨 -> POD 변환 헬퍼 (최종 정석 버전)
 function getPodForLabel(label, surgeryDate, recordDate) {
     // 🚨 Arrival을 여기서 빼야 합니다! 

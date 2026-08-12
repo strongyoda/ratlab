@@ -698,8 +698,8 @@ async function computeMetric(rat, target, spec) {
     };
     const filterByRecentDays = (arr) => {
         if (!spec.window_days) return arr;
-        const cutoff = Date.now() - spec.window_days * 86400000;
-        return arr.filter(m => m.date && new Date(m.date).getTime() >= cutoff);
+        // 날짜끼리 세야 시각에 따라 경계일이 들락거리지 않는다
+        return arr.filter(m => m.date && daysBetween(m.date) !== null && daysBetween(m.date) <= spec.window_days);
     };
 
     const weightSeries = () => {

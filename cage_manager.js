@@ -117,6 +117,26 @@ function cgMaxRats(cage) {
     if (cfg && cfg.housing && cfg.housing.ratsPerCage) return Number(cfg.housing.ratsPerCage);
     return 3;
 }
+
+// 빈 물통 무게는 통마다 다르다. 케이지(자리)에 붙여 관리하고,
+// 값이 없는 자리만 코호트 기본값으로 넘어간다.
+function cgTareFallback() {
+    const cfg = cgConfigs[String(cgCohort)] ||
+        cgConfigs[Object.keys(cgConfigs).sort((a, b) => Number(b) - Number(a))[0]];
+    return Number(cfg && cfg.housing && cfg.housing.bottleTare) || 0;
+}
+
+async function cgSetTare(cageId, val) {
+    const cage = cgCages.find(c => String(c.id) === String(cageId));
+    if (!cage) return;
+    const v = (val === '' || val === null) ? null : Number(val);
+    if (v !== null && (isNaN(v) || v <= 0)) { alert('빈 물통 무게는 0보다 큰 숫자여야 합니다.'); cgRenderBody(); return; }
+    try {
+        await db.collection('cages').doc(String(cageId)).set({ bottleTare: v }, { merge: true });
+        cage.bottleTare = v;
+        cgRenderBody();
+    } catch (e) { console.error(e); alert('저장 실패: ' + e.message); }
+}
 // 살아있는 쥐만 배정 대상 (사망/희생은 재실이 끝난 것으로 본다)
 function cgIsAlive(rat) {
     return rat.status !== '사망';
@@ -183,12 +203,30 @@ function cgRenderBody() {
         </div>
     </div>
 
+    ${(() => {
+        const noTare = cgCages.filter(c => !(Number(c.bottleTare) > 0));
+        if (!noTare.length) return '';
+        return `
+        <div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
+            <b style="color:#7a5c00;">빈 물통 무게가 없는 자리 ${noTare.length}개</b>
+            <div style="font-size:0.82rem; color:#7a5c00; margin:6px 0;">
+                ${noTare.slice(0, 20).map(c => c.number + '번').join(', ')}${noTare.length > 20 ? ' 외' : ''}
+                <br>물통마다 무게가 다르므로 자리마다 실측값을 넣어야 마신 물이 정확해집니다.
+                ${cgTareFallback() ? `지금은 코호트 기본값 ${cgTareFallback()}g으로 계산됩니다.` : ''}
+            </div>
+        </div>`;
+    })()}
+
     <div class="card" style="padding:12px 16px;">
         <b style="color:var(--navy);">케이지 ${cgCages.length}개</b>
         <span style="font-size:0.85rem; color:#666;">
             · 사용중 ${occupied}개 · 비어 있음 ${cgCages.length - occupied}개
             · 재실 ${cgHousing.length}마리
         </span>
+        <div style="font-size:0.78rem; color:#888; margin-top:6px;">
+            케이지 번호는 <b>자리</b>를 뜻합니다. 빈 물통 무게를 자리에 붙여 관리하므로,
+            <b>물통에 자리 번호를 적어두고 세척 후에도 같은 자리에 꽂아야</b> 합니다.
+        </div>
     </div>
 
     ${cgCages.length ? `
@@ -230,6 +268,8 @@ function cgCageCard(cage) {
         ? (((cfg && cfg.groups && (cfg.groups.find(g => g.key === groupKey) || {}).name)) || groupKey)
         : '비어 있음';
     const label = groupKey ? `${cohort ? 'C' + cohort + ' · ' : ''}${gname}` : '비어 있음';
+    const tareFb = cgTareFallback();
+    const hasTare = Number(cage.bottleTare) > 0;
 
     return `
     <div ondragover="cgAllowDrop(event)" ondrop="cgDropToCage(event,'${cage.id}')"
@@ -249,6 +289,23 @@ function cgCageCard(cage) {
         <div style="display:flex; flex-direction:column; gap:5px; min-height:40px;">
             ${occ.length ? occ.map(r => cgRatChip(r, cage.id)).join('') : ''}
         </div>
+
+        <div onclick="event.stopPropagation()"
+             style="margin-top:9px; padding-top:8px; border-top:1px dashed #e8e8e8;
+                    display:flex; align-items:center; gap:5px;">
+            <span style="font-size:0.72rem; color:#888; white-space:nowrap;">빈 통</span>
+            <input type="number" step="any" inputmode="decimal"
+                   value="${cage.bottleTare != null ? cage.bottleTare : ''}"
+                   placeholder="${tareFb ? tareFb + ' (기본)' : '미설정'}"
+                   onchange="cgSetTare('${cage.id}', this.value)"
+                   style="flex:1; min-width:0; height:30px; padding:2px 6px; font-size:0.82rem;
+                          border:1px solid ${hasTare ? '#c8e6c9' : '#ffcdd2'}; border-radius:5px;
+                          background:${hasTare ? '#fff' : '#fff8f8'};">
+            <span style="font-size:0.72rem; color:#888;">g</span>
+        </div>
+        ${!hasTare ? `<div style="font-size:0.68rem; color:var(--red); margin-top:3px;">
+            이 자리의 물통 무게가 없습니다${tareFb ? ` · 지금은 기본 ${tareFb}g으로 계산됩니다` : ''}</div>` : ''}
+
         ${occ.length === 0 ? `
         <button class="btn-small btn-red" onclick="event.stopPropagation(); cgDeleteCage('${cage.id}')"
                 style="margin-top:8px; padding:3px 8px; font-size:0.75rem;">케이지 삭제</button>` : ''}

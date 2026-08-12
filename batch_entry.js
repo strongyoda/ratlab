@@ -205,6 +205,16 @@ async function beSave() {
     const t = BE_TYPES[beType];
     const targets = beRats.filter(r => bePicked.has(r.ratId));
 
+    // Sham/Naïve의 surgeryDate는 '반입일 + 기준주령'으로 만든 가상 날짜다.
+    // 여기서 실제 수술일을 덮어쓰면 그래프의 POD 축이 조용히 어긋난다.
+    if (beType === 'ligation') {
+        const shams = targets.filter(r => r.isNonInduction);
+        if (shams.length && !confirm(
+            `Sham/Naïve로 표시된 개체가 ${shams.length}마리 있습니다.\n` +
+            `${shams.slice(0, 6).map(r => r.ratId).join(', ')}${shams.length > 6 ? ' 외' : ''}\n\n` +
+            `이 개체들의 수술일은 그래프 기준용 가상 날짜입니다.\n덮어쓰면 POD 축이 달라집니다. 계속할까요?`)) return;
+    }
+
     // 이미 값이 있는 개체는 덮어쓰기 전에 확인
     const overwrite = targets.filter(r => beType !== 'mr' && beExistingText(r));
     if (overwrite.length) {
@@ -240,8 +250,11 @@ async function beSave() {
                 arr.sort((a, b) => new Date(a.date) - new Date(b.date));
                 batch.update(doc.ref, { mrDates: arr });
             } else if (beType === 'sacrifice') {
-                const upd = { sampleDate: date };
+                // 희생 = 사망. 지금까지의 관례(샘플 있는 111마리 전원 status 사망,
+                // 계획 희생은 cod 'Sacrifice')에 맞춰 상태까지 같이 기록한다.
+                const upd = { sampleDate: date, status: '사망', deathDate: date };
                 if (sampleType) upd.sampleType = sampleType;
+                if (!doc.data().cod && !doc.data().codFull) upd.cod = 'Sacrifice';
                 batch.update(doc.ref, upd);
             } else {
                 batch.update(doc.ref, { [t.field]: date });
@@ -251,6 +264,13 @@ async function beSave() {
 
         if (!n) return alert('반영할 대상이 없습니다.\n\n' + skipped.join('\n'));
         await batch.commit();
+
+        // 희생 처리된 개체는 케이지 재실도 닫는다 (안 닫으면 섭취량 마리·일에 계속 잡힘)
+        if (beType === 'sacrifice') {
+            for (const r of targets) {
+                if (docByRat[r.ratId]) await closeOpenHousing(r.ratId, '희생');
+            }
+        }
         clearRatsCache();
 
         bePicked = new Set();

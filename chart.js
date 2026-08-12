@@ -243,7 +243,7 @@ async function loadDashboard() {
         sortedCohorts.forEach(c => { 
             let podTag = `<span style="font-size:0.8rem; color:#888;">수술전</span>`; 
             if(grp[c].surg) { 
-                const pod = Math.floor((new Date() - new Date(grp[c].surg))/(1000*60*60*24)); 
+                const pod = daysBetween(grp[c].surg);
                 const w = Math.floor(pod/7), d=pod%7; 
                 podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`; 
             } 
@@ -436,10 +436,11 @@ async function loadDetailData(forceId = null) {
         const rat = rSnap.docs[0].data();
         const docId = rSnap.docs[0].id;
         
-        let baseDate = new Date();
-        if(rat.status === '사망' && rat.deathDate) { baseDate = new Date(rat.deathDate); }
-        const dPlus = rat.arrivalDate ? Math.floor((baseDate - new Date(rat.arrivalDate))/(1000*60*60*24)) : '-';
-        const pod = rat.surgeryDate ? Math.floor((baseDate - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
+        // 살아있는 개체는 '오늘'을 기준으로 센다. '지금 시각'을 쓰면 오전에 하루가 모자라진다.
+        const baseStr = (rat.status === '사망' && rat.deathDate) ? rat.deathDate : getTodayStr();
+        let baseDate = parseDateLocal(baseStr);
+        const dPlus = rat.arrivalDate ? daysBetween(rat.arrivalDate, baseStr) : '-';
+        const pod = rat.surgeryDate ? daysBetween(rat.surgeryDate, baseStr) : '-';
         
         const arrivalAgeNum = rat.arrivalAge ? Number(rat.arrivalAge) : 6;
         let ageAtSurgStr = '-';
@@ -470,7 +471,7 @@ async function loadDetailData(forceId = null) {
 
         let doseInfo = '';
         if(rat.doseStartDate) {
-            const doseDay = Math.floor((baseDate - new Date(rat.doseStartDate))/(1000*60*60*24));
+            const doseDay = daysBetween(rat.doseStartDate, baseStr);
             doseInfo = `<div class="info-item"><b>Day ${doseDay}</b><br>투약 시작(${rat.doseStartDate})</div>`;
         } else { doseInfo = `<div class="info-item" style="color:#ccc;">-</div>`; }
 
@@ -1094,7 +1095,7 @@ async function analyzeTrend() {
                 if(arrAge < globalMinAge) globalMinAge = arrAge;
                 let endAge = arrAge;
                 if(rInfo.status === '사망' && rInfo.deathDate && rInfo.arrivalDate) endAge = arrAge + ((new Date(rInfo.deathDate) - new Date(rInfo.arrivalDate)) / (1000*60*60*24*7));
-                else if (rInfo.arrivalDate) endAge = arrAge + ((new Date() - new Date(rInfo.arrivalDate)) / (1000*60*60*24*7));
+                else if (rInfo.arrivalDate) endAge = arrAge + (daysBetween(rInfo.arrivalDate) / 7);
                 if(endAge > globalMaxAge) globalMaxAge = endAge;
             }
             const surgDate = surgeryMap[rid];
@@ -1124,7 +1125,7 @@ async function analyzeTrend() {
             }
 
             if (c.useExcWt) { const w = measMap[r.ratId]?.[c.excWtTp]; if (w !== undefined) { if (c.excWtDir === 'up' && w >= c.excWtVal) isExcluded = true; if (c.excWtDir === 'down' && w < c.excWtVal) isExcluded = true; } }
-            if (!isExcluded && c.useExcPod && r.surgeryDate) { const pod = Math.floor(((r.deathDate ? new Date(r.deathDate) : new Date()) - new Date(r.surgeryDate)) / 86400000); if (c.excPodDir === 'up' && pod >= c.excPodVal) isExcluded = true; if (c.excPodDir === 'down' && pod < c.excPodVal) isExcluded = true; }
+            if (!isExcluded && c.useExcPod && r.surgeryDate) { const pod = daysBetween(r.surgeryDate, r.deathDate || getTodayStr()); if (c.excPodDir === 'up' && pod >= c.excPodVal) isExcluded = true; if (c.excPodDir === 'down' && pod < c.excPodVal) isExcluded = true; }
             if (!isExcluded && c.useExcCod && c.excCodChks.length > 0) { const myCod = r.cod || extractLegacyCod(r.codFull); if (c.excCodChks.includes(myCod)) isExcluded = true; }
             if (!isExcluded && c.useExcAre && c.excAreChks.length > 0) { if (repAre && c.excAreChks.includes(repAre)) isExcluded = true; }
             if (!isExcluded && c.useExcInf) { if (r.mrDates && Array.isArray(r.mrDates)) { const hasMatch = r.mrDates.some(mr => { if(!mr.date) return false; const matchTp = (c.excInfTp === 'all' || mr.timepoint === c.excInfTp); const sz = mr.infarctSize || 'None'; const matchSz = (c.excInfSz === 'all' && sz !== 'None') || (sz === c.excInfSz); return matchTp && matchSz; }); if (hasMatch) isExcluded = true; } }
@@ -1132,7 +1133,7 @@ async function analyzeTrend() {
 
             let isTarget = true;
             if (c.useIncWt) { const w = measMap[r.ratId]?.[c.incWtTp]; if (w === undefined) isTarget = false; else { if (c.incWtDir === 'up' && w < c.incWtVal) isTarget = false; if (c.incWtDir === 'down' && w >= c.incWtVal) isTarget = false; } }
-            if (isTarget && c.useIncPod) { if (!r.surgeryDate) isTarget = false; else { const pod = Math.floor(((r.deathDate ? new Date(r.deathDate) : new Date()) - new Date(r.surgeryDate)) / 86400000); if (c.incPodDir === 'up' && pod < c.incPodVal) isTarget = false; if (c.incPodDir === 'down' && pod >= c.incPodVal) isTarget = false; } }
+            if (isTarget && c.useIncPod) { if (!r.surgeryDate) isTarget = false; else { const pod = daysBetween(r.surgeryDate, r.deathDate || getTodayStr()); if (c.incPodDir === 'up' && pod < c.incPodVal) isTarget = false; if (c.incPodDir === 'down' && pod >= c.incPodVal) isTarget = false; } }
             if (isTarget && c.useIncCod) { const myCod = r.cod || extractLegacyCod(r.codFull); if (!c.incCodChks.includes(myCod)) isTarget = false; }
             if (isTarget && c.useIncAre) { if (!repAre || !c.incAreChks.includes(repAre)) isTarget = false; }
             if (isTarget && c.useIncInf) { if (!r.mrDates || !Array.isArray(r.mrDates) || r.mrDates.length === 0) isTarget = false; else { const hasMatch = r.mrDates.some(mr => { if (!mr.date) return false; const matchTp = (c.incInfTp === 'all' || mr.timepoint === c.incInfTp); const sz = mr.infarctSize || 'None'; const matchSz = (c.incInfSz === 'all' && sz !== 'None') || (sz === c.incInfSz); return matchTp && matchSz; }); if (!hasMatch) isTarget = false; } }
@@ -1229,7 +1230,7 @@ async function loadGroupComparison() {
                     if(arrAge < globalMinAge) globalMinAge = arrAge;
                     let endAge = arrAge;
                     if(r.status === '사망' && r.deathDate && r.arrivalDate) endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
-                    else if(r.arrivalDate) endAge = arrAge + ((new Date() - new Date(r.arrivalDate))/(1000*60*60*24*7));
+                    else if(r.arrivalDate) endAge = arrAge + (daysBetween(r.arrivalDate) / 7);
                     if(endAge > globalMaxAge) globalMaxAge = endAge;
                     if(r.surgeryDate && r.deathDate) { const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate))/(1000*60*60*24)); if(pod > globalMaxPod) globalMaxPod = pod; }
                 }
@@ -1908,7 +1909,7 @@ window.updateSurvivalChart = function(suffix, chartId) {
                 validPodCnt++;
             }
         } else if (r.arrivalDate) {
-            endAge = arrAge + ((new Date() - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
+            endAge = arrAge + (daysBetween(r.arrivalDate) / 7);
         }
         
         if(endAge < minAge) minAge = Math.floor(endAge);
@@ -2449,7 +2450,7 @@ async function loadCohortComparison() {
 
                 let endAge = arrAge;
                 if(r.status === '사망' && r.deathDate && r.arrivalDate) endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate))/(1000*60*60*24*7));
-                else if(r.arrivalDate) endAge = arrAge + ((new Date() - new Date(r.arrivalDate))/(1000*60*60*24*7));
+                else if(r.arrivalDate) endAge = arrAge + (daysBetween(r.arrivalDate) / 7);
                 if(endAge > globalMaxAge) globalMaxAge = endAge;
             }
         }));
@@ -3002,7 +3003,7 @@ window.updateSurvivalChart = function(suffix, chartId) {
                 validPodCnt++;
             }
         } else if (r.arrivalDate) {
-            endAge = arrAge + ((new Date() - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
+            endAge = arrAge + (daysBetween(r.arrivalDate) / 7);
         }
         
         if(endAge < minAge) minAge = Math.floor(endAge);

@@ -27,7 +27,7 @@ function cfgDefaultConfig(cohort) {
         ],
         timepoints: { mr: ['W4', 'W8', 'W12'], bp: ['W1', 'W5', 'W9'] },
         housing: { ratsPerCage: 3, cageCount: 24, waterFill: 600, foodFill: 150, bottleCount: 1,
-                   evapPerHour: 0, lossPerHandling: 0 },
+                   bottleTare: 0, evapPerHour: 0, lossPerHandling: 0 },
         dosing: [
             { substance: 'NaCl',      medium: 'food',  mode: 'percent',    value: 8,
               groups: ['G0', 'G1', 'G2'], startAnchor: 'ovx',      startOffset: 0,
@@ -136,7 +136,19 @@ async function cfgOpen(cohort) {
     if (cfgDirty && !confirm('저장하지 않은 변경사항이 있습니다. 버리고 이동할까요?')) return;
     try {
         const doc = await db.collection('cohortConfigs').doc(String(cohort)).get();
-        cfgDraft = doc.exists ? Object.assign(cfgDefaultConfig(cohort), doc.data()) : cfgDefaultConfig(cohort);
+        // housing·timepoints는 한 단계 더 들어가 합친다.
+        // 통째로 덮으면 나중에 추가된 기본 항목(예: 빈 물통 무게)이
+        // 기존 코호트 설정에서는 영영 나타나지 않는다.
+        const base = cfgDefaultConfig(cohort);
+        if (doc.exists) {
+            const d = doc.data();
+            cfgDraft = Object.assign(base, d, {
+                housing: Object.assign({}, base.housing, d.housing || {}),
+                timepoints: Object.assign({}, base.timepoints, d.timepoints || {})
+            });
+        } else {
+            cfgDraft = base;
+        }
         cfgLoadedCohort = String(cohort);
         cfgDirty = false;
         cfgRenderBody();
@@ -246,14 +258,28 @@ function cfgHousingCard(c) {
             ${num('bottleCount', '물통 개수',      '개',  '1이면 입력창에서 숨김')}
         </div>
 
+        <h4 style="color:var(--navy); margin:18px 0 6px;">⚖️ 빈 물통 무게 (기본값)</h4>
+        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+            물통은 통마다 무게가 다르므로 <b>케이지 현황에서 자리별로</b> 넣는 것이 정확합니다.
+            여기 값은 <b>자리에 값이 없을 때만</b> 쓰이는 예비값입니다.
+        </div>
+        <div style="display:flex; gap:15px; flex-wrap:wrap;">
+            ${num('bottleTare', '기본 빈 통', 'g', '실제 쓰는 상태 그대로 (마개·급수구·패킹 포함), 마른 통으로')}
+        </div>
+        <div style="margin-top:8px; padding:8px 10px; background:#f5f5f5; border:1px solid #e0e0e0;
+                    border-radius:6px; font-size:0.8rem; color:#666;">
+            이 값이 <b>1 g</b> 틀리면 매 기록의 마신 물이 <b>1 mL</b>씩 한 방향으로 어긋납니다.
+            저울 원본값이 기록마다 함께 저장되므로 나중에 값을 고쳐도 되돌려 계산할 수 있습니다.
+        </div>
+
         <h4 style="color:var(--navy); margin:18px 0 6px;">💧 물 로스 보정</h4>
         <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
             빈 케이지에 물통만 걸어두고 잰 값입니다. 증발은 <b>시간에 비례</b>하고,
             탈착 로스는 <b>횟수마다 한 번</b>이라 따로 넣어야 주말(64시간)도 정확해집니다.
         </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap;">
-            ${num('evapPerHour',     '증발량',      'g/시간', '(L₇₂ − L₂₄) ÷ 48')}
-            ${num('lossPerHandling', '탈착 로스',   'g/회',   'L₂₄ − 24×증발량')}
+            ${num('evapPerHour',     '증발량',      'g/시간', '안 건드리고 뒀을 때 시간당')}
+            ${num('lossPerHandling', '탈착 로스',   'g/회',   '물통 뺐다 끼우기 1회당')}
         </div>
         ${(!Number(h.evapPerHour) && !Number(h.lossPerHandling)) ? `
         <div style="margin-top:10px; padding:8px 10px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; font-size:0.82rem; color:#7a5c00;">
@@ -429,6 +455,11 @@ function cfgValidate(c) {
         if (!(d.groups || []).length) errs.push(`'${d.substance}'에 적용 군이 선택되지 않았습니다.`);
         if (!(Number(d.value) > 0)) errs.push(`'${d.substance}'의 농도/용량이 0입니다.`);
         if (d.medium === 'water' && !(Number(d.stockConc) > 0)) errs.push(`'${d.substance}'의 원액 농도가 0입니다.`);
+        // 군 코드를 바꾼 뒤 투약 규칙이 옛 코드를 가리키면, 해당 군의 투약이
+        // 오류 없이 조용히 시작되지 않는다. 저장 시점에 잡아준다.
+        (d.groups || []).forEach(g => {
+            if (!keys.includes(g)) errs.push(`'${d.substance}'가 존재하지 않는 군 '${g}'를 가리킵니다. (군 코드를 바꿨다면 투약 항목의 군도 다시 선택하세요)`);
+        });
     });
     return errs;
 }
