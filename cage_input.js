@@ -428,7 +428,7 @@ function ciRenderForm() {
             <span style="font-size:0.85rem; color:#888; width:52px;">g 통째</span>
         </div>
         <div style="font-size:0.8rem; color:${tareIsOwn ? '#666' : '#c62828'}; margin:0 0 10px 62px;">
-            빈 통 ${tare} g 제외 → 물 <b>${ciForm.waterRemaining === '' ? '-' : ciForm.waterRemaining} g</b>
+            빈 통 ${tare} g 제외 → 물 <b id="ci-ws-out">${ciForm.waterRemaining === '' ? '-' : ciForm.waterRemaining} g</b>
             ${tareIsOwn ? '' : '<br>이 자리의 물통 무게가 등록되지 않아 <b>코호트 기본값</b>을 씁니다. 케이지 현황에서 실측값을 넣어주세요.'}
         </div>` : `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
@@ -499,7 +499,7 @@ function ciRenderForm() {
                        style="width:100%; height:42px;">
                 <div style="font-size:0.75rem; color:#666; margin-top:4px;">
                     빈 통 <b>${tare} g</b> 제외 → 물
-                    <b style="color:var(--navy);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
+                    <b id="ci-fs-out" style="color:var(--navy);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
                     <span style="color:#999;">· 700 mL면 ${(tare + 700).toFixed(0)} g 근처</span>
                 </div>
             </div>` : `
@@ -523,8 +523,8 @@ function ciRenderForm() {
         ${ciForm.noRefill ? `
         <div style="margin-top:8px; padding:8px 10px; background:#f5f5f5; border-radius:6px; font-size:0.8rem; color:#666;">
             잰 물통과 사료를 그대로 다시 넣습니다. 약도 새로 넣지 않습니다.
-            다음 섭취량은 오늘 잔량(물 <b>${ciForm.waterRemaining || '-'} g</b> ·
-            사료 <b>${ciForm.foodRemaining || '-'} g</b>)을 기준으로 계산됩니다.
+            다음 섭취량은 오늘 잔량(물 <b id="ci-nr-wr">${ciForm.waterRemaining || '-'} g</b> ·
+            사료 <b id="ci-nr-fr">${ciForm.foodRemaining || '-'} g</b>)을 기준으로 계산됩니다.
         </div>` : ''}
     </div>
 
@@ -627,7 +627,7 @@ function ciSetFillScale(val) {
     const tare = ciTareOf(ciCurrent);
     const v = (val === '' || isNaN(Number(val))) ? 0 : Math.round((Number(val) - tare) * 10) / 10;
     ciForm.waterGiven = v > 0 ? v : 0;
-    ciRenderForm();
+    ciUpdateCalc();   // 한 글자 칠 때마다 화면을 다시 그리면 입력칸에서 커서가 빠진다
 }
 
 // 저울에 올린 값(물통째)에서 빈 통 무게를 빼 물 양을 구한다
@@ -637,7 +637,17 @@ function ciSetScale(val) {
     const water = (val === '' || isNaN(Number(val))) ? '' : Math.round((Number(val) - tare) * 10) / 10;
     ciForm.waterRemaining = water === '' ? '' : String(water);
     if (ciForm.noRefill) ciForm.waterGiven = water === '' ? 0 : water;
-    ciRenderForm();
+    ciUpdateCalc();
+}
+
+// 무게 → 부피처럼 입력을 받아 다른 곳에 보여주는 값들만 갱신한다.
+// 폼 전체를 다시 그리지 않으므로 입력 중인 칸의 포커스가 유지된다.
+function ciSyncDerived() {
+    const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    set('ci-ws-out', ciForm.waterRemaining === '' ? '- g' : ciForm.waterRemaining + ' g');
+    set('ci-fs-out', ciForm.fillScale === '' ? '- mL' : Number(ciForm.waterGiven).toFixed(0) + ' mL');
+    set('ci-nr-wr', (ciForm.waterRemaining || '-') + ' g');
+    set('ci-nr-fr', (ciForm.foodRemaining || '-') + ' g');
 }
 
 function ciSetRat(ratId, key, val) {
@@ -773,6 +783,7 @@ function ciUpdateCalc() {
             </div>
         </div>`;
     }
+    ciSyncDerived();
     ciUpdateDose();
 }
 
@@ -1029,8 +1040,14 @@ async function ciSave() {
     const dateStr = ciDate || getTodayStr();
     const by = (firebase.auth().currentUser && firebase.auth().currentUser.email) || null;
 
-    if (ciForm.waterRemaining === '' && ciForm.foodRemaining === '' &&
-        !Object.values(ciForm.rats).some(f => f.weight !== '')) {
+    // 잰 값(잔량·체중)이 없어도 '채운 양'만 있는 날은 정상적인 기록이다.
+    // 첫 급여처럼 비교할 지난 기록이 없으면 잴 잔량 자체가 없다.
+    const measured = ciForm.waterRemaining !== '' || ciForm.foodRemaining !== '' ||
+                     ciForm.waterScale !== '' ||
+                     Object.values(ciForm.rats).some(f => f.weight !== '');
+    const filled = !ciForm.noRefill &&
+                   (ciForm.fillScale !== '' || !ciBaseline(savingCage));
+    if (!measured && !filled) {
         return alert('입력된 값이 없습니다.');
     }
 
