@@ -175,8 +175,11 @@ function iaRender() {
             const bw = iaCageBW(r);
             const days = r.animalDays / (r.ratCount || 1);
             if (bw && days > 0) {
-                // 원액 부피도 전체 부피에 포함 (700 mL 물 + 7 cc 원액 = 707 mL)
-                const totalVol = Number(p.waterGiven) + (Number(p.doseCc) || 0);
+                // waterGiven은 물 + 원액을 합한 총량이다 (fillWater가 있는 기록부터).
+                // 그 이전 기록은 물만 담겨 있으므로 원액 부피를 더해준다.
+                const totalVol = (typeof p.fillWater === 'number')
+                    ? Number(p.waterGiven)
+                    : Number(p.waterGiven) + (Number(p.doseCc) || 0);
                 const conc = p.doseMg / totalVol;                        // mg/mL
                 const taken = conc * r.waterConsumed;                    // mg
                 byGroup[g][c].met.push(taken / (bw / 1000) / days);

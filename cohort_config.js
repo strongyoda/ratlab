@@ -25,9 +25,12 @@ function cfgDefaultConfig(cohort) {
             { key: 'G1', name: '초기 투여군',  desc: 'BAPN 시작과 함께 메트포민',    color: '#E6194B' },
             { key: 'G2', name: '후기 투여군',  desc: '수술 4주 뒤부터 메트포민',     color: '#4363D8' }
         ],
-        timepoints: { mr: ['W4', 'W8', 'W12'], bp: ['W1', 'W5', 'W9'] },
-        housing: { ratsPerCage: 3, cageCount: 24, waterFill: 600, foodFill: 150, bottleCount: 1,
-                   bottleTare: 0, evapPerHour: 0, lossPerHandling: 0 },
+        timepoints: { mr: ['W4', 'W8', 'W12'], bp: ['W1', 'W4', 'W8', 'W12'] },
+        // 로스 상수는 실측값이다. 새 코호트를 만들 때 비어 있으면 보정 없이 계산되어
+        // 섭취량이 조금씩 부풀려지므로, 지금까지 잰 값을 기본으로 넣어둔다.
+        // (가장 최근 코호트 설정이 있으면 cfgCreateNew에서 그 값을 물려받는다)
+        housing: { ratsPerCage: 3, cageCount: 24, waterFill: 700, foodFill: 250, bottleCount: 1,
+                   bottleTare: 0, evapPerHour: 0.0625, lossPerHandling: 1.36 },
         dosing: [
             { substance: 'NaCl',      medium: 'food',  mode: 'percent',    value: 8,
               groups: ['G0', 'G1', 'G2'], startAnchor: 'ovx',      startOffset: 0,
@@ -119,11 +122,30 @@ async function cfgCreateNew() {
         return cfgOpen(val);
     }
     cfgDraft = cfgDefaultConfig(val);
+
+    // 사육 조건과 로스 상수는 랩 장비의 성질이라 코호트가 바뀌어도 대체로 같다.
+    // 가장 최근 코호트의 값을 물려받아, 새로 만들 때마다 빈칸을 다시 채우지 않게 한다.
+    let inherited = null;
+    try {
+        const all = await db.collection('cohortConfigs').get();
+        const prev = all.docs
+            .filter(d => d.id !== val && d.data().housing)
+            .sort((a, b) => Number(b.id) - Number(a.id))[0];
+        if (prev) {
+            const h = prev.data().housing;
+            // 케이지 수·마리수는 실험 규모라 코호트마다 다르므로 물려받지 않는다
+            ['waterFill', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling']
+                .forEach(k => { if (h[k] !== undefined && h[k] !== null) cfgDraft.housing[k] = h[k]; });
+            inherited = prev.id;
+        }
+    } catch (e) { console.error('이전 설정 물려받기 실패', e); }
+
     cfgLoadedCohort = val;
     cfgDirty = true;
     cfgRenderBody();
     const bar = document.getElementById('cfg-savebar');
     if (bar) bar.style.display = 'flex';
+    if (inherited) cfgToast(`코호트 ${inherited}의 사육 기본값·로스 상수를 가져왔습니다`);
 }
 
 function cfgLoadSelected() {
@@ -207,22 +229,46 @@ function cfgGroupsCard(c) {
     </div>`;
 }
 
+// 고를 수 있는 시점. 수술일(D0) 기준이며 W1 = 7일.
+const CFG_TIMEPOINTS = ['D0', 'D2', 'W1', 'W2', 'W3', 'W4', 'W5', 'W6',
+                        'W7', 'W8', 'W9', 'W10', 'W11', 'W12'];
+
 function cfgTimepointsCard(c) {
-    const mk = (kind, label, hint) => `
-        <div class="input-group" style="flex:1; min-width:240px;">
-            <label style="font-weight:bold; color:var(--navy);">${label}</label>
-            <input type="text" value="${(c.timepoints[kind] || []).join(', ')}"
-                   onchange="cfgSetTimepoints('${kind}', this.value)"
-                   style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
-            <div style="font-size:0.78rem; color:#888; margin-top:4px;">${hint}</div>
+    const mk = (kind, label, color) => {
+        const picked = c.timepoints[kind] || [];
+        // 목록에 없는 값도 지워지지 않게 뒤에 따로 보여준다
+        const extra = picked.filter(v => !CFG_TIMEPOINTS.includes(v));
+        const box = tp => {
+            const on = picked.includes(tp);
+            return `<label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;
+                        padding:5px 9px; border-radius:15px; font-size:0.85rem; white-space:nowrap;
+                        border:1px solid ${on ? color : '#ddd'};
+                        background:${on ? color + '18' : '#fff'}; color:${on ? color : '#555'};
+                        font-weight:${on ? 'bold' : 'normal'};">
+                <input type="checkbox" ${on ? 'checked' : ''} style="width:auto; margin:0;"
+                       onchange="cfgToggleTimepoint('${kind}','${tp}',this.checked)">${tp}</label>`;
+        };
+        return `
+        <div style="flex:1; min-width:300px;">
+            <div style="font-weight:bold; color:var(--navy); margin-bottom:7px;">
+                ${label} <span style="font-weight:normal; color:#888; font-size:0.85rem;">${picked.length}회</span>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                ${CFG_TIMEPOINTS.map(box).join('')}
+                ${extra.map(box).join('')}
+            </div>
         </div>`;
+    };
 
     return `
     <div class="card">
         <h4 style="margin-top:0; color:var(--navy);">📅 검사 시점</h4>
-        <div style="display:flex; gap:15px; flex-wrap:wrap;">
-            ${mk('mr', 'MR 촬영', '쉼표로 구분. W4 = 수술 후 28일')}
-            ${mk('bp', '혈압(BP) 측정', '쉼표로 구분. W1 = 수술 후 7일')}
+        <div style="font-size:0.8rem; color:#666; margin-bottom:12px;">
+            수술일(Ligation)이 기준입니다. W1 = 수술 후 7일, W4 = 28일.
+        </div>
+        <div style="display:flex; gap:22px; flex-wrap:wrap;">
+            ${mk('mr', 'MR 촬영', '#3F51B5')}
+            ${mk('bp', '혈압(BP) 측정', '#00897B')}
         </div>
         <div style="margin-top:10px; padding:8px 10px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; font-size:0.82rem; color:#7a5c00;">
             이 날들은 마취·구속 때문에 물을 평소보다 적게 마십니다. 해당 구간은 <b>처치일</b>로 표시되어
@@ -298,12 +344,19 @@ function cfgDosingCard(c) {
 
     const rows = (c.dosing || []).map((d, i) => {
         const isWater = d.medium === 'water';
+        const keys = c.groups.map(g => g.key);
+        // 지워진 군을 아직 가리키고 있으면 여기에 빨갛게 띄워 바로 뺄 수 있게 한다
+        const stale = (d.groups || []).filter(g => !keys.includes(g));
         const groupChecks = c.groups.map(g => `
             <label style="font-size:0.85rem; margin-right:10px; white-space:nowrap;">
                 <input type="checkbox" ${(d.groups || []).includes(g.key) ? 'checked' : ''}
                        onchange="cfgToggleDoseGroup(${i}, '${g.key}', this.checked)"
                        style="width:auto; vertical-align:middle;"> ${g.key}
-            </label>`).join('');
+            </label>`).join('') + stale.map(g => `
+            <button onclick="cfgToggleDoseGroup(${i}, '${g}', false)"
+                    style="font-size:0.8rem; margin-right:8px; padding:2px 8px; border-radius:12px;
+                           border:1px solid var(--red); background:#ffebee; color:var(--red); cursor:pointer;">
+                ${g} 없는 군 ✕</button>`).join('');
 
         const concBlock = isWater ? `
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -393,19 +446,58 @@ function cfgDosingCard(c) {
 }
 
 // ---------- 편집 핸들러 (전부 화면 사본만 수정, DB에는 안 씀) ----------
-function cfgSetGroup(i, key, val) { cfgDraft.groups[i][key] = val; cfgMarkDirty(); if (key === 'key') cfgRenderBody(); }
+// 군 코드를 바꾸거나 군을 지우면 투약 규칙이 옛 코드를 가리킨 채 남는다.
+// 그 코드는 체크박스로 보이지도 않아 손으로 고칠 수가 없었다. 규칙을 같이 따라가게 한다.
+function cfgSetGroup(i, key, val) {
+    if (key === 'key') {
+        const old = cfgDraft.groups[i].key;
+        const nw = String(val || '').trim();
+        if (nw && nw !== old) {
+            (cfgDraft.dosing || []).forEach(d => {
+                d.groups = (d.groups || []).map(g => (g === old ? nw : g));
+            });
+        }
+        cfgDraft.groups[i].key = nw;
+    } else {
+        cfgDraft.groups[i][key] = val;
+    }
+    cfgMarkDirty();
+    if (key === 'key') cfgRenderBody();
+}
+
 function cfgAddGroup() {
     cfgDraft.groups.push({ key: 'G' + cfgDraft.groups.length, name: '새 군', desc: '', color: '#888888' });
     cfgMarkDirty(); cfgRenderBody();
 }
+
 function cfgRemoveGroup(i) {
-    if (!confirm(`'${cfgDraft.groups[i].name}' 군을 삭제할까요?`)) return;
-    cfgDraft.groups.splice(i, 1); cfgMarkDirty(); cfgRenderBody();
+    const g = cfgDraft.groups[i];
+    const used = (cfgDraft.dosing || []).filter(d => (d.groups || []).includes(g.key));
+    const extra = used.length
+        ? `\n\n이 군을 쓰던 항목에서도 함께 빠집니다: ${used.map(d => d.substance).join(', ')}` : '';
+    if (!confirm(`'${g.name}' 군을 삭제할까요?${extra}`)) return;
+
+    (cfgDraft.dosing || []).forEach(d => { d.groups = (d.groups || []).filter(x => x !== g.key); });
+    cfgDraft.groups.splice(i, 1);
+    cfgMarkDirty(); cfgRenderBody();
 }
 
 function cfgSetTimepoints(kind, val) {
     cfgDraft.timepoints[kind] = val.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
     cfgMarkDirty();
+}
+
+// 체크로 시점을 넣고 뺀다. 순서는 실제 시간순으로 정렬해 저장한다.
+function cfgToggleTimepoint(kind, tp, on) {
+    const cur = cfgDraft.timepoints[kind] || [];
+    const next = on ? (cur.includes(tp) ? cur : cur.concat(tp)) : cur.filter(v => v !== tp);
+    const rank = v => {
+        const i = CFG_TIMEPOINTS.indexOf(v);
+        return i >= 0 ? i : 900 + v.length;      // 목록 밖 값은 뒤로
+    };
+    cfgDraft.timepoints[kind] = next.sort((a, b) => rank(a) - rank(b));
+    cfgMarkDirty();
+    cfgRenderBody();
 }
 
 function cfgSetHousing(key, val) { cfgDraft.housing[key] = Number(val); cfgMarkDirty(); }
@@ -429,6 +521,7 @@ function cfgToggleDoseGroup(i, key, on) {
     if (on) { if (!d.groups.includes(key)) d.groups.push(key); }
     else d.groups = d.groups.filter(g => g !== key);
     cfgMarkDirty();
+    if (!on) cfgRenderBody();   // '없는 군' 칩을 지웠으면 화면에서도 사라져야 한다
 }
 function cfgAddDose() {
     cfgDraft.dosing.push({
