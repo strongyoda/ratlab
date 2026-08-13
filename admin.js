@@ -250,12 +250,12 @@ async function searchForEdit(ratId) {
             const actVal = (d.scores?.activity !== undefined) ? d.scores.activity : (d.scores?.act || 0);
             html += `<tr data-id="${doc.id}" data-coll="dailyLogs"><td><input type="date" class="row-date" value="${d.date}"></td><td><input type="number" class="row-act" value="${actVal}" style="width:40px"></td><td><input type="number" class="row-fur" value="${d.scores?.fur||0}" style="width:40px"></td><td><input type="number" class="row-eye" value="${d.scores?.eye||0}" style="width:40px"></td><td><input type="text" class="row-note" value="${d.note||''}"></td><td><button class="del-btn" onclick="markRowDel(this)">삭제</button></td></tr>`;
         });
-        html += `</tbody></table><div style="height:60px;"></div> <button class="btn btn-green float-save-btn" onclick="saveTotalEdit('${ratDoc.id}')">💾 전체 저장</button></div>`;
+        html += `</tbody></table><div style="height:60px;"></div> <button class="btn btn-green float-save-btn" onclick="saveTotalEdit('${ratDoc.id}','${rData.ratId}')">💾 전체 저장</button></div>`;
         resDiv.innerHTML = html;
     } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
 }
 
-async function saveTotalEdit(ratDocId) {
+async function saveTotalEdit(ratDocId, ratIdArg) {
     if(!confirm("모든 변경사항을 저장하시겠습니까?")) return;
     
     const batch = db.batch();
@@ -318,7 +318,9 @@ async function saveTotalEdit(ratDocId) {
     };
 
     const tables = ['meas-tbody', 'daily-tbody'];
-    const ratIdStr = document.getElementById('edit-id').value;
+    // 목록 선택 방식으로 바뀌면서 edit-id 입력창이 사라졌다 → 인자로 받은 값을 우선 사용
+    const idInp = document.getElementById('edit-id');
+    const ratIdStr = ratIdArg || (idInp ? idInp.value : '');
 
     // 🌟 [신규] 가장 최근 데일리 점수 추적기 (대시보드 색상 동기화용)
     let latestDailyScore = null;
@@ -394,7 +396,7 @@ async function saveTotalEdit(ratDocId) {
         clearRatsCache();
         invalidateDashboardDom(); // 🌟 대시보드 색상 즉시 반영
         alert("성공적으로 저장되었습니다.");
-        searchForEdit(); 
+        if (ratIdStr) searchForEdit(ratIdStr);
     } catch(e) {
         console.error(e);
         alert("저장 중 오류 발생: " + e.message);
