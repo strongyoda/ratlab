@@ -19,6 +19,7 @@ let ciLastFeed = {};     // cageId -> 직전 방문 기록 (오늘 것일 수도
 let ciPrevFeed = {};     // cageId -> 오늘 이전의 마지막 기록 (오늘 재입력 시 비교 기준)
 let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day). 주말 낀 구간은 뺀 값
 let ciRecentPcAny = {};  // 위와 같되 주말 구간도 포함. 평일 기록이 아예 없을 때만 쓴다
+let ciWeighDates = {};   // cageId -> Set('YYYY-MM-DD'). 체중을 잰 날 = 그날 케이지를 열었다는 뜻
 let ciCurrent = null;    // 지금 입력 중인 케이지 id
 let ciDoneToday = new Set();
 let ciForm = {};         // 입력 중인 값
@@ -157,7 +158,7 @@ function ciRowSpansWeekend(row) {
 }
 
 async function ciLoadHistory() {
-    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {};
+    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {}; ciWeighDates = {};
     const todayStr = ciDate || getTodayStr();
 
     // 케이지별로 따로 조회하면 복합 인덱스가 필요하고 읽기 횟수도 많아진다.
@@ -165,6 +166,17 @@ async function ciLoadHistory() {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 12);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    // 체중을 잰 날은 그날 케이지를 열었다는 뜻이고, 케이지를 열려면 물통을 뗀다.
+    // 물 안 가는 날 체중은 「상태 & 체중 기록」으로 들어가 cageFeeding 행이 안 생기므로,
+    // 탈착 횟수는 여기서 따로 세야 한다. (주말은 잰 기록이 없어 자동으로 0이 된다)
+    const measSnap = await db.collection('measurements').where('date', '>=', cutoffStr).get();
+    const weighByRat = {};
+    measSnap.forEach(d => {
+        const v = d.data();
+        if (!v.weight || !v.date) return;
+        (weighByRat[v.ratId] = weighByRat[v.ratId] || new Set()).add(String(v.date).slice(0, 10));
+    });
 
     const snap = await db.collection('cageFeeding').where('dateStr', '>=', cutoffStr).get();
     const byCage = {};
@@ -174,6 +186,13 @@ async function ciLoadHistory() {
     });
 
     ciCages.forEach(cage => {
+        // 이 케이지 개체들이 체중을 잰 날을 모아둔다 (개체가 여럿이면 합집합)
+        const days = new Set();
+        ciOccupants(cage.id).forEach(r => {
+            (weighByRat[r.ratId] || new Set()).forEach(d => days.add(d));
+        });
+        ciWeighDates[cage.id] = days;
+
         const rows = byCage[String(cage.id)];
         if (!rows || !rows.length) return;
         rows.sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
@@ -359,10 +378,15 @@ function ciLastSavedBanner() {
     </div>`;
 }
 
+// 번호 오름차순으로 돌려준다. 재실 기록이 읽힌 순서(배정한 순서)를 그대로 쓰면
+// 화면에서 개체가 뒤죽박죽 나와 체중을 잘못된 칸에 넣기 쉽다.
+// 정렬 키는 ratId 문자열이 아니라 num(숫자)이다 — 군이 다르면 문자열 순서가 어긋난다.
 function ciOccupants(cageId) {
     return ciHousing.filter(h => String(h.cageId) === String(cageId))
         .map(h => ciRats.find(r => r.ratId === h.ratId))
-        .filter(r => r && r.status !== '사망');
+        .filter(r => r && r.status !== '사망')
+        .sort((a, b) => (Number(a.num) || 0) - (Number(b.num) || 0)
+                     || String(a.ratId).localeCompare(String(b.ratId)));
 }
 
 // 섭취량 계산의 비교 기준 기록.
@@ -389,11 +413,14 @@ function ciOpen(cageId) {
     ciForm = {
         waterRemaining: '', foodRemaining: '',
         waterGiven: last ? (last.waterGiven ?? h.waterFill ?? 600) : (h.waterFill ?? 600),
-        foodGiven: last ? (last.foodGiven ?? h.foodFill ?? 150) : (h.foodFill ?? 150),
+        // 사료는 매번 설정값으로 리셋한다. 직전 기록을 물려받으면 251.1 같은 실측값이
+        // 다음 회차 기본값으로 흘러가 케이지마다 제각각이 된다.
+        foodGiven: h.foodFill ?? 250,
         bottleCount: last ? (last.bottleCount ?? h.bottleCount ?? 1) : (h.bottleCount ?? 1),
         note: '', flags: [], noRefill: false, waterScale: '',
         fillScale: '',              // 물 채운 통 무게(원액 넣기 전). 여기서 부피를 구한다
-        handlings: '',              // 비우면 경과일수로 자동
+        handlings: '',              // 비우면 체중 잰 날 기준으로 자동
+        manualPc: '',               // 쓸 만한 섭취 기록이 없을 때 손으로 넣는 예상 섭취량
         bottleSwap: false, newTare: '',   // 오늘 물통을 갈았는가 + 새 통 무게
         rats: {}
     };
@@ -422,10 +449,12 @@ function ciRenderForm() {
         ? last.at.toDate().toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
         : '이전 기록 없음';
 
-    // 물통 탈착 횟수 기본값 (매일 만지므로 경과일수 기준)
-    const hoursSince = (last && last.at && last.at.toDate)
-        ? (ciWorkMs() - last.at.toDate().getTime()) / 3600000 : 0;
-    const autoHandlings = Math.max(1, Math.round(hoursSince / 24));
+    // 물통 탈착 횟수 기본값 (체중을 잰 날 기준)
+    const autoHandlings = last ? ciCountHandlings(ciCurrent, last.dateStr) : 1;
+    const proc = ciForm.flags.includes('처치일');   // MR·BP가 낀 구간 — 잔량을 재지 않는다
+    // 통을 간 날은 잔량(옛 통)과 채움(새 통)의 빈 통 무게가 다르다
+    const swapped = !!(ciForm.bottleSwap && Number(ciForm.newTare) > 0);
+    const fillTare = ciFillTareOf();
 
     body.innerHTML = `
     ${ciLastSavedBanner()}
@@ -448,6 +477,25 @@ function ciRenderForm() {
     <div class="card">
         <div style="font-size:0.78rem; color:#999; margin-bottom:8px;">1 · 꺼내서 무게 재기</div>
 
+        <label style="display:block; margin-bottom:10px; padding:9px 11px; border-radius:6px;
+                      font-size:0.88rem; cursor:pointer;
+                      background:${proc ? '#fff3e0' : '#fafafa'};
+                      border:1px solid ${proc ? '#ffb74d' : '#e0e0e0'};">
+            <input type="checkbox" ${proc ? 'checked' : ''}
+                   onchange="ciToggleProcedure(this.checked)" style="width:auto;">
+            <b>지난 기록 이후 MR · BP가 있었음</b>
+            <div style="font-size:0.78rem; color:#666; margin:4px 0 0 22px;">
+                ${last ? `${lastStr} 이후` : '지난 기록 이후'}에 촬영·측정이 있었으면 켭니다.
+                그 구간은 물통을 우리 방식대로 다루지 않아 섭취량을 쓸 수 없습니다.
+                <b>잔량은 재지 않고</b> 오늘 채울 양만 넣으면 됩니다.
+            </div>
+        </label>
+
+        ${proc ? `
+        <div style="padding:9px 11px; background:#f5f5f5; border-radius:6px; font-size:0.82rem; color:#666;">
+            이 구간은 계산에서 제외되므로 잔량을 재지 않습니다. 아래 <b>2단계에서 채울 양</b>과
+            <b>3단계 체중</b>만 입력하세요. 체중은 투약량 계산에 필요하니 빠짐없이 넣습니다.
+        </div>` : `
         ${tare > 0 ? `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
             <span style="width:52px; font-size:0.9rem; color:#555;">물</span>
@@ -506,8 +554,10 @@ function ciRenderForm() {
             <span style="font-size:0.85rem; color:#888; width:52px;">회</span>
         </div>
         <div style="font-size:0.75rem; color:#888; margin:4px 0 0 62px;">
-            지난 기록 이후 물통을 뗐다 낀 횟수. 비워두면 경과일수로 ${autoHandlings}회로 잡습니다.
+            지난 기록 이후 물통을 뗐다 낀 횟수. 비워두면 <b>체중을 잰 날</b> 기준으로 ${autoHandlings}회로 잡습니다.
+            (주말처럼 아무도 안 간 날은 세지 않습니다)
         </div>` : ''}
+        `}
 
         <div id="ci-consume" style="margin-top:10px;"></div>
     </div>
@@ -527,9 +577,11 @@ function ciRenderForm() {
                        oninput="ciSetFillScale(this.value)" placeholder="원액 넣기 전"
                        style="width:100%; height:42px;">
                 <div style="font-size:0.75rem; color:#666; margin-top:4px;">
-                    빈 통 <b>${tare} g</b> 제외 → 물
+                    빈 통 <b>${fillTare} g</b>${swapped ? ' <b style="color:#e65100;">(새 통)</b>' : ''} 제외 → 물
                     <b id="ci-fs-out" style="color:var(--navy);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
-                    <span style="color:#999;">· 700 mL면 ${(tare + 700).toFixed(0)} g 근처</span>
+                    <span style="color:#999;">· 700 mL면 ${(fillTare + 700).toFixed(0)} g 근처</span>
+                    ${swapped ? `<br><span style="color:#e65100;">채워서 다는 건 새 통이라 새 무게로 뺍니다.
+                        1단계에서 잰 잔량은 떼어낸 옛 통(${tare} g) 기준입니다.</span>` : ''}
                 </div>
             </div>` : `
             <div style="flex:1; min-width:120px;">
@@ -572,6 +624,10 @@ function ciRenderForm() {
             <input type="checkbox" ${ciForm.flags.includes('이상') ? 'checked' : ''}
                    onchange="ciToggleFlag('이상', this.checked)" style="width:auto;">
             누수·엎어짐 등 이상 있었음 (이 구간은 계산에서 제외)
+            <div style="font-size:0.75rem; color:#888; margin:3px 0 0 22px;">
+                잰 값은 그대로 기록에 남기고 계산에서만 뺍니다.
+                MR·BP 때문이라면 위쪽 체크를 쓰세요 — 사유를 나눠 집계합니다.
+            </div>
         </label>
     </div>
 
@@ -633,8 +689,18 @@ function ciRatBlock(rat) {
 }
 
 // ---------- 입력 반영 + 실시간 계산 ----------
+// 예상 섭취량을 손으로 넣는 칸.
+// oninput으로 두면 한 글자마다 지시 카드가 다시 그려져 입력칸이 사라진다
+// (예전에 저울 칸에서 겪은 것과 같은 문제). 다 쓰고 칸을 벗어날 때 반영한다.
+function ciSetManualPc(val) {
+    ciForm.manualPc = val;
+    ciUpdateCalc();
+}
+
 function ciSet(key, val) {
     ciForm[key] = val;
+    // 새 통 무게를 고치면 그 통에 채운 양도 따라 바뀐다
+    if (key === 'newTare') ciRecalcFill();
     // 그대로 두는 날은 '준 양'이 곧 지금 남은 양이므로 같이 따라가야 한다
     if (ciForm.noRefill) {
         if (key === 'waterRemaining') ciForm.waterGiven = val === '' ? 0 : Number(val);
@@ -653,9 +719,26 @@ function ciTareOf(cageId) {
 // 물을 채운 통을 저울에 올린 값 → 실제 부피.
 // 700 mL를 정확히 맞춰 붓는 대신 대충 채우고 무게로 부피를 확정한다.
 // 원액은 아직 넣기 전이어야 한다 (넣은 뒤면 약까지 물로 세어진다).
+// 통을 간 날은 한 기록 안에서 빈 통 무게가 둘로 갈린다.
+// 1단계에서 잰 건 떼어낸 '옛 통'이고, 2단계에서 물을 채워 다는 건 '새 통'이다.
+// 여기를 옛 무게로 빼면 채운 양이 그 차이만큼 어긋나고,
+// 채운 양은 다음 구간 섭취량의 기준이라 오차가 그대로 넘어간다.
+function ciFillTareOf() {
+    if (ciForm.bottleSwap && Number(ciForm.newTare) > 0) return Number(ciForm.newTare);
+    return ciTareOf(ciCurrent);
+}
+
+// 빈 통 무게가 바뀌면(통 교체 체크·새 통 무게 수정) 채운 양을 다시 구해야 한다
+function ciRecalcFill() {
+    const v = ciForm.fillScale;
+    if (v === '' || v === undefined || isNaN(Number(v))) return;
+    const w = Math.round((Number(v) - ciFillTareOf()) * 10) / 10;
+    ciForm.waterGiven = w > 0 ? w : 0;
+}
+
 function ciSetFillScale(val) {
     ciForm.fillScale = val;
-    const tare = ciTareOf(ciCurrent);
+    const tare = ciFillTareOf();
     const v = (val === '' || isNaN(Number(val))) ? 0 : Math.round((Number(val) - tare) * 10) / 10;
     ciForm.waterGiven = v > 0 ? v : 0;
     ciUpdateCalc();   // 한 글자 칠 때마다 화면을 다시 그리면 입력칸에서 커서가 빠진다
@@ -702,7 +785,7 @@ function ciToggleNoRefill(on) {
         ciForm.fillScale  = '';
     } else {
         ciForm.waterGiven = last ? (last.waterGiven ?? h.waterFill ?? 600) : (h.waterFill ?? 600);
-        ciForm.foodGiven  = last ? (last.foodGiven  ?? h.foodFill  ?? 250) : (h.foodFill  ?? 250);
+        ciForm.foodGiven  = h.foodFill ?? 250;      // 사료는 항상 설정값으로 리셋
     }
     ciRenderForm();
 }
@@ -713,6 +796,20 @@ function ciToggleNoRefill(on) {
 function ciToggleBottleSwap(on) {
     ciForm.bottleSwap = on;
     if (!on) ciForm.newTare = '';
+    ciRecalcFill();     // 채울 통이 옛 통↔새 통으로 바뀌었으므로 채운 양을 다시 구한다
+    ciRenderForm();
+}
+
+// MR·BP가 낀 구간. 물통을 우리 절차대로 다루지 않아 로스 상수가 성립하지 않는다.
+// 어차피 버릴 구간이라 잔량을 재지 않고, 오늘 채운 양만 남겨 다음 구간의 기준으로 쓴다.
+// (다음 구간은 '오늘 채운 양'에서 출발하므로 잔량이 없어도 사슬이 끊기지 않는다)
+function ciToggleProcedure(on) {
+    ciToggleFlag('처치일', on);
+    if (on) {
+        ciForm.waterRemaining = ''; ciForm.foodRemaining = '';
+        ciForm.waterScale = ''; ciForm.handlings = '';
+        ciForm.noRefill = false;      // 안 채우면 다음 구간의 기준이 사라진다
+    }
     ciRenderForm();
 }
 
@@ -724,6 +821,18 @@ function ciToggleFlag(flag, on) {
 
 // 마신 양 = 지난번 채운 양 − 이번 잔량 − 로스
 // 기준은 ciBaseline: 오늘 재입력이면 오늘 이전 기록과 비교해 파생값을 새로 만든다.
+// 지난 기록 다음날부터 어제까지 체중을 잰 날 수 + 오늘 이 방문 1회.
+// 오늘 체중은 아직 저장 전이라 DB에 없으므로 날짜로 세지 않고 상수 1로 더한다.
+function ciCountHandlings(cageId, prevDateStr) {
+    const today = ciDate || getTodayStr();
+    let n = 1;                                  // 지금 이 방문에서 뗀 것
+    const days = ciWeighDates[cageId];
+    if (days && prevDateStr) {
+        days.forEach(d => { if (d > prevDateStr && d < today) n++; });
+    }
+    return n;
+}
+
 function ciComputeIntake() {
     const last = ciBaseline(ciCurrent);
     if (!last) return null;
@@ -742,9 +851,11 @@ function ciComputeIntake() {
     const bottles = Number(last.bottleCount) || 1;
 
     // 물통을 뗐다 낄 때마다 로스가 난다.
-    // 물은 월·수·금만 갈지만 체중은 매일 재므로, 기록 사이에 체중만 잰 날이 있으면
-    // 그날의 탈착도 세야 한다. 매일 만지는 프로토콜이라 경과일수로 기본값을 잡는다.
-    const autoHandlings = Math.max(1, Math.round(hours / 24));
+    // 경과일수로 잡으면 아무도 안 가는 토·일까지 세어 금→월 구간이 3회가 됐다.
+    // 실제로는 금요일에 꽂고 월요일에 뽑는 게 전부라 1회다.
+    // 그래서 '체중을 잰 날'을 센다 — 체중이 있다는 건 케이지를 열었다는 뜻이고,
+    // 주말·공휴일은 잰 기록이 없어 저절로 빠진다.
+    const autoHandlings = ciCountHandlings(ciCurrent, last.dateStr);
     const handlings = (ciForm.handlings === '' || ciForm.handlings === undefined)
         ? autoHandlings : Math.max(1, Number(ciForm.handlings) || 1);
 
@@ -990,8 +1101,15 @@ function ciUpdateDose() {
     // 예상 섭취량은 평일 구간에서만 가져온다. 주말이 낀 구간은 마리당 값이 달라
     // 그대로 쓰면 다음 회차 농도가 어긋난다 (계획서 9항).
     // 월요일 라운드가 바로 이 경우다 — 방금 잰 금→월 구간 대신 최근 평일 평균을 쓴다.
+    // 이상·처치일로 표시한 구간은 방금 쟀더라도 쓰지 않는다.
+    // 표시는 저장 뒤 '다음' 회차부터 걸러졌기 때문에, 정작 오늘 넣을 원액이
+    // 그 못 쓸 값으로 계산되고 있었다. (누수면 섭취량이 부풀어 약이 적게 들어간다)
+    const flagged = (ciForm.flags || []).length > 0;
+
     let expectedPc = null, pcSource = '';
-    if (c && c.waterPc > 0 && !c.spansWeekend) {
+    if (Number(ciForm.manualPc) > 0) {
+        expectedPc = Number(ciForm.manualPc); pcSource = '손으로 입력';
+    } else if (c && c.waterPc > 0 && !c.spansWeekend && !flagged) {
         expectedPc = c.waterPc; pcSource = '이번 구간';
     } else if (ciRecentPc[ciCurrent]) {
         expectedPc = ciRecentPc[ciCurrent];
@@ -1014,9 +1132,24 @@ function ciUpdateDose() {
             <b style="color:#7a5c00;">${rule.substance} 지시량 계산 대기</b>
             <div style="font-size:0.8rem; color:#7a5c00; margin-top:4px;">
                 ${missing.length ? `체중 미입력: ${missing.join(', ')}<br>` : ''}
-                ${!expectedPc ? '이전 섭취 기록이 없어 예상 섭취량을 알 수 없습니다.<br>' : ''}
+                ${!expectedPc ? (flagged
+                    ? '이 구간을 계산에서 뺐고, 대신 쓸 최근 기록도 없습니다.<br>'
+                    : '이전 섭취 기록이 없어 예상 섭취량을 알 수 없습니다.<br>') : ''}
                 ${!stock ? '코호트 설정에 원액 농도가 없습니다.<br>' : ''}
             </div>
+            ${(!expectedPc && !missing.length && stock && fill) ? `
+            <div style="margin-top:9px; padding-top:9px; border-top:1px dashed #ffe082;">
+                <div style="font-size:0.8rem; color:#7a5c00; margin-bottom:5px;">
+                    예상 섭취량을 직접 입력하면 그 값으로 계산합니다.
+                    옆 케이지 값이나 지난 회차를 보고 넣으세요. 손으로 넣었다는 것이 기록에 남습니다.
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <input type="number" inputmode="decimal" value="${ciForm.manualPc || ''}"
+                           onchange="ciSetManualPc(this.value)" placeholder="마리당 mL/day"
+                           style="width:150px; height:38px;">
+                    <span style="font-size:0.8rem; color:#7a5c00;">mL / 마리 / 일</span>
+                </div>
+            </div>` : ''}
         </div>`;
         return;
     }
@@ -1138,7 +1271,10 @@ async function ciSave() {
             // 저울에 찍힌 원본값과 그때 쓴 빈 통 무게를 같이 남긴다.
             // 나중에 빈 통 무게가 틀린 걸로 밝혀져도 원본이 있으면 되돌려 계산할 수 있다.
             waterScale: ciForm.waterScale === '' ? null : Number(ciForm.waterScale),
-            bottleTare: ciTareOf(ciCurrent),        // 이 측정에 실제로 쓴 값 (자리별 → 없으면 기본값)
+            bottleTare: ciTareOf(ciCurrent),        // 잔량을 잰 통(= 떼어낸 옛 통)의 빈 무게
+            // 통을 간 날은 채워서 다는 게 새 통이라 빈 무게가 다르다.
+            // 두 값을 따로 남겨야 나중에 저울 원본값에서 되돌려 계산할 수 있다.
+            fillBottleTare: ciFillTareOf(),
             flags: ciForm.flags.concat(
                 (c && !c.tooShort && c.housingChanged) ? ['재실변동'] : [],
                 Object.values(ciForm.rats).some(f => f.dead) ? ['사망발생'] : []),
@@ -1165,6 +1301,8 @@ async function ciSave() {
         feed.doseCc = Number(ciForm._doseCc) || 0;
         feed.doseMg = Number(ciForm._doseMg) || 0;
         feed.stockConc = feed.doseCc > 0 ? (ciForm._stockConc || null) : null;
+        // 예상 섭취량을 손으로 넣었으면 남긴다 — 나중에 이상값을 만났을 때 판단 근거가 된다
+        feed.manualPerCapita = Number(ciForm.manualPc) > 0 ? Number(ciForm.manualPc) : null;
         // 다음 라운드 조제량을 미리 계산하려면 체중이 필요하다.
         // 투약을 아직 안 하는 케이지도 남겨둬야 '이번에 새로 시작하는 케이지'까지 예측된다.
         // 오늘 사망한 개체는 다음 구간에 없으므로 예측용 합계에서 뺀다.
@@ -1334,7 +1472,16 @@ async function ciShowPrepSheet() {
             </div>`).join('')}
         </div>` : ''}
         <div style="margin-top:14px; padding:9px 11px; background:#f5f5f5; border-radius:6px; font-size:0.85rem;">
-            사료: 전 케이지 ${rows.length ? rows[0].food : '-'} g으로 리셋
+            ${(() => {
+                // 케이지마다 실제로 넣은 무게가 다르다. 첫 케이지 값을 '전 케이지'로 단정하면
+                // 나머지가 전부 그 값인 것처럼 보인다.
+                const fed = rows.filter(r => typeof r.food === 'number');
+                if (!fed.length) return '사료: 기록 없음';
+                const uniq = [...new Set(fed.map(r => r.food))];
+                if (uniq.length === 1) return `사료: 전 케이지 ${uniq[0]} g으로 리셋`;
+                return `사료 (케이지마다 실제로 넣은 무게)<div style="margin-top:5px; color:#555;">`
+                    + fed.map(r => `${r.n}번 ${r.food} g`).join(' · ') + '</div>';
+            })()}
         </div>
         ${ciStockSummary(dosed, stock)}
     </div>`;

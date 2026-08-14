@@ -133,6 +133,43 @@ function deRowHtml(r, i) {
 // 케이지별 입력과 같은 식: 섭취 = prev.채움 − row.잔량 − 로스,
 // 로스 = 증발×시간 + 탈착×횟수, 마리·일 = 재실 겹침 합.
 // keepHandlings: 구간이 안 바뀌는 단순 수정이면 손으로 넣었던 탈착 횟수를 유지한다.
+// 물통을 뗀 횟수 = 그 구간에 체중을 잰 날 수 (+ 이 기록의 방문 1회).
+// 체중이 있다는 건 그날 케이지를 열었다는 뜻이고, 주말처럼 아무도 안 간 날은 기록이 없다.
+// 케이지별 입력의 ciCountHandlings와 같은 규칙이되, 여기서는 지난 기록을 소급 계산하므로
+// 그날의 체중이 이미 저장돼 있다 — 그래서 시작일만 빼고 끝일까지 센다.
+async function deCountHandlings(cageId, prevMs, rowMs) {
+    if (!(prevMs > 0) || !(rowMs > prevMs)) return 1;
+    const ymd = ms => {
+        const d = new Date(ms);
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    };
+    const ds = ymd(prevMs), de = ymd(rowMs);
+
+    try {
+        const hs = await db.collection('ratHousing').where('cageId', '==', String(cageId)).get();
+        const ids = new Set();
+        hs.forEach(d => {
+            const h = d.data();
+            const from = h.from && h.from.toMillis ? h.from.toMillis() : 0;
+            const to = h.to && h.to.toMillis ? h.to.toMillis() : rowMs;
+            if (Math.min(rowMs, to) > Math.max(prevMs, from)) ids.add(h.ratId);
+        });
+        if (!ids.size) return 1;
+
+        const snap = await db.collection('measurements')
+            .where('date', '>', ds).where('date', '<=', de).get();
+        const days = new Set();
+        snap.forEach(d => {
+            const v = d.data();
+            if (v.weight && ids.has(v.ratId)) days.add(String(v.date).slice(0, 10));
+        });
+        return Math.max(1, days.size);
+    } catch (e) {
+        console.error('탈착 횟수 추정 실패, 1회로 잡음', e);
+        return 1;
+    }
+}
+
 async function deRecomputeRow(row, prev, keepHandlings) {
     const payload = {};
     const rowAt = row.at && row.at.toMillis ? row.at.toMillis() : null;
@@ -142,8 +179,11 @@ async function deRecomputeRow(row, prev, keepHandlings) {
               : (typeof row.intervalHours === 'number' ? row.intervalHours : null);
 
     if (hours !== null && hours > 0) {
+        // 경과일수로 세면 아무도 안 가는 토·일까지 세어 금→월 구간이 3회가 된다.
+        // 케이지별 입력과 같은 기준으로 '체중을 잰 날'을 센다.
         const hnd = (keepHandlings && Number(row.handlings))
-            ? Number(row.handlings) : Math.max(1, Math.round(hours / 24));
+            ? Number(row.handlings)
+            : await deCountHandlings(row.cageId, prevAt, rowAt);
         const loss = ((row.evapPerHour || 0) * hours
                     + (row.lossPerHandling || 0) * hnd) * (prev.bottleCount || 1);
 
