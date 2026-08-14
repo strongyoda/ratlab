@@ -296,6 +296,34 @@ function getPodForLabel(label, surgeryDate, recordDate) {
     return null; // 계산 불가
 }
 
+// ---------- 배치 ----------
+// 반입 순서 번호(num)로 배치가 자동으로 갈린다. 12마리씩이면 1~12 = B1, 13~24 = B2 …
+// 새 필드도 마이그레이션도 필요 없다.
+//
+// 코호트 14부터만 적용한다. 그 이전 코호트는 배치를 군(G1/G2…)으로 나눠 쓴 곳이 있어
+// 같은 규칙을 적용하면 없는 배치가 생겨 오히려 헷갈린다.
+const BATCH_FROM_COHORT = 14;
+
+function getBatchNo(rat, batchSize) {
+    if (!rat) return null;
+    const c = Number(rat.cohort);
+    if (!(c >= BATCH_FROM_COHORT)) return null;
+    const n = Number(rat.num);
+    const size = Number(batchSize) > 0 ? Number(batchSize) : 12;
+    if (!(n > 0)) return null;
+    return Math.ceil(n / size);
+}
+
+// 어디서나 같은 모양으로 쓰는 회색 칩. 해당 없으면 빈 문자열이라 그냥 끼워 넣으면 된다.
+function batchChipHtml(rat, batchSize, opts) {
+    const b = getBatchNo(rat, batchSize);
+    if (!b) return '';
+    const o = opts || {};
+    return `<span title="Batch ${b} (반입 ${b}차)" style="display:inline-block; padding:1px 6px;
+        background:#eceff1; color:#546e7a; border-radius:9px; font-size:${o.size || '0.72rem'};
+        font-weight:bold; white-space:nowrap; vertical-align:middle;">B${b}</span>`;
+}
+
 function extractLegacyCod(fullStr) {
     if (!fullStr || fullStr === '미기록') return 'Unknown';
     const lower = fullStr.toLowerCase();

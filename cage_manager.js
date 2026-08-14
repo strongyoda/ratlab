@@ -118,6 +118,12 @@ function cgMaxRats(cage) {
     return 3;
 }
 
+// 배치 크기는 그 쥐가 속한 코호트 설정에서 읽는다 (코호트마다 다를 수 있음).
+function cgBatchSize(rat) {
+    const cfg = cgConfigs[String(rat && rat.cohort)];
+    return Number(cfg && cfg.housing && cfg.housing.batchSize) || 12;
+}
+
 // 빈 물통 무게는 통마다 다르다. 케이지(자리)에 붙여 관리하고,
 // 값이 없는 자리만 코호트 기본값으로 넘어간다.
 function cgTareFallback() {
@@ -253,6 +259,7 @@ function cgRatChip(rat, cageId) {
                 ${dead ? 'opacity:0.55; text-decoration:line-through;' : ''}">
         <span style="width:9px; height:9px; border-radius:50%; background:${color}; display:inline-block;"></span>
         ${rat.ratId}
+        ${typeof batchChipHtml === 'function' ? batchChipHtml(rat, cgBatchSize(rat)) : ''}
     </div>`;
 }
 

@@ -17,7 +17,8 @@ let ciAllHousing = [];   // 끝난 재실 포함 (구간 중 변동을 반영하
 let ciRats = [];
 let ciLastFeed = {};     // cageId -> 직전 방문 기록 (오늘 것일 수도 있음)
 let ciPrevFeed = {};     // cageId -> 오늘 이전의 마지막 기록 (오늘 재입력 시 비교 기준)
-let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day)
+let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day). 주말 낀 구간은 뺀 값
+let ciRecentPcAny = {};  // 위와 같되 주말 구간도 포함. 평일 기록이 아예 없을 때만 쓴다
 let ciCurrent = null;    // 지금 입력 중인 케이지 id
 let ciDoneToday = new Set();
 let ciForm = {};         // 입력 중인 값
@@ -133,8 +134,30 @@ async function ciLoad(token) {
 
 // 케이지별 직전 방문 + 최근 마리당 섭취량
 // 마리당으로 기억해야 케이지를 합치거나 개체가 죽어도 예상치가 어긋나지 않는다.
+// 금요일에 채운 물이 월요일까지 가는 구간은 마리당 섭취량이 평일 구간과 다르다.
+// 그 값으로 다음 회차 농도를 정하면 어긋나므로 예상 섭취량 계산에서 뺀다.
+// 기록 자체는 그대로 남는다 (계획서 9항).
+function ciSpansWeekend(startMs, endMs) {
+    if (!(startMs > 0) || !(endMs > startMs)) return false;
+    const d = new Date(startMs); d.setHours(0, 0, 0, 0);
+    const last = new Date(endMs); last.setHours(0, 0, 0, 0);
+    for (; d <= last; d.setDate(d.getDate() + 1)) {
+        const w = d.getDay();
+        if (w === 0 || w === 6) return true;   // 일 · 토
+    }
+    return false;
+}
+
+// 저장된 기록의 구간이 주말에 걸쳤는지. 구간 길이를 함께 저장해두므로 소급해서도 판정된다.
+function ciRowSpansWeekend(row) {
+    const h = Number(row.intervalHours);
+    if (!(h > 0) || !row.at || !row.at.toDate) return false;
+    const end = row.at.toDate().getTime();
+    return ciSpansWeekend(end - h * 3600000, end);
+}
+
 async function ciLoadHistory() {
-    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {};
+    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {};
     const todayStr = ciDate || getTodayStr();
 
     // 케이지별로 따로 조회하면 복합 인덱스가 필요하고 읽기 횟수도 많아진다.
@@ -165,12 +188,18 @@ async function ciLoadHistory() {
 
         // 예상 섭취량은 '마리당'으로 기억 → 합치거나 죽어도 어긋나지 않음.
         // 이상 플래그가 붙은 구간은 제외.
-        const pcs = rows
-            .filter(r => !(r.flags || []).length)
-            .map(r => r.waterPerCapita)
-            .filter(v => typeof v === 'number' && v > 0)
-            .slice(0, 5);
-        if (pcs.length) ciRecentPc[cage.id] = pcs.reduce((a, b) => a + b, 0) / pcs.length;
+        const clean = rows.filter(r => !(r.flags || []).length);
+        const avg = list => {
+            const pcs = list.map(r => r.waterPerCapita)
+                            .filter(v => typeof v === 'number' && v > 0)
+                            .slice(0, 5);
+            return pcs.length ? pcs.reduce((a, b) => a + b, 0) / pcs.length : null;
+        };
+        // 평일 구간만으로 낸 값이 기본. 주말 포함까지 넣은 값은 평일 기록이 없을 때의 대비책.
+        const weekday = avg(clean.filter(r => !ciRowSpansWeekend(r)));
+        const any = avg(clean);
+        if (weekday !== null) ciRecentPc[cage.id] = weekday;
+        if (any !== null) ciRecentPcAny[cage.id] = any;
     });
 }
 
@@ -241,7 +270,7 @@ function ciPrepPlan() {
         stock = Number(st.rule.stockConc) || stock;
         const n = ciOccupants(cage.id).length;
         const bw = (ciLastFeed[cage.id] || {}).sumBW;
-        const pc = ciRecentPc[cage.id];
+        const pc = ciRecentPc[cage.id] || ciRecentPcAny[cage.id];   // 지시량과 같은 기준으로
 
         rows.push({
             number: cage.number,
@@ -580,7 +609,9 @@ function ciRatBlock(rat) {
     <div style="border:1px solid #e0e0e0; border-radius:8px; padding:10px; margin-bottom:8px;
                 ${f.dead ? 'background:#ffebee;' : ''}">
         <div style="display:flex; align-items:center; gap:8px;">
-            <b style="flex:1; font-size:0.95rem;">${rat.ratId}</b>
+            <b style="flex:1; font-size:0.95rem;">${rat.ratId}
+                ${typeof batchChipHtml === 'function'
+                    ? batchChipHtml(rat, ciConfig && ciConfig.housing && ciConfig.housing.batchSize) : ''}</b>
             <input type="number" inputmode="decimal" value="${f.weight}"
                    oninput="ciSetRat('${rat.ratId}','weight', this.value)" placeholder="체중"
                    style="width:82px; height:38px; font-size:1rem;">
@@ -745,6 +776,7 @@ function ciComputeIntake() {
     return {
         hours, days, loss, evapLoss, handLoss, handlings, autoHandlings,
         water, food, n, animalDays, housingChanged: changed,
+        spansWeekend: ciSpansWeekend(t0, t1),
         waterPc: animalDays > 0 ? water / animalDays : null,
         foodPc: (food !== null && animalDays > 0) ? food / animalDays : null,
         lossKnown: (evapPerHour > 0 || lossPerHandling > 0)
@@ -779,6 +811,7 @@ function ciUpdateCalc() {
                     <span style="opacity:0.8;">(증발 ${c.evapLoss.toFixed(1)} + 탈착 ${c.handLoss.toFixed(1)}, ${c.handlings}회)</span>`
                     : '· <b>로스 상수 미설정</b>'}
                 ${c.housingChanged ? '<br>구간 중 재실 변동이 있어 이 구간은 예상치 계산에서 제외됩니다.' : ''}
+                ${c.spansWeekend ? '<br>주말이 낀 구간이라 투약 농도 산정에는 쓰지 않고, 최근 평일 값으로 계산합니다. 섭취량 기록 자체는 그대로 남습니다.' : ''}
                 ${bad ? '<br><b>잔량이 채운 양보다 많습니다. 입력을 확인하세요.</b>' : ''}
             </div>
         </div>`;
@@ -953,7 +986,23 @@ function ciUpdateDose() {
     });
 
     const c = ciComputeIntake();
-    const expectedPc = (c && c.waterPc > 0) ? c.waterPc : ciRecentPc[ciCurrent];
+
+    // 예상 섭취량은 평일 구간에서만 가져온다. 주말이 낀 구간은 마리당 값이 달라
+    // 그대로 쓰면 다음 회차 농도가 어긋난다 (계획서 9항).
+    // 월요일 라운드가 바로 이 경우다 — 방금 잰 금→월 구간 대신 최근 평일 평균을 쓴다.
+    let expectedPc = null, pcSource = '';
+    if (c && c.waterPc > 0 && !c.spansWeekend) {
+        expectedPc = c.waterPc; pcSource = '이번 구간';
+    } else if (ciRecentPc[ciCurrent]) {
+        expectedPc = ciRecentPc[ciCurrent];
+        pcSource = (c && c.spansWeekend) ? '최근 평일 평균 (이번 구간은 주말이 껴서 제외)'
+                                         : '최근 평일 평균';
+    } else if (ciRecentPcAny[ciCurrent]) {
+        // 평일 기록이 아직 하나도 없으면 투약을 막는 것보다 주말 값이라도 쓰는 편이 낫다
+        expectedPc = ciRecentPcAny[ciCurrent];
+        pcSource = '주말 포함 구간 (평일 기록이 아직 없음)';
+    }
+
     const fill = Number(ciForm.waterGiven) || 0;
     const stock = Number(rule.stockConc) || 0;
 
@@ -996,7 +1045,8 @@ function ciUpdateDose() {
         </div>
         <div style="font-size:0.75rem; color:#1565c0;">
             총체중 ${sumBW.toFixed(0)}g · 목표 ${rule.value} mg/kg/day · 필요 ${needMg.toFixed(0)}mg
-            · 예상섭취 ${expectedIntake.toFixed(0)}mL · 원액 ${stock}mg/mL · 통 안 총량 ${totalVol.toFixed(0)}mL
+            · 예상섭취 ${expectedIntake.toFixed(0)}mL<span style="opacity:0.8;"> (${pcSource})</span>
+            · 원액 ${stock}mg/mL · 통 안 총량 ${totalVol.toFixed(0)}mL
             ${deadNow ? `<br>사망 표시한 ${deadNow}마리는 빼고 ${alive.length}마리 기준으로 계산했습니다.` : ''}
         </div>
         ${partial ? `<div style="font-size:0.78rem; color:#b71c1c; margin-top:5px;">

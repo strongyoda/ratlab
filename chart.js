@@ -562,6 +562,7 @@ async function loadDetailData(forceId = null) {
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                     <div style="display:flex; align-items:center; gap:10px;">
                         <h3 style="margin:0; font-size:1.5rem; color:var(--navy);">${id}</h3>
+                        ${typeof batchChipHtml === 'function' ? batchChipHtml(rat, null, { size: '0.8rem' }) : ''}
                         <select onchange="changeRatGroup('${docId}', '${id}', this.value)"
                                 title="그룹 변경 (선택 시 모든 연동 데이터가 새 ID로 자동 이동)"
                                 style="background:#e3f2fd; color:#1565c0; border:1px solid #bbdefb; border-radius:6px; padding:2px 8px; font-weight:bold; font-size:0.85rem; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none; -moz-appearance:none; padding-right:22px; background-image:url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'10\\' viewBox=\\'0 0 24 24\\' fill=\\'%231565c0\\'><path d=\\'M7 10l5 5 5-5z\\'/></svg>'); background-repeat:no-repeat; background-position:right 6px center;">
