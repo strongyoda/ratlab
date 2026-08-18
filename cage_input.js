@@ -20,6 +20,9 @@ let ciPrevFeed = {};     // cageId -> 오늘 이전의 마지막 기록 (오늘 
 let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day). 주말 낀 구간은 뺀 값
 let ciRecentPcAny = {};  // 위와 같되 주말 구간도 포함. 평일 기록이 아예 없을 때만 쓴다
 let ciWeighDates = {};   // cageId -> Set('YYYY-MM-DD'). 체중을 잰 날 = 그날 케이지를 열었다는 뜻
+let ciTodayMeas = {};    // ratId -> 오늘 저장된 체중 (다시 열었을 때 되살리기 위함)
+let ciTodayLogs = {};    // ratId -> 오늘 저장된 상태 점수·메모
+let ciSaving = false;    // 저장 중. 후임이 여러 번 눌러 다음 케이지까지 저장되던 것을 막는다
 let ciCurrent = null;    // 지금 입력 중인 케이지 id
 let ciDoneToday = new Set();
 let ciForm = {};         // 입력 중인 값
@@ -159,6 +162,7 @@ function ciRowSpansWeekend(row) {
 
 async function ciLoadHistory() {
     ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {}; ciWeighDates = {};
+    ciTodayMeas = {}; ciTodayLogs = {};
     const todayStr = ciDate || getTodayStr();
 
     // 케이지별로 따로 조회하면 복합 인덱스가 필요하고 읽기 횟수도 많아진다.
@@ -175,7 +179,17 @@ async function ciLoadHistory() {
     measSnap.forEach(d => {
         const v = d.data();
         if (!v.weight || !v.date) return;
-        (weighByRat[v.ratId] = weighByRat[v.ratId] || new Set()).add(String(v.date).slice(0, 10));
+        const day = String(v.date).slice(0, 10);
+        (weighByRat[v.ratId] = weighByRat[v.ratId] || new Set()).add(day);
+        // 오늘 저장한 값은 케이지를 다시 열었을 때 그대로 되살린다
+        if (day === todayStr) ciTodayMeas[v.ratId] = v.weight;
+    });
+
+    // 상태 점수도 같이 되살려야 '내가 넣은 게 맞나' 확인이 된다
+    const logSnap = await db.collection('dailyLogs').where('date', '==', todayStr).get();
+    logSnap.forEach(d => {
+        const v = d.data();
+        ciTodayLogs[v.ratId] = { scores: v.scores || {}, note: v.note || '' };
     });
 
     const snap = await db.collection('cageFeeding').where('dateStr', '>=', cutoffStr).get();
@@ -425,7 +439,54 @@ function ciOpen(cageId) {
         rats: {}
     };
     ciOccupants(cageId).forEach(r => ciEnsureRatForm(r.ratId));
+
+    // 오늘 이미 저장한 케이지면 그때 넣은 값을 그대로 되살린다.
+    // '입력 완료'만 뜨고 값을 다시 볼 수 없어, 물·사료처럼 개체 상세로도 확인이
+    // 안 되는 항목은 제대로 들어갔는지 확인할 길이 아예 없었다.
+    if (last && last.dateStr === (ciDate || getTodayStr())) ciRestoreToday(last);
+
     ciRenderForm();
+}
+
+// 오늘 저장된 기록 → 입력 폼. 저장할 때 쓴 값만 되살리고, 저장 시점에 자동으로
+// 붙는 값(재실변동·사망발생 플래그, 파생 계산값)은 되살리지 않는다 — 다시 저장하면 또 붙는다.
+function ciRestoreToday(row) {
+    const num = v => (v === null || v === undefined) ? '' : String(v);
+
+    ciForm.waterScale     = num(row.waterScale);
+    ciForm.waterRemaining = num(row.waterRemaining);
+    ciForm.foodRemaining  = num(row.foodRemaining);
+    ciForm.fillScale      = num(row.fillScale);
+    // waterGiven 은 원액까지 더한 값이라, 물만 담은 fillWater 를 쓴다
+    ciForm.waterGiven     = Number(row.fillWater ?? row.waterGiven) || 0;
+    ciForm.foodGiven      = Number(row.foodGiven) || ciForm.foodGiven;
+    ciForm.bottleCount    = Number(row.bottleCount) || 1;
+    ciForm.noRefill       = !!row.noRefill;
+    ciForm.note           = row.note || '';
+    ciForm.handlings      = row.handlings ? String(row.handlings) : '';
+    ciForm.manualPc       = row.manualPerCapita ? String(row.manualPerCapita) : '';
+    ciForm.flags          = (row.flags || []).filter(f => f === '이상' || f === '처치일');
+
+    if (row.bottleSwapped && Number(row.newBottleTare) > 0) {
+        ciForm.bottleSwap = true;
+        ciForm.newTare = String(row.newBottleTare);
+    }
+    // 통을 간 날은 자리에 등록된 무게가 이미 새 통으로 바뀌어 있다.
+    // 잔량은 그날 쓴 옛 통 무게로 계산해야 하므로 그 값을 그대로 물려준다.
+    if (Number(row.bottleTare) > 0) ciForm._tareOverride = Number(row.bottleTare);
+
+    ciOccupants(ciCurrent).forEach(r => {
+        const f = ciEnsureRatForm(r.ratId);
+        if (ciTodayMeas[r.ratId] !== undefined) f.weight = String(ciTodayMeas[r.ratId]);
+        const lg = ciTodayLogs[r.ratId];
+        if (lg) {
+            f.act = Number(lg.scores.activity) || 0;
+            f.fur = Number(lg.scores.fur) || 0;
+            f.eye = Number(lg.scores.eye) || 0;
+            f.note = lg.note || '';
+        }
+    });
+    ciForm._restored = true;
 }
 
 function ciRenderForm() {
@@ -469,8 +530,9 @@ function ciRenderForm() {
             ${last ? `· 물 ${last.waterGiven}mL / 사료 ${last.foodGiven}g 채움` : ''}
         </div>
         ${redo ? `<div style="margin-top:6px; padding:6px 9px; background:#fff8e1; border-radius:5px; font-size:0.78rem; color:#7a5c00;">
-            오늘 이미 저장한 케이지입니다. 다시 저장하면 오늘 기록을 <b>교체</b>하며,
-            섭취량·투약량은 ${lastStr} 기록과 비교해 다시 계산됩니다.
+            <b>오늘 저장한 값을 그대로 불러왔습니다.</b> 확인하거나 고칠 수 있습니다.
+            다시 저장하면 오늘 기록을 <b>교체</b>하며, 섭취량·투약량은
+            ${ciPrevFeed[ciCurrent] ? ciPrevFeed[ciCurrent].dateStr + ' 기록' : '직전 기록'}과 비교해 다시 계산됩니다.
         </div>` : ''}
     </div>
 
@@ -711,6 +773,9 @@ function ciSet(key, val) {
 // 빈 물통 무게는 통마다 다르다. 그 자리에 등록된 값이 우선이고,
 // 없으면 코호트 기본값으로 넘어간다.
 function ciTareOf(cageId) {
+    // 오늘 기록을 다시 열었으면 그때 쓴 값을 그대로 쓴다 (통을 간 날은 자리 값이 이미 바뀌어 있다)
+    if (ciForm && ciForm._tareOverride > 0 && String(cageId) === String(ciCurrent))
+        return Number(ciForm._tareOverride);
     const cage = ciCages.find(c => String(c.id) === String(cageId));
     if (cage && Number(cage.bottleTare) > 0) return Number(cage.bottleTare);
     return Number((ciConfig && ciConfig.housing && ciConfig.housing.bottleTare) || 0);
@@ -1192,11 +1257,38 @@ function ciUpdateDose() {
 }
 
 // ---------- 저장 ----------
+// 저장은 쓰기가 여러 번 일어나 한두 초 걸린다. 그동안 화면이 그대로라
+// 멈춘 줄 알고 다시 누르면 다음 케이지로 넘어가 그 케이지까지 저장돼 버렸다.
+// 화면을 덮어 터치를 막고, 지금 뭘 하는 중인지 보여준다.
+function ciBusy(on, msg) {
+    let el = document.getElementById('ci-busy');
+    if (!on) { if (el) el.remove(); return; }
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'ci-busy';
+        el.style.cssText = 'position:fixed; inset:0; z-index:99998; background:rgba(255,255,255,0.92);'
+            + 'display:flex; flex-direction:column; align-items:center; justify-content:center;'
+            + 'gap:16px; touch-action:none;';
+        el.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+        document.body.appendChild(el);
+    }
+    el.innerHTML = `
+        <div style="width:54px; height:54px; border:5px solid #e3f2fd; border-top-color:#1565c0;
+                    border-radius:50%; animation:ci-spin 0.8s linear infinite;"></div>
+        <div style="font-size:1.15rem; font-weight:bold; color:#0d47a1;">${msg || '저장 중입니다'}</div>
+        <div style="font-size:0.9rem; color:#666;">끝나면 다음 케이지로 넘어갑니다. 누르지 말고 기다려주세요.</div>`;
+}
+
 function ciBackToList() { ciCurrent = null; ciRenderList(); }
 
 async function ciSave() {
     if (!ciCurrent) return;
+    if (ciSaving) return;              // 이미 저장 중 — 두 번째 누름은 무시한다
+    ciSaving = true;
     const savingCage = ciCurrent;
+    const savingNumber = (ciCages.find(x => String(x.id) === savingCage) || {}).number || savingCage;
+    ciBusy(true, `${savingNumber}번 케이지 저장 중`);
+    try {
 
     // 화면을 열어둔 사이에 케이지 현황에서 쥐를 옮기면 개체 목록과 입력 폼이 어긋난다.
     // 그대로 저장하면 ciForm.rats[개체]가 없어 저장이 통째로 실패했다. 먼저 맞춰본다.
@@ -1212,6 +1304,7 @@ async function ciSave() {
         alert(`이 케이지의 재실이 화면을 연 뒤에 바뀌었습니다.\n\n` +
               `화면: ${formIds.join(', ') || '없음'}\n지금: ${nowIds.join(', ') || '없음'}\n\n` +
               `최신 상태로 다시 불러옵니다. 입력값을 확인하고 다시 저장해주세요.`);
+        ciSaving = false; ciBusy(false);
         await ciLoad(ciViewToken);
         ciOpen(savingCage);
         return;
@@ -1231,6 +1324,7 @@ async function ciSave() {
     const filled = !ciForm.noRefill &&
                    (ciForm.fillScale !== '' || !ciBaseline(savingCage));
     if (!measured && !filled) {
+        ciSaving = false; ciBusy(false);
         return alert('입력된 값이 없습니다.');
     }
 
@@ -1244,7 +1338,7 @@ async function ciSave() {
             `계속할까요?`)) return;
     }
 
-    try {
+    {
         const cfgH = (ciConfig && ciConfig.housing) || {};
         // 계산에 쓴 상수를 그 기록에 함께 남긴다 → 나중에 설정을 바꿔도 과거가 변하지 않음
         const cageDoc = ciCages.find(x => String(x.id) === ciCurrent);
@@ -1415,9 +1509,13 @@ async function ciSave() {
         }
 
         if (next) ciOpen(next.id); else ciBackToList();
+    }
     } catch (e) {
         console.error(e);
         alert('저장 실패: ' + e.message);
+    } finally {
+        ciSaving = false;
+        ciBusy(false);
     }
 }
 

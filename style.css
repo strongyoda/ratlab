@@ -473,3 +473,5 @@ th { background: #f8f9fa; }
         flex-direction: column; /* 정보 박스도 모바일에선 세로로 */
     }
 }
+/* 케이지별 입력 저장 중 스피너 */
+@keyframes ci-spin { to { transform: rotate(360deg); } }
