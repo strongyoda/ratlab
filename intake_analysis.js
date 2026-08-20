@@ -78,9 +78,14 @@ async function iaLoad() {
     }
 }
 
-// 계산에 쓸 수 있는 구간만 (플래그 없고, 섭취량이 계산된 것)
+// 섭취량 통계에서 빼는 사유. '수술일'은 여기 없다 —
+// 물통을 우리가 다뤄 측정이 유효하므로, 수술 후 섭취가 얼마나 줄었는지도 데이터다.
+// (약물 지시량 산정에서만 빠진다. cage_input 쪽에서 따로 거른다)
+const IA_DROP = ['이상', '처치일', '재실변동', '사망발생'];
+
 function iaUsable(r) {
-    return typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0 && !(r.flags || []).length;
+    return typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0
+        && !(r.flags || []).some(f => IA_DROP.includes(f));
 }
 
 function iaGroupOf(row) {

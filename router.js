@@ -6,7 +6,7 @@ let activeTabId = null;
 let tabCounter = 0;
 
 function initTabs() {
-    if(appTabs.length === 0) createNewTab('dash');
+    if(appTabs.length === 0) createNewTab('home');   // 열면 대시보드부터
 }
 
 function createNewTab(view = 'blank') {
@@ -119,7 +119,7 @@ function closeTab(tId, event) {
 }
 
 function getTitleForView(view) {
-    const map = { 'dash':'대시보드', 'detail':'랫드 상세', 'cohort':'코호트 분석', 'compare':'코호트 비교', 'trend':'조건분석', 'daily':'데일리', 'add':'신규등록', 'rec':'혈압/체중', 'bp':'BP계산기', 'admin':'데이터관리', 'cohortcfg':'코호트 설정', 'cages':'케이지 현황', 'cageinput':'케이지별 입력', 'intake':'섭취량·투여량', 'batch':'일괄 입력' };
+    const map = { 'home':'대시보드', 'dash':'랫드 명부', 'detail':'랫드 상세', 'cohort':'코호트 분석', 'compare':'코호트 비교', 'trend':'조건분석', 'daily':'데일리', 'add':'신규등록', 'rec':'혈압/체중', 'bp':'BP계산기', 'admin':'데이터관리', 'cohortcfg':'코호트 설정', 'cages':'케이지 현황', 'cageinput':'케이지별 입력', 'intake':'섭취량·투여량', 'batch':'일괄 입력' };
     return map[view] || '새 탭';
 }
 // ==========================================
@@ -491,6 +491,12 @@ async function go(view, targetId = null, specificTabId = null) {
     // 케이지 현황 (배정 · 이동 · 추가/삭제)
     if (view === 'cages') {
         await renderCageStatusView(main);
+        return;
+    }
+
+    // 대시보드 (사이트를 열면 처음 보이는 화면)
+    if (view === 'home') {
+        await renderDashboardView(main);
         return;
     }
 

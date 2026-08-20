@@ -152,6 +152,15 @@ function ciSpansWeekend(startMs, endMs) {
     return false;
 }
 
+// 랫드는 야행성이라 밤에 몰아 마신다. 구간이 24시간의 배수에서 벗어나면
+// 밤낮 비중이 치우쳐 '시간당 × 24' 로 낸 하루치가 부풀거나 줄어든다.
+// 라운드를 매일 오후 2시쯤 도는 것을 전제로, 몇 시간까지는 그대로 쓴다.
+function ciOffFrom24(hours) {
+    if (!(hours > 0)) return 0;
+    return Math.abs(hours - Math.max(1, Math.round(hours / 24)) * 24);
+}
+const CI_SPAN_TOL_H = 3;   // 24시간 배수에서 이만큼까지는 이번 구간을 그대로 쓴다
+
 // 저장된 기록의 구간이 주말에 걸쳤는지. 구간 길이를 함께 저장해두므로 소급해서도 판정된다.
 function ciRowSpansWeekend(row) {
     const h = Number(row.intervalHours);
@@ -431,7 +440,7 @@ function ciOpen(cageId) {
         // 다음 회차 기본값으로 흘러가 케이지마다 제각각이 된다.
         foodGiven: h.foodFill ?? 250,
         bottleCount: last ? (last.bottleCount ?? h.bottleCount ?? 1) : (h.bottleCount ?? 1),
-        note: '', flags: [], noRefill: false, waterScale: '',
+        note: '', flags: [], noWater: false, noFood: false, waterScale: '',
         fillScale: '',              // 물 채운 통 무게(원액 넣기 전). 여기서 부피를 구한다
         handlings: '',              // 비우면 체중 잰 날 기준으로 자동
         manualPc: '',               // 쓸 만한 섭취 기록이 없을 때 손으로 넣는 예상 섭취량
@@ -461,11 +470,13 @@ function ciRestoreToday(row) {
     ciForm.waterGiven     = Number(row.fillWater ?? row.waterGiven) || 0;
     ciForm.foodGiven      = Number(row.foodGiven) || ciForm.foodGiven;
     ciForm.bottleCount    = Number(row.bottleCount) || 1;
-    ciForm.noRefill       = !!row.noRefill;
+    // 옛 기록은 noRefill 하나로 물·사료를 묶어 저장했다
+    ciForm.noWater        = row.noWater !== undefined ? !!row.noWater : !!row.noRefill;
+    ciForm.noFood         = row.noFood  !== undefined ? !!row.noFood  : !!row.noRefill;
     ciForm.note           = row.note || '';
     ciForm.handlings      = row.handlings ? String(row.handlings) : '';
     ciForm.manualPc       = row.manualPerCapita ? String(row.manualPerCapita) : '';
-    ciForm.flags          = (row.flags || []).filter(f => f === '이상' || f === '처치일');
+    ciForm.flags          = (row.flags || []).filter(f => ['이상', '처치일', '수술일'].includes(f));
 
     if (row.bottleSwapped && Number(row.newBottleTare) > 0) {
         ciForm.bottleSwap = true;
@@ -512,7 +523,12 @@ function ciRenderForm() {
 
     // 물통 탈착 횟수 기본값 (체중을 잰 날 기준)
     const autoHandlings = last ? ciCountHandlings(ciCurrent, last.dateStr) : 1;
-    const proc = ciForm.flags.includes('처치일');   // MR·BP가 낀 구간 — 잔량을 재지 않는다
+    // 지난 기록 이후 있었던 일. 둘의 성격이 다르다.
+    //  · 수술일 : 물통을 우리가 다뤘으므로 측정과 로스 상수가 그대로 유효하다.
+    //             마취 때문에 덜 마셨을 뿐이라, 기록은 남기고 약물 산정에서만 뺀다.
+    //  · MR·BP  : 물통을 남이 다뤄 로스 상수가 성립하지 않는다. 잔량을 재도 쓸 수 없다.
+    const proc = ciForm.flags.includes('처치일');
+    const surg = ciForm.flags.includes('수술일');
     // 통을 간 날은 잔량(옛 통)과 채움(새 통)의 빈 통 무게가 다르다
     const swapped = !!(ciForm.bottleSwap && Number(ciForm.newTare) > 0);
     const fillTare = ciFillTareOf();
@@ -539,19 +555,32 @@ function ciRenderForm() {
     <div class="card">
         <div style="font-size:0.78rem; color:#999; margin-bottom:8px;">1 · 꺼내서 무게 재기</div>
 
-        <label style="display:block; margin-bottom:10px; padding:9px 11px; border-radius:6px;
-                      font-size:0.88rem; cursor:pointer;
-                      background:${proc ? '#fff3e0' : '#fafafa'};
-                      border:1px solid ${proc ? '#ffb74d' : '#e0e0e0'};">
-            <input type="checkbox" ${proc ? 'checked' : ''}
-                   onchange="ciToggleProcedure(this.checked)" style="width:auto;">
-            <b>지난 기록 이후 MR · BP가 있었음</b>
-            <div style="font-size:0.78rem; color:#666; margin:4px 0 0 22px;">
-                ${last ? `${lastStr} 이후` : '지난 기록 이후'}에 촬영·측정이 있었으면 켭니다.
-                그 구간은 물통을 우리 방식대로 다루지 않아 섭취량을 쓸 수 없습니다.
-                <b>잔량은 재지 않고</b> 오늘 채울 양만 넣으면 됩니다.
+        <div style="margin-bottom:10px; padding:9px 11px; border-radius:6px;
+                    background:${(proc || surg) ? '#fff3e0' : '#fafafa'};
+                    border:1px solid ${(proc || surg) ? '#ffb74d' : '#e0e0e0'};">
+            <div style="font-size:0.78rem; color:#888; margin-bottom:6px;">
+                ${last ? `${lastStr} 이후` : '지난 기록 이후'}에 있었던 일
             </div>
-        </label>
+            <label style="display:block; font-size:0.88rem; cursor:pointer;">
+                <input type="checkbox" ${surg ? 'checked' : ''}
+                       onchange="ciToggleSurgery(this.checked)" style="width:auto;">
+                <b>수술 (OVX · Ligation)</b>
+                <div style="font-size:0.77rem; color:#666; margin:3px 0 0 22px;">
+                    물통을 우리가 다뤘으므로 <b>잔량은 평소대로 재서 기록</b>합니다.
+                    마취로 덜 마신 값이라 <b>약물 지시량 계산에서만</b> 빠집니다.
+                </div>
+            </label>
+            <label style="display:block; font-size:0.88rem; cursor:pointer; margin-top:7px;
+                          padding-top:7px; border-top:1px dashed #e0d0b0;">
+                <input type="checkbox" ${proc ? 'checked' : ''}
+                       onchange="ciToggleProcedure(this.checked)" style="width:auto;">
+                <b>MR · BP</b>
+                <div style="font-size:0.77rem; color:#666; margin:3px 0 0 22px;">
+                    물통을 우리 방식대로 다루지 않아 로스를 알 수 없습니다.
+                    <b>잔량은 재지 않고</b> 채울 양만 넣으면 됩니다.
+                </div>
+            </label>
+        </div>
 
         ${proc ? `
         <div style="padding:9px 11px; background:#f5f5f5; border-radius:6px; font-size:0.82rem; color:#666;">
@@ -626,12 +655,28 @@ function ciRenderForm() {
 
     <div class="card">
         <div style="font-size:0.78rem; color:#999; margin-bottom:8px;">2 · 다시 채울 양</div>
-        <label style="display:block; margin-bottom:10px; font-size:0.88rem;">
-            <input type="checkbox" ${ciForm.noRefill ? 'checked' : ''}
-                   onchange="ciToggleNoRefill(this.checked)" style="width:auto;">
-            물·사료 안 채우고 그대로 둠 <span style="color:#888; font-size:0.8rem;">(체중만 재는 날)</span>
-        </label>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; ${ciForm.noRefill ? 'opacity:0.45; pointer-events:none;' : ''}">
+        <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:0.88rem;">
+            <label style="cursor:pointer;">
+                <input type="checkbox" ${ciForm.noWater ? 'checked' : ''}
+                       onchange="ciToggleNoWater(this.checked)" style="width:auto;">
+                물 그대로 둠
+            </label>
+            <label style="cursor:pointer;">
+                <input type="checkbox" ${ciForm.noFood ? 'checked' : ''}
+                       onchange="ciToggleNoFood(this.checked)" style="width:auto;">
+                사료 그대로 둠
+            </label>
+            <label style="cursor:pointer; padding-left:10px; border-left:1px solid #ddd;">
+                <input type="checkbox" ${(ciForm.noWater && ciForm.noFood) ? 'checked' : ''}
+                       onchange="ciToggleNoBoth(this.checked)" style="width:auto;">
+                <b>둘 다 그대로 둠</b> <span style="color:#888; font-size:0.8rem;">(체중만 재는 날)</span>
+            </label>
+            <span style="color:#888; font-size:0.8rem; flex-basis:100%;">
+                잰 것을 그대로 다시 넣습니다. 사료만 갈 날은 <b>물 그대로 둠</b>만 켜세요.
+            </span>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:170px; ${ciForm.noWater ? 'opacity:0.4; pointer-events:none;' : ''}">
             ${tare > 0 ? `
             <div style="flex:1; min-width:170px;">
                 <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">물 채운 통 무게 (g)</div>
@@ -646,28 +691,29 @@ function ciRenderForm() {
                         1단계에서 잰 잔량은 떼어낸 옛 통(${tare} g) 기준입니다.</span>` : ''}
                 </div>
             </div>` : `
-            <div style="flex:1; min-width:120px;">
+            <div>
                 <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">물 (mL)</div>
                 <input type="number" inputmode="decimal" value="${ciForm.waterGiven}"
                        oninput="ciSet('waterGiven', this.value)" style="width:100%; height:42px;">
             </div>`}
+            </div>
             ${showBottle ? `
             <div style="width:100px;">
                 <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">물통 개수</div>
                 <input type="number" value="${ciForm.bottleCount}" oninput="ciSet('bottleCount', this.value)"
                        style="width:100%; height:42px;">
             </div>` : ''}
-            <div style="flex:1; min-width:120px;">
+            <div style="flex:1; min-width:120px; ${ciForm.noFood ? 'opacity:0.4; pointer-events:none;' : ''}">
                 <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">사료 (g)</div>
                 <input type="number" inputmode="decimal" value="${ciForm.foodGiven}"
                        oninput="ciSet('foodGiven', this.value)" style="width:100%; height:42px;">
             </div>
         </div>
-        ${ciForm.noRefill ? `
+        ${(ciForm.noWater || ciForm.noFood) ? `
         <div style="margin-top:8px; padding:8px 10px; background:#f5f5f5; border-radius:6px; font-size:0.8rem; color:#666;">
-            잰 물통과 사료를 그대로 다시 넣습니다. 약도 새로 넣지 않습니다.
-            다음 섭취량은 오늘 잔량(물 <b id="ci-nr-wr">${ciForm.waterRemaining || '-'} g</b> ·
-            사료 <b id="ci-nr-fr">${ciForm.foodRemaining || '-'} g</b>)을 기준으로 계산됩니다.
+            ${ciForm.noWater ? `물은 잰 통(<b id="ci-nr-wr">${ciForm.waterRemaining || '-'} g</b>)을 그대로 다시 답니다. 약도 넣지 않습니다.<br>` : ''}
+            ${ciForm.noFood ? `사료는 잰 것(<b id="ci-nr-fr">${ciForm.foodRemaining || '-'} g</b>)을 그대로 다시 넣습니다.<br>` : ''}
+            그대로 둔 쪽은 <b>오늘 잔량</b>이 다음 구간의 기준이 되므로 섭취량은 끊기지 않습니다.
         </div>` : ''}
     </div>
 
@@ -763,11 +809,9 @@ function ciSet(key, val) {
     ciForm[key] = val;
     // 새 통 무게를 고치면 그 통에 채운 양도 따라 바뀐다
     if (key === 'newTare') ciRecalcFill();
-    // 그대로 두는 날은 '준 양'이 곧 지금 남은 양이므로 같이 따라가야 한다
-    if (ciForm.noRefill) {
-        if (key === 'waterRemaining') ciForm.waterGiven = val === '' ? 0 : Number(val);
-        if (key === 'foodRemaining')  ciForm.foodGiven  = val === '' ? 0 : Number(val);
-    }
+    // 그대로 두는 쪽은 '준 양'이 곧 지금 남은 양이므로 같이 따라가야 한다
+    if (ciForm.noWater && key === 'waterRemaining') ciForm.waterGiven = val === '' ? 0 : Number(val);
+    if (ciForm.noFood  && key === 'foodRemaining')  ciForm.foodGiven  = val === '' ? 0 : Number(val);
     ciUpdateCalc();
 }
 // 빈 물통 무게는 통마다 다르다. 그 자리에 등록된 값이 우선이고,
@@ -815,7 +859,7 @@ function ciSetScale(val) {
     const tare = ciTareOf(ciCurrent);
     const water = (val === '' || isNaN(Number(val))) ? '' : Math.round((Number(val) - tare) * 10) / 10;
     ciForm.waterRemaining = water === '' ? '' : String(water);
-    if (ciForm.noRefill) ciForm.waterGiven = water === '' ? 0 : water;
+    if (ciForm.noWater) ciForm.waterGiven = water === '' ? 0 : water;
     ciUpdateCalc();
 }
 
@@ -840,8 +884,25 @@ function ciScore(ratId, key, n) {
 }
 // 물·사료를 안 갈고 그대로 두는 날: 다음 구간의 '준 양'은 지금 남아있는 양이 된다.
 // 사료도 물과 같은 날 함께 채우므로 물만 처리하면 다음 구간 섭취량이 부풀려진다.
-function ciToggleNoRefill(on) {
-    ciForm.noRefill = on;
+// 물과 사료를 따로 둔다.
+// 고염식·BAPN 시작일이 물 교체일과 어긋날 때, 사료만 갈고 물은 재서 그대로 넣으면 된다.
+// 케이지를 열려면 물통을 어차피 떼므로 그 김에 재두면 구간이 끊기지 않는다.
+function ciToggleNoWater(on) {
+    ciForm.noWater = on;
+    const h = (ciConfig && ciConfig.housing) || {};
+    const last = ciBaseline(ciCurrent);
+    if (on) {
+        ciForm.waterGiven = ciForm.waterRemaining === '' ? 0 : Number(ciForm.waterRemaining);
+        ciForm.fillScale  = '';
+    } else {
+        ciForm.waterGiven = last ? (last.waterGiven ?? h.waterFill ?? 600) : (h.waterFill ?? 600);
+    }
+    ciRenderForm();
+}
+
+// 체중만 재는 날. 물·사료를 한 번에 켜고 끈다.
+function ciToggleNoBoth(on) {
+    ciForm.noWater = on; ciForm.noFood = on;
     const h = (ciConfig && ciConfig.housing) || {};
     const last = ciBaseline(ciCurrent);
     if (on) {
@@ -850,8 +911,16 @@ function ciToggleNoRefill(on) {
         ciForm.fillScale  = '';
     } else {
         ciForm.waterGiven = last ? (last.waterGiven ?? h.waterFill ?? 600) : (h.waterFill ?? 600);
-        ciForm.foodGiven  = h.foodFill ?? 250;      // 사료는 항상 설정값으로 리셋
+        ciForm.foodGiven  = h.foodFill ?? 250;
     }
+    ciRenderForm();
+}
+
+function ciToggleNoFood(on) {
+    ciForm.noFood = on;
+    const h = (ciConfig && ciConfig.housing) || {};
+    if (on) ciForm.foodGiven = ciForm.foodRemaining === '' ? 0 : Number(ciForm.foodRemaining);
+    else    ciForm.foodGiven = h.foodFill ?? 250;   // 사료는 항상 설정값으로 리셋
     ciRenderForm();
 }
 
@@ -868,12 +937,20 @@ function ciToggleBottleSwap(on) {
 // MR·BP가 낀 구간. 물통을 우리 절차대로 다루지 않아 로스 상수가 성립하지 않는다.
 // 어차피 버릴 구간이라 잔량을 재지 않고, 오늘 채운 양만 남겨 다음 구간의 기준으로 쓴다.
 // (다음 구간은 '오늘 채운 양'에서 출발하므로 잔량이 없어도 사슬이 끊기지 않는다)
+// 수술일. 측정은 유효하므로 잔량 칸을 그대로 두고, 플래그만 붙여 약물 산정에서 뺀다.
+function ciToggleSurgery(on) {
+    ciToggleFlag('수술일', on);
+    if (on) ciToggleFlag('처치일', false);   // 둘을 동시에 켜면 잔량 입력이 사라져 앞뒤가 안 맞는다
+    ciRenderForm();
+}
+
 function ciToggleProcedure(on) {
     ciToggleFlag('처치일', on);
     if (on) {
+        ciToggleFlag('수술일', false);
         ciForm.waterRemaining = ''; ciForm.foodRemaining = '';
         ciForm.waterScale = ''; ciForm.handlings = '';
-        ciForm.noRefill = false;      // 안 채우면 다음 구간의 기준이 사라진다
+        ciForm.noWater = false;      // 안 채우면 다음 구간의 기준이 사라진다
     }
     ciRenderForm();
 }
@@ -988,6 +1065,8 @@ function ciUpdateCalc() {
                     : '· <b>로스 상수 미설정</b>'}
                 ${c.housingChanged ? '<br>구간 중 재실 변동이 있어 이 구간은 예상치 계산에서 제외됩니다.' : ''}
                 ${c.spansWeekend ? '<br>주말이 낀 구간이라 투약 농도 산정에는 쓰지 않고, 최근 평일 값으로 계산합니다. 섭취량 기록 자체는 그대로 남습니다.' : ''}
+                ${(!c.spansWeekend && ciOffFrom24(c.hours) > CI_SPAN_TOL_H)
+                    ? `<br>구간이 24시간 배수에서 ${ciOffFrom24(c.hours).toFixed(1)}시간 벗어났습니다. 밤낮 비중이 치우쳐 하루치가 ${c.hours < 24 ? '부풀' : '줄'}었을 수 있어, 투약 농도는 최근 평일 값으로 계산합니다.` : ''}
                 ${bad ? '<br><b>잔량이 채운 양보다 많습니다. 입력을 확인하세요.</b>' : ''}
             </div>
         </div>`;
@@ -1107,7 +1186,7 @@ function ciUpdateDose() {
     if (!rule || !occ.length) { ciForm._doseCc = 0; box.innerHTML = ''; return; }
 
     // 물을 안 갈면 약도 새로 넣지 않는다
-    if (ciForm.noRefill) {
+    if (ciForm.noWater) {
         ciForm._doseCc = 0;
         box.innerHTML = `<div class="card" style="background:#f5f5f5;">
             <b style="color:#666;">물을 그대로 두므로 ${rule.substance}도 추가하지 않습니다.</b>
@@ -1171,15 +1250,24 @@ function ciUpdateDose() {
     // 그 못 쓸 값으로 계산되고 있었다. (누수면 섭취량이 부풀어 약이 적게 들어간다)
     const flagged = (ciForm.flags || []).length > 0;
 
+    // 구간이 24시간 배수에서 크게 벗어나면 이번 값은 밤낮 비중에 치우쳐 있다.
+    // 그런 날만 최근 평일 평균으로 넘긴다. 평소에는 최신 값을 그대로 쓴다.
+    const spanOff = c && !c.tooShort ? ciOffFrom24(c.hours) : 0;
+    const spanOdd = spanOff > CI_SPAN_TOL_H;
+
     let expectedPc = null, pcSource = '';
     if (Number(ciForm.manualPc) > 0) {
         expectedPc = Number(ciForm.manualPc); pcSource = '손으로 입력';
-    } else if (c && c.waterPc > 0 && !c.spansWeekend && !flagged) {
+    } else if (c && c.waterPc > 0 && !c.spansWeekend && !flagged && !spanOdd) {
         expectedPc = c.waterPc; pcSource = '이번 구간';
     } else if (ciRecentPc[ciCurrent]) {
         expectedPc = ciRecentPc[ciCurrent];
-        pcSource = (c && c.spansWeekend) ? '최근 평일 평균 (이번 구간은 주말이 껴서 제외)'
-                                         : '최근 평일 평균';
+        const why = (c && c.spansWeekend) ? '주말이 껴서'
+                  : (ciForm.flags || []).includes('수술일') ? '수술일이라'
+                  : (ciForm.flags || []).includes('처치일') ? 'MR·BP가 껴서'
+                  : (ciForm.flags || []).includes('이상')   ? '이상이 있어서'
+                  : spanOdd ? `구간이 24h에서 ${spanOff.toFixed(1)}h 벗어나서` : null;
+        pcSource = why ? `최근 평일 평균 (이번 구간은 ${why} 제외)` : '최근 평일 평균';
     } else if (ciRecentPcAny[ciCurrent]) {
         // 평일 기록이 아직 하나도 없으면 투약을 막는 것보다 주말 값이라도 쓰는 편이 낫다
         expectedPc = ciRecentPcAny[ciCurrent];
@@ -1321,7 +1409,7 @@ async function ciSave() {
     const measured = ciForm.waterRemaining !== '' || ciForm.foodRemaining !== '' ||
                      ciForm.waterScale !== '' ||
                      Object.values(ciForm.rats).some(f => f.weight !== '');
-    const filled = !ciForm.noRefill &&
+    const filled = !ciForm.noWater &&
                    (ciForm.fillScale !== '' || !ciBaseline(savingCage));
     if (!measured && !filled) {
         ciSaving = false; ciBusy(false);
@@ -1352,12 +1440,14 @@ async function ciSave() {
             foodRemaining: ciForm.foodRemaining === '' ? null : Number(ciForm.foodRemaining),
             // waterGiven = 물통에 실제로 들어간 총 액체량(물 + 원액).
             // 다음 구간의 섭취량이 여기서 잔량을 빼므로 원액 부피도 포함해야 맞다.
-            waterGiven: Number(ciForm.waterGiven) + (ciForm.noRefill ? 0 : (Number(ciForm._doseCc) || 0)),
+            waterGiven: Number(ciForm.waterGiven) + (ciForm.noWater ? 0 : (Number(ciForm._doseCc) || 0)),
             fillWater: Number(ciForm.waterGiven),                                  // 물만
             fillScale: ciForm.fillScale === '' ? null : Number(ciForm.fillScale),  // 물 채운 통 무게 원본
             foodGiven: Number(ciForm.foodGiven),
             bottleCount: Number(ciForm.bottleCount) || 1,
-            noRefill: !!ciForm.noRefill,
+            noWater: !!ciForm.noWater,
+            noFood: !!ciForm.noFood,
+            noRefill: !!(ciForm.noWater && ciForm.noFood),   // 옛 화면 호환
             ratCount: occ.length,
             ratIds: occ.map(r => r.ratId),
             evapPerHour: Number(cfgH.evapPerHour) || 0,
