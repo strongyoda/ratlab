@@ -8,6 +8,10 @@
 let iaCohort = null;
 let iaConfig = null;
 let iaRows = [];      // cageFeeding 기록
+let iaByCage = {};    // 케이지별 구간 (그래프용)
+let iaCharts = {};    // 열어 둔 그래프
+let iaRats = [];      // 이 코호트 개체 (처치 시작일 계산용)
+let iaYMax = null;    // 케이지끼리 비교되게 세로축을 통일한다
 let iaCages = {};     // cageId -> {group, cohort}
 let iaWeights = {};   // ratId -> [{date, weight}]
 
@@ -63,6 +67,7 @@ async function iaLoad() {
 
         // 케이지별 총 체중을 구하려면 그날 체중이 필요하다
         const cohortRats = rats.filter(r => String(r.cohort) === String(iaCohort));
+        iaRats = cohortRats;
         iaWeights = {};
         const measSnap = await db.collection('measurements').where('date', '>=', '2000-01-01').get();
         measSnap.forEach(d => {
@@ -275,13 +280,6 @@ function iaRender() {
     ${achievedHtml}
 
     <div class="card">
-        <h4 style="margin-top:0; color:var(--navy);">📄 논문용 문장</h4>
-        <div style="background:#f8f9fa; border:1px solid #eee; border-radius:6px; padding:12px; font-size:0.85rem; line-height:1.7;">
-            ${iaPaperText(byGroup, groupKeys, cageMean, waterRules, usable.length, excluded)}
-        </div>
-    </div>
-
-    <div class="card">
         <h4 style="margin-top:0; color:var(--navy);">구간 사용 현황</h4>
         <div style="font-size:0.88rem;">
             전체 ${iaRows.length}구간 중 <b style="color:#2e7d32;">${usable.length}구간 사용</b>,
@@ -305,43 +303,6 @@ function iaExcludeReasons() {
     return Object.entries(counts).map(([k, v]) => `${k} ${v}건`).join(' · ');
 }
 
-function iaPaperText(byGroup, groupKeys, cageMean, waterRules, used, excluded) {
-    const lines = [];
-    groupKeys.forEach(g => {
-        const w = cageMean(byGroup[g], 'water');
-        const f = cageMean(byGroup[g], 'food');
-        if (w) lines.push(`${iaGroupName(g)}: water ${w.mean.toFixed(0)} ± ${w.sd.toFixed(0)} mL/day/rat` +
-            (f ? `, food ${f.mean.toFixed(1)} ± ${f.sd.toFixed(1)} g/day/rat` : '') +
-            ` (n = ${w.n} ${w.n === 1 ? 'cage' : 'cages'})`);
-    });
-
-    let metLine = '';
-    if (waterRules && waterRules.length) {
-        const rule0 = waterRules[0];
-        const vals = groupKeys
-            .filter(g => waterRules.some(d => (d.groups || []).includes(g)))
-            .map(g => ({ g, m: cageMean(byGroup[g], 'met') })).filter(x => x.m);
-        if (vals.length) {
-            metLine = `${rule0.substance} was administered in drinking water, with the amount adjusted ` +
-                `to a target of ${rule0.value} mg/kg/day based on measured water intake and body weight. ` +
-                `Achieved intake was ` + vals.map(x => `${x.m.mean.toFixed(0)} ± ${x.m.sd.toFixed(0)}`).join(', ') +
-                ` mg/kg/day.`;
-        }
-    }
-
-    const bapnParts = groupKeys.map(g => { const b = cageMean(byGroup[g], 'bapn'); return b ? `${b.mean.toFixed(1)} ± ${b.sd.toFixed(1)}` : null; }).filter(Boolean);
-    const bapnLine = bapnParts.length > 1
-        ? `BAPN intake did not differ meaningfully between groups (${bapnParts.join(' vs ')} mg/kg/day).` : '';
-
-    return [
-        lines.join('<br>'),
-        metLine,
-        bapnLine,
-        `Intake was measured per cage. Intervals containing a mortality event, a housing change, ` +
-        `or a recorded anomaly were excluded (${excluded} of ${used + excluded} intervals).`
-    ].filter(Boolean).join('<br><br>');
-}
-
 function iaCageTable(usable) {
     const byCage = {};
     usable.forEach(r => {
@@ -352,31 +313,204 @@ function iaCageTable(usable) {
     const keys = Object.keys(byCage).sort((a, b) => Number(a) - Number(b));
     if (!keys.length) return '';
 
+    iaByCage = byCage;      // 그래프에서 다시 쓴다
+
+    // 케이지끼리 눈으로 비교할 수 있게 세로축을 하나로 통일한다.
+    // 가장 큰 케이지에 맞추고 10% 여유를 준 뒤 보기 좋은 눈금으로 올린다.
+    const round = (v, step) => Math.max(step, Math.ceil(v * 1.1 / step) * step);
+    let wMax = 0, fMax = 0;
+    usable.forEach(r => {
+        if (typeof r.waterPerCapita === 'number') wMax = Math.max(wMax, r.waterPerCapita);
+        if (typeof r.foodPerCapita === 'number') fMax = Math.max(fMax, r.foodPerCapita);
+    });
+    iaYMax = { water: round(wMax, 10), food: round(fMax, 5) };
+
     const rows = keys.map(c => {
         const list = byCage[c];
         const w = iaStat(list.map(r => r.waterPerCapita));
         const f = iaStat(list.map(r => r.foodPerCapita).filter(v => typeof v === 'number'));
         const g = iaGroupOf(list[0]);
-        return `<tr>
+        return `<tr onclick="iaToggleChart('${c}')" style="cursor:pointer; border-bottom:1px solid #f0f0f0;">
             <td style="padding:7px; font-weight:bold;">${c}번</td>
             <td style="padding:7px; font-size:0.8rem; color:#666;">${iaGroupName(g)}</td>
             <td style="padding:7px; text-align:center;">${list.length}</td>
             <td style="padding:7px; text-align:center;">${iaFmt(w, 0)}</td>
             <td style="padding:7px; text-align:center;">${f ? iaFmt(f, 1) : '-'}</td>
+            <td style="padding:7px; text-align:center; color:#bbb; font-size:0.75rem;"
+                id="ia-caret-${c}">▾</td>
+        </tr>
+        <tr id="ia-chartrow-${c}" style="display:none;">
+            <td colspan="6" style="padding:10px 7px 16px; background:#fafbfc;">
+                <div style="height:230px;"><canvas id="ia-chart-${c}"></canvas></div>
+                <div style="font-size:0.76rem; color:#888; margin-top:6px;">
+                    계산에 쓴 구간만 표시합니다. 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
+                    점선은 고염식·BAPN·메트포민이 들어간 날입니다.
+                </div>
+            </td>
         </tr>`;
     }).join('');
 
     return `
     <div class="card">
-        <h4 style="margin-top:0; color:var(--navy);">케이지별</h4>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <h4 style="margin:0; color:var(--navy);">케이지별</h4>
+            <span style="font-size:0.8rem; color:#888;">줄을 누르면 추이 그래프가 열립니다</span>
+        </div>
         <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
             <thead><tr style="background:#f5f5f5;">
                 <th style="padding:7px; text-align:left;">케이지</th><th style="padding:7px; text-align:left;">군</th>
-                <th style="padding:7px;">구간</th><th style="padding:7px;">물 mL/day/마리</th><th style="padding:7px;">사료 g/day/마리</th>
+                <th style="padding:7px;">구간</th><th style="padding:7px;">물 mL/day/마리</th>
+                <th style="padding:7px;">사료 g/day/마리</th><th style="padding:7px;"></th>
             </tr></thead>
             <tbody>${rows}</tbody>
         </table>
         </div>
     </div>`;
+}
+
+// 이 케이지에 고염식·BAPN·메트포민이 언제부터 들어갔는지.
+// 개체의 기준일(OVX·결찰) + 코호트 설정의 오프셋으로 계산한다.
+function iaCageEvents(cageId) {
+    if (!iaConfig || !iaConfig.dosing) return [];
+    const rows = iaByCage[cageId] || [];
+    if (!rows.length) return [];
+
+    const ids = new Set();
+    rows.forEach(r => (r.ratIds || []).forEach(x => ids.add(x)));
+    const mine = iaRats.filter(r => ids.has(r.ratId));
+    if (!mine.length) return [];
+
+    const gkey = iaGroupOf(rows[0]);
+    const dOf = v => !v ? null : (typeof v === 'string' ? v.slice(0, 10)
+        : (v.toDate ? new Date(v.toDate().getTime() - v.toDate().getTimezoneOffset() * 60000)
+            .toISOString().slice(0, 10) : null));
+    const shift = (ds, n) => {
+        const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() + (Number(n) || 0));
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    };
+
+    const COLOR = { NaCl: '#7b5aa6', BAPN: '#b8860b', Metformin: '#00697a' };
+    const out = [];
+    iaConfig.dosing.forEach(rule => {
+        if (!(rule.groups || []).includes(gkey)) return;
+        let start = null;
+        mine.forEach(r => {
+            const base = dOf(rule.startAnchor === 'ovx' ? r.ovxDate
+                       : rule.startAnchor === 'arrival' ? r.arrivalDate : r.surgeryDate);
+            if (!base) return;
+            const d = shift(base, rule.startOffset);
+            if (!start || d < start) start = d;
+        });
+        if (start) out.push({ date: start, label: rule.substance,
+                              color: COLOR[rule.substance] || '#888' });
+    });
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 세로 눈금선을 그리는 작은 플러그인. 별도 라이브러리 없이 캔버스에 직접 그린다.
+const iaEventPlugin = {
+    id: 'iaEvents',
+    afterDatasetsDraw(chart, args, opts) {
+        const events = (opts && opts.list) || [];
+        if (!events.length) return;
+        const { ctx, chartArea: area, scales } = chart;
+        const labels = chart.data.labels || [];
+        events.forEach(ev => {
+            // 측정일 사이에 낀 날짜면 두 점 사이를 비례로 나눈 자리에 세운다
+            let x = null;
+            const exact = labels.indexOf(ev.date);
+            if (exact >= 0) x = scales.x.getPixelForValue(labels[exact]);
+            else {
+                const i = labels.findIndex(l => l > ev.date);
+                if (i > 0) {
+                    const a = scales.x.getPixelForValue(labels[i - 1]);
+                    const b = scales.x.getPixelForValue(labels[i]);
+                    const t0 = new Date(labels[i - 1]).getTime(), t1 = new Date(labels[i]).getTime();
+                    const te = new Date(ev.date).getTime();
+                    x = a + (b - a) * ((te - t0) / (t1 - t0 || 1));
+                }
+            }
+            if (x === null || x < area.left || x > area.right) return;
+
+            ctx.save();
+            ctx.setLineDash([4, 3]);
+            ctx.strokeStyle = ev.color; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = ev.color;
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(' ' + ev.label, x + 1, area.top + 10);
+            ctx.restore();
+        });
+    }
+};
+
+// 케이지 한 줄을 눌렀을 때 물·사료 추이를 그린다.
+// 케이지가 24개까지 늘어나므로 기본은 닫아두고, 연 것만 그린다.
+function iaToggleChart(cageId) {
+    const row = document.getElementById('ia-chartrow-' + cageId);
+    const caret = document.getElementById('ia-caret-' + cageId);
+    if (!row) return;
+    const open = row.style.display !== 'none';
+    row.style.display = open ? 'none' : 'table-row';
+    if (caret) caret.textContent = open ? '▾' : '▴';
+    if (open) {
+        if (iaCharts[cageId]) { iaCharts[cageId].destroy(); delete iaCharts[cageId]; }
+        return;
+    }
+    iaDrawChart(cageId);
+}
+
+function iaDrawChart(cageId) {
+    const list = (iaByCage[cageId] || []).slice()
+        .sort((a, b) => String(a.dateStr).localeCompare(String(b.dateStr)));
+    const cv = document.getElementById('ia-chart-' + cageId);
+    if (!cv || !list.length || typeof Chart === 'undefined') return;
+    if (iaCharts[cageId]) iaCharts[cageId].destroy();
+
+    const labels = list.map(r => r.dateStr);
+    const water = list.map(r => r.waterPerCapita);
+    const food = list.map(r => typeof r.foodPerCapita === 'number' ? r.foodPerCapita : null);
+
+    const events = iaCageEvents(cageId);
+
+    iaCharts[cageId] = new Chart(cv.getContext('2d'), {
+        type: 'line',
+        plugins: [iaEventPlugin],
+        data: { labels, datasets: [
+            { label: '물 mL/마리·일', data: water, borderColor: '#00697a',
+              backgroundColor: '#00697a', tension: 0.25, yAxisID: 'y', pointRadius: 4 },
+            { label: '사료 g/마리·일', data: food, borderColor: '#b8860b',
+              backgroundColor: '#b8860b', tension: 0.25, yAxisID: 'y1', pointRadius: 4,
+              borderDash: [5, 4], spanGaps: true }
+        ]},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                iaEvents: { list: events },
+                legend: { labels: { boxWidth: 12, font: { size: 11 } } },
+                tooltip: { callbacks: { afterBody: items => {
+                    const r = list[items[0].dataIndex];
+                    const parts = [];
+                    if (r.intervalHours) parts.push(`구간 ${r.intervalHours.toFixed(1)}h`);
+                    if (typeof r.waterConsumed === 'number') parts.push(`섭취 ${r.waterConsumed.toFixed(1)} mL`);
+                    if (r.animalDays) parts.push(`${r.animalDays.toFixed(2)} 마리·일`);
+                    return parts.join(' · ');
+                } } }
+            },
+            scales: {
+                // 모든 케이지가 같은 눈금을 쓴다 — 그래야 케이지끼리 비교된다
+                y:  { position: 'left',  title: { display: true, text: '물 mL/마리·일' },
+                      beginAtZero: true, max: (iaYMax && iaYMax.water) || undefined,
+                      grid: { color: '#f0f0f0' } },
+                y1: { position: 'right', title: { display: true, text: '사료 g/마리·일' },
+                      beginAtZero: true, max: (iaYMax && iaYMax.food) || undefined,
+                      grid: { display: false } },
+                x:  { grid: { display: false }, ticks: { font: { size: 10 } } }
+            }
+        }
+    });
 }

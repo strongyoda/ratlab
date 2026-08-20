@@ -11,7 +11,11 @@ let dbData = null;      // 한 번 읽어 화면 전체가 나눠 쓴다
 
 const DB_WATCH_DROP_PCT = 5;    // 최근 체중이 이만큼 넘게 빠지면 살펴볼 개체
 const DB_WATCH_DAYS     = 3;    // 체중을 이 일수 넘게 안 쟀으면 알림
-const DB_INTAKE_DEV_PCT = 40;   // 마리당 음수량이 평소에서 이만큼 벗어나면 이상
+const DB_INTAKE_DROP_PCT = 25;  // 섭취가 이만큼 줄면 알린다 (동물 상태 신호라 민감하게)
+const DB_INTAKE_RISE_PCT = 40;  // 늘어난 쪽은 고염식처럼 예정된 변화가 많아 느슨하게
+const DB_MIN_WATER_PC = 5;      // 마리당 mL/day. 이 아래면 비율과 무관하게 짚는다
+const DB_MIN_FOOD_PC  = 2;      // 마리당 g/day
+const DB_STAGE_ECHO_DAYS = 3;   // 처치 시작 며칠까지는 '예상된 변화'로 안내
 
 async function renderDashboardView(main) {
     main.innerHTML = `<div class="card">불러오는 중...</div>`;
@@ -481,9 +485,14 @@ function dbOffFrom24(h) {
 }
 const DB_SPAN_TOL_H = 3;    // 24시간 배수에서 이만큼 넘게 벗어나면 해석에 주의
 
+// 섭취량 비교에서 빼는 사유. '수술일'은 여기 없다 — 측정이 유효하므로 최신 값으로 쓴다.
+// (섭취량 분석 화면의 IA_DROP 과 같은 기준. 어긋나면 옛 경고가 최신인 척 남는다)
+const DB_DROP = ['이상', '처치일', '재실변동', '사망발생'];
+const dbUsableRow = r => !(r.flags || []).some(f => DB_DROP.includes(f));
+
 // ---------- ④ 섭취량 이상 · 주말 대비 ----------
 function dbIntakeIssues() {
-    const { feeds, cages, today, configs } = dbData;
+    const { feeds, cages, today } = dbData;
     const out = [];
 
     const byCage = {};
@@ -494,47 +503,62 @@ function dbIntakeIssues() {
         const cage = cages.find(c => String(c.id) === cid);
         if (!cage || !dbOccupants(cid).length) return;
 
-        // 음수 값은 아래에서 '누수' 로 따로 짚으므로 편차 비교에서는 뺀다 (중복 표시 방지)
-        const pcs = rows.filter(r => !(r.flags || []).length
-                        && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0)
-                        .map(r => r.waterPerCapita);
-
-        // 음수 섭취 = 누수나 입력 오류
+        // ── 측정·기록 오류 ──────────────────────────────
         const neg = rows.find(r => typeof r.waterConsumed === 'number' && r.waterConsumed < 0);
         if (neg) out.push({ n: cage.number, kind: 'bad',
             msg: `섭취량이 음수 ${neg.waterConsumed.toFixed(1)} mL — 누수나 입력 확인`,
             span: dbSpan(neg) });
 
-        // 최근 값이 평소에서 크게 벗어남
-        const clean = rows.filter(r => !(r.flags || []).length
-                        && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0);
-        if (clean.length >= 3) {
-            const curRow = clean[0];
-            const cur = curRow.waterPerCapita;
-            const prevRows = clean.slice(1, 6);
-            const base = prevRows.reduce((a, b) => a + b.waterPerCapita, 0) / prevRows.length;
-            if (base > 0) {
-                const dev = (cur - base) / base * 100;
-                if (Math.abs(dev) >= DB_INTAKE_DEV_PCT) {
-                    const off = dbOffFrom24(curRow.intervalHours);
-                    out.push({ n: cage.number, kind: 'warn',
-                        msg: `마리당 ${cur.toFixed(1)} mL/day — 평소 ${base.toFixed(1)}보다 ${dev > 0 ? '+' : ''}${dev.toFixed(1)}%`,
-                        span: dbSpan(curRow),
-                        base: `비교 기준 : ${prevRows.map(r => r.waterPerCapita.toFixed(1)).join(' · ')} 의 평균`,
-                        caution: off > DB_SPAN_TOL_H
-                            ? `구간이 24h에서 ${off.toFixed(1)}h 벗어났습니다. 랫드는 밤에 몰아 마시므로 하루치 환산이 ${curRow.intervalHours < 24 ? '부풀' : '줄'}었을 수 있습니다`
-                            : '' });
-                }
-            }
-        }
+        // ── 물·사료 각각 : 평소와 얼마나 다른가 ──────────
+        const stages = dbCageStages(cid);
+        [['물',  '물을',  '마시지', 'waterPerCapita', 'mL', DB_MIN_WATER_PC],
+         ['사료', '사료를', '먹지',   'foodPerCapita',  'g',  DB_MIN_FOOD_PC]
+        ].forEach(([name, subj, verb, key, unit, floor]) => {
+            const clean = rows.filter(r => dbUsableRow(r) && typeof r[key] === 'number' && r[key] >= 0);
+            if (clean.length < 3) return;
+            const curRow = clean[0], cur = curRow[key];
+            const prevRows = clean.slice(1, 6).filter(r => r[key] > 0);
+            if (!prevRows.length) return;
+            const base = prevRows.reduce((a, b) => a + b[key], 0) / prevRows.length;
+            if (!(base > 0)) return;
 
-        // 주말 대비: 금요일에 채운 물로 3일을 버티는가
+            const dev = (cur - base) / base * 100;
+            const off = dbOffFrom24(curRow.intervalHours);
+            const near = dbNearStage(stages, curRow);      // 처치 시작 직후인가
+
+            let kind = null, msg = null;
+            if (cur < floor) {
+                // 절대 기준. 거의 안 먹거나 안 마시는 건 비율과 무관하게 봐야 한다.
+                kind = 'bad';
+                msg = `${subj} 거의 ${verb} 않았습니다 — 마리당 ${cur.toFixed(1)} ${unit}/day (평소 ${base.toFixed(1)})`;
+            } else if (dev <= -DB_INTAKE_DROP_PCT) {
+                kind = 'bad';
+                msg = `${name} 섭취 감소 — 마리당 ${cur.toFixed(1)} ${unit}/day, 평소 ${base.toFixed(1)}보다 ${dev.toFixed(1)}%`;
+            } else if (dev >= DB_INTAKE_RISE_PCT) {
+                kind = 'warn';
+                msg = `${name} 섭취 증가 — 마리당 ${cur.toFixed(1)} ${unit}/day, 평소 ${base.toFixed(1)}보다 +${dev.toFixed(1)}%`;
+            }
+            if (!msg) return;
+
+            out.push({ n: cage.number, kind,
+                msg,
+                span: dbSpan(curRow) + ((curRow.flags || []).includes('수술일') ? ' · 수술일 구간' : ''),
+                base: `비교 기준 : ${prevRows.map(r => r[key].toFixed(1)).join(' · ')} 의 평균`,
+                caution: [
+                    near ? `${near} 직후 구간입니다 — 예상된 변화일 수 있습니다` : '',
+                    (off > DB_SPAN_TOL_H && name === '물')
+                        ? `구간이 24h에서 ${off.toFixed(1)}h 벗어났습니다. 랫드는 밤에 몰아 마시므로 하루치 환산이 ${curRow.intervalHours < 24 ? '부풀' : '줄'}었을 수 있습니다` : ''
+                ].filter(Boolean).join(' · ') });
+        });
+
+        // ── 주말 대비 : 채운 물로 다음 방문까지 버티는가 ──
         const latest = rows[0];
-        if (latest && clean.length) {
+        const wclean = rows.filter(r => dbUsableRow(r) && r.waterPerCapita > 0);
+        if (latest && wclean.length) {
             const dow = new Date(latest.dateStr + 'T00:00:00').getDay();
             const gap = dow === 5 ? 3 : 2;                 // 금요일이면 3일, 아니면 2일
             const occ = dbOccupants(cid).length;
-            const src = clean.slice(0, 3);
+            const src = wclean.slice(0, 3);
             const recent = src.reduce((a, b) => a + b.waterPerCapita, 0) / src.length;
             const need = recent * occ * gap;
             const have = Number(latest.waterGiven) || 0;
@@ -547,6 +571,42 @@ function dbIntakeIssues() {
 
     out.sort((a, b) => (a.kind === b.kind ? a.n - b.n : (a.kind === 'bad' ? -1 : 1)));
     return out;
+}
+
+// 이 케이지에 처치가 언제 시작됐는지 (고염식·BAPN·메트포민)
+function dbCageStages(cageId) {
+    const occ = dbOccupants(cageId);
+    if (!occ.length) return [];
+    const cfg = dbData.configs[String(occ[0].cohort)];
+    if (!cfg || !cfg.dosing) return [];
+    const cage = dbData.cages.find(c => String(c.id) === String(cageId)) || {};
+    const gkey = cage.group || ('G' + String(occ[0].group || 1).replace(/^G/, ''));
+
+    const out = [];
+    cfg.dosing.forEach(rule => {
+        if (!(rule.groups || []).includes(gkey)) return;
+        let start = null;
+        occ.forEach(r => {
+            const base = dbDateOf(rule.startAnchor === 'ovx' ? r.ovxDate
+                       : rule.startAnchor === 'arrival' ? r.arrivalDate : r.surgeryDate);
+            if (!base) return;
+            const d = dbShift(base, Number(rule.startOffset) || 0);
+            if (!start || d < start) start = d;
+        });
+        if (start) out.push({ date: start, label: rule.substance });
+    });
+    return out;
+}
+
+// 이 구간이 처치 시작을 품고 있거나 그 직후인가.
+// 고염식을 막 넣은 날 섭취가 흔들리는 건 이상이 아니라 예정된 일이다.
+function dbNearStage(stages, row) {
+    if (!stages.length || !row.dateStr) return null;
+    const from = row.intervalHours
+        ? dbShift(row.dateStr, -Math.ceil(row.intervalHours / 24)) : row.dateStr;
+    const hit = stages.find(st => st.date >= from
+        && dbDiffDays(st.date, row.dateStr) <= DB_STAGE_ECHO_DAYS);
+    return hit ? `${hit.label} 시작(${hit.date})` : null;
 }
 
 function dbIntakeCard(list) {
