@@ -132,16 +132,57 @@ function cgTareFallback() {
     return Number(cfg && cfg.housing && cfg.housing.bottleTare) || 0;
 }
 
+// 빈 통 무게가 없는 자리 목록 (칸 하나만 고쳐도 다시 그릴 수 있게 따로 뺐다)
+function cgNoTareHtml() {
+    const noTare = cgCages.filter(c => !(Number(c.bottleTare) > 0));
+    if (!noTare.length) return '';
+    return `
+        <div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
+            <b style="color:#7a5c00;">빈 물통 무게가 없는 자리 ${noTare.length}개</b>
+            <div style="font-size:0.82rem; color:#7a5c00; margin:6px 0;">
+                ${noTare.slice(0, 20).map(c => c.number + '번').join(', ')}${noTare.length > 20 ? ' 외' : ''}
+                <br>물통마다 무게가 다르므로 자리마다 실측값을 넣어야 마신 물이 정확해집니다.
+                ${cgTareFallback() ? `지금은 코호트 기본값 ${cgTareFallback()}g으로 계산됩니다.` : ''}
+            </div>
+        </div>`;
+}
+
 async function cgSetTare(cageId, val) {
-    const cage = cgCages.find(c => String(c.id) === String(cageId));
-    if (!cage) return;
+    if (!cgCages.some(c => String(c.id) === String(cageId))) return;
     const v = (val === '' || val === null) ? null : Number(val);
     if (v !== null && (isNaN(v) || v <= 0)) { alert('빈 물통 무게는 0보다 큰 숫자여야 합니다.'); cgRenderBody(); return; }
     try {
         await db.collection('cages').doc(String(cageId)).set({ bottleTare: v }, { merge: true });
-        cage.bottleTare = v;
-        cgRenderBody();
+        // 저장을 기다리는 사이 새로고침이 돌면 cgCages 배열이 통째로 바뀐다.
+        // 저장 전에 잡아둔 참조를 고치면 버려진 객체를 고치게 되므로 여기서 다시 찾는다.
+        const cage = cgCages.find(c => String(c.id) === String(cageId));
+        if (cage) cage.bottleTare = v;
+        // 화면 전체를 다시 그리면 그 사이 사용자가 고쳐 넣은 값이 지워진다.
+        // 값이 바뀐 칸 하나만 손본다.
+        cgPaintTare(cageId);
     } catch (e) { console.error(e); alert('저장 실패: ' + e.message); }
+}
+
+// 빈 통 무게가 바뀐 자리 하나만 다시 칠한다.
+// 입력 중인 칸은 건드리지 않는다 — 사용자가 방금 친 값이 우선이다.
+function cgPaintTare(cageId) {
+    const cage = cgCages.find(c => String(c.id) === String(cageId));
+    if (!cage) return;
+    const has = Number(cage.bottleTare) > 0;
+    const el = document.querySelector(`[data-tare="${cageId}"]`);
+    if (el) {
+        if (document.activeElement !== el) el.value = cage.bottleTare != null ? cage.bottleTare : '';
+        el.style.borderColor = has ? '#c8e6c9' : '#ffcdd2';
+        el.style.background = has ? '#fff' : '#fff8f8';
+    }
+    const warn = document.querySelector(`[data-tare-warn="${cageId}"]`);
+    if (warn) {
+        const fb = cgTareFallback();
+        warn.innerHTML = has ? '' :
+            `이 자리의 물통 무게가 없습니다${fb ? ` · 지금은 기본 ${fb}g으로 계산됩니다` : ''}`;
+    }
+    const box = document.getElementById('cg-no-tare');
+    if (box) box.innerHTML = cgNoTareHtml();
 }
 // 살아있는 쥐만 배정 대상 (사망/희생은 재실이 끝난 것으로 본다)
 function cgIsAlive(rat) {
@@ -209,19 +250,7 @@ function cgRenderBody() {
         </div>
     </div>
 
-    ${(() => {
-        const noTare = cgCages.filter(c => !(Number(c.bottleTare) > 0));
-        if (!noTare.length) return '';
-        return `
-        <div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
-            <b style="color:#7a5c00;">빈 물통 무게가 없는 자리 ${noTare.length}개</b>
-            <div style="font-size:0.82rem; color:#7a5c00; margin:6px 0;">
-                ${noTare.slice(0, 20).map(c => c.number + '번').join(', ')}${noTare.length > 20 ? ' 외' : ''}
-                <br>물통마다 무게가 다르므로 자리마다 실측값을 넣어야 마신 물이 정확해집니다.
-                ${cgTareFallback() ? `지금은 코호트 기본값 ${cgTareFallback()}g으로 계산됩니다.` : ''}
-            </div>
-        </div>`;
-    })()}
+    <div id="cg-no-tare">${cgNoTareHtml()}</div>
 
     <div class="card" style="padding:12px 16px;">
         <b style="color:var(--navy);">케이지 ${cgCages.length}개</b>
@@ -301,7 +330,7 @@ function cgCageCard(cage) {
              style="margin-top:9px; padding-top:8px; border-top:1px dashed #e8e8e8;
                     display:flex; align-items:center; gap:5px;">
             <span style="font-size:0.72rem; color:#888; white-space:nowrap;">빈 통</span>
-            <input type="number" step="any" inputmode="decimal"
+            <input type="number" step="any" inputmode="decimal" data-tare="${cage.id}"
                    value="${cage.bottleTare != null ? cage.bottleTare : ''}"
                    placeholder="${tareFb ? tareFb + ' (기본)' : '미설정'}"
                    onchange="cgSetTare('${cage.id}', this.value)"
@@ -310,8 +339,9 @@ function cgCageCard(cage) {
                           background:${hasTare ? '#fff' : '#fff8f8'};">
             <span style="font-size:0.72rem; color:#888;">g</span>
         </div>
-        ${!hasTare ? `<div style="font-size:0.68rem; color:var(--red); margin-top:3px;">
-            이 자리의 물통 무게가 없습니다${tareFb ? ` · 지금은 기본 ${tareFb}g으로 계산됩니다` : ''}</div>` : ''}
+        <div data-tare-warn="${cage.id}" style="font-size:0.68rem; color:var(--red); margin-top:3px;">${
+            !hasTare ? `이 자리의 물통 무게가 없습니다${tareFb ? ` · 지금은 기본 ${tareFb}g으로 계산됩니다` : ''}` : ''
+        }</div>
 
         ${occ.length === 0 ? `
         <button class="btn-small btn-red" onclick="event.stopPropagation(); cgDeleteCage('${cage.id}')"
