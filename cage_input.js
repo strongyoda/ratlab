@@ -528,6 +528,9 @@ function ciRenderForm() {
     //             마취 때문에 덜 마셨을 뿐이라, 기록은 남기고 약물 산정에서만 뺀다.
     //  · MR·BP  : 물통을 남이 다뤄 로스 상수가 성립하지 않는다. 잔량을 재도 쓸 수 없다.
     const proc = ciForm.flags.includes('처치일');
+    // 이 케이지의 첫 기록이면 뺄 잔량이 없다. 잰 값을 넣을 칸이 보이면
+    // 채운 통 무게를 거기에 적게 되므로(실제로 그런 일이 있었다) 아예 감춘다.
+    const first = !last;
     const surg = ciForm.flags.includes('수술일');
     // 통을 간 날은 잔량(옛 통)과 채움(새 통)의 빈 통 무게가 다르다
     const swapped = !!(ciForm.bottleSwap && Number(ciForm.newTare) > 0);
@@ -582,7 +585,12 @@ function ciRenderForm() {
             </label>
         </div>
 
-        ${proc ? `
+        ${first ? `
+        <div style="padding:9px 11px; background:#e8f5e9; border-radius:6px; font-size:0.82rem; color:#2e7d32;">
+            이 케이지의 <b>첫 기록</b>입니다. 뺄 지난 채움이 없어 잔량은 재지 않습니다.
+            아래 <b>2단계에서 채울 양</b>과 <b>3단계 체중</b>만 넣으세요.
+            <br>새 통에 물을 채워 저울에 올린 값은 <b>2단계</b>에 넣습니다.
+        </div>` : proc ? `
         <div style="padding:9px 11px; background:#f5f5f5; border-radius:6px; font-size:0.82rem; color:#666;">
             이 구간은 계산에서 제외되므로 잔량을 재지 않습니다. 아래 <b>2단계에서 채울 양</b>과
             <b>3단계 체중</b>만 입력하세요. 체중은 투약량 계산에 필요하니 빠짐없이 넣습니다.
