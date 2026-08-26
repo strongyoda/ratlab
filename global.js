@@ -359,3 +359,46 @@ function invalidateDashboardDom() {
         viewDiv.innerHTML = '';
     }
 }
+
+// ============================================================
+//  구간이 주말에 걸쳤는지 · 최근 마리당 섭취량
+//  케이지별 입력과 대시보드가 같은 값을 써야 '오늘 만들 원액'이 두 곳에서
+//  다르게 나오지 않는다. 예전에 한쪽은 주말 구간을 넣고 한쪽은 빼서 갈렸다.
+// ============================================================
+function spansWeekend(startMs, endMs) {
+    if (!(startMs > 0) || !(endMs > startMs)) return false;
+    const d = new Date(startMs); d.setHours(0, 0, 0, 0);
+    const last = new Date(endMs); last.setHours(0, 0, 0, 0);
+    for (; d <= last; d.setDate(d.getDate() + 1)) {
+        const w = d.getDay();
+        if (w === 0 || w === 6) return true;   // 일 · 토
+    }
+    return false;
+}
+
+// 저장된 기록의 구간이 주말에 걸쳤는지. 구간 길이를 함께 저장해두므로 소급해서도 판정된다.
+function rowSpansWeekend(row) {
+    const h = Number(row.intervalHours);
+    if (!(h > 0) || !row.at || !row.at.toDate) return false;
+    const end = row.at.toDate().getTime();
+    return spansWeekend(end - h * 3600000, end);
+}
+
+// 최근 마리당 섭취량 (mL/마리·일).
+//  · 이상 플래그가 붙은 구간은 뺀다
+//  · 주말이 낀 구간은 밤낮 비중이 달라 마리당 값이 왜곡되므로 기본에서 뺀다
+//
+// 최근 두 구간만 쓴다. 다섯 개를 평균 내던 때가 있었는데, 고염식처럼 섭취량이
+// 계단식으로 뛰는 변화가 있으면 옛 구간이 평균을 눌러 실제보다 낮게 나왔다.
+// 마리당 값이 낮게 잡히면 약을 더 진하게 타라는 뜻이 되어 원액을 필요보다
+// 많이 만들게 된다. 뒤를 길게 볼수록 변화에 늦으므로 짧게 본다.
+const RECENT_PC_TAKE = 2;
+
+function recentWaterPc(rows, opts) {
+    const take = (opts && opts.take) || RECENT_PC_TAKE;
+    const clean = (rows || []).filter(r => !(r.flags || []).length
+        && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0);
+    const list = (opts && opts.includeWeekend) ? clean : clean.filter(r => !rowSpansWeekend(r));
+    const v = list.slice(0, take).map(r => r.waterPerCapita);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}

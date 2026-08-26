@@ -141,16 +141,8 @@ async function ciLoad(token) {
 // 금요일에 채운 물이 월요일까지 가는 구간은 마리당 섭취량이 평일 구간과 다르다.
 // 그 값으로 다음 회차 농도를 정하면 어긋나므로 예상 섭취량 계산에서 뺀다.
 // 기록 자체는 그대로 남는다 (계획서 9항).
-function ciSpansWeekend(startMs, endMs) {
-    if (!(startMs > 0) || !(endMs > startMs)) return false;
-    const d = new Date(startMs); d.setHours(0, 0, 0, 0);
-    const last = new Date(endMs); last.setHours(0, 0, 0, 0);
-    for (; d <= last; d.setDate(d.getDate() + 1)) {
-        const w = d.getDay();
-        if (w === 0 || w === 6) return true;   // 일 · 토
-    }
-    return false;
-}
+// 주말 판정은 대시보드와 같은 값을 써야 하므로 global.js 로 옮겼다
+const ciSpansWeekend = spansWeekend;
 
 // 랫드는 야행성이라 밤에 몰아 마신다. 구간이 24시간의 배수에서 벗어나면
 // 밤낮 비중이 치우쳐 '시간당 × 24' 로 낸 하루치가 부풀거나 줄어든다.
@@ -161,13 +153,7 @@ function ciOffFrom24(hours) {
 }
 const CI_SPAN_TOL_H = 3;   // 24시간 배수에서 이만큼까지는 이번 구간을 그대로 쓴다
 
-// 저장된 기록의 구간이 주말에 걸쳤는지. 구간 길이를 함께 저장해두므로 소급해서도 판정된다.
-function ciRowSpansWeekend(row) {
-    const h = Number(row.intervalHours);
-    if (!(h > 0) || !row.at || !row.at.toDate) return false;
-    const end = row.at.toDate().getTime();
-    return ciSpansWeekend(end - h * 3600000, end);
-}
+const ciRowSpansWeekend = rowSpansWeekend;
 
 async function ciLoadHistory() {
     ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {}; ciWeighDates = {};
@@ -177,7 +163,7 @@ async function ciLoadHistory() {
     // 케이지별로 따로 조회하면 복합 인덱스가 필요하고 읽기 횟수도 많아진다.
     // 최근 며칠치를 한 번에 받아 화면에서 케이지별로 나눈다 (단일 필드 조회라 인덱스 불필요).
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 12);
+    cutoff.setDate(cutoff.getDate() - 14);   // 대시보드와 같은 범위
     const cutoffStr = cutoff.toISOString().slice(0, 10);
 
     // 체중을 잰 날은 그날 케이지를 열었다는 뜻이고, 케이지를 열려면 물통을 뗀다.
@@ -229,17 +215,9 @@ async function ciLoadHistory() {
         if (rows[0].dateStr === todayStr) ciDoneToday.add(String(cage.id));
 
         // 예상 섭취량은 '마리당'으로 기억 → 합치거나 죽어도 어긋나지 않음.
-        // 이상 플래그가 붙은 구간은 제외.
-        const clean = rows.filter(r => !(r.flags || []).length);
-        const avg = list => {
-            const pcs = list.map(r => r.waterPerCapita)
-                            .filter(v => typeof v === 'number' && v > 0)
-                            .slice(0, 5);
-            return pcs.length ? pcs.reduce((a, b) => a + b, 0) / pcs.length : null;
-        };
-        // 평일 구간만으로 낸 값이 기본. 주말 포함까지 넣은 값은 평일 기록이 없을 때의 대비책.
-        const weekday = avg(clean.filter(r => !ciRowSpansWeekend(r)));
-        const any = avg(clean);
+        // 대시보드와 같은 값을 써야 '오늘 만들 원액'이 두 곳에서 갈리지 않는다.
+        const weekday = recentWaterPc(rows);
+        const any = recentWaterPc(rows, { includeWeekend: true });
         if (weekday !== null) ciRecentPc[cage.id] = weekday;
         if (any !== null) ciRecentPcAny[cage.id] = any;
     });
@@ -1552,6 +1530,10 @@ async function ciSave() {
                 const prev = findMine(todayMeas, r.ratId);
                 if (prev) await prev.ref.set(payload, { merge: true });
                 else await db.collection('measurements').add(payload);
+                // 다시 열었을 때 되살릴 수 있도록 메모리 캐시도 같이 채운다.
+                // (예전엔 화면을 처음 열 때만 채워서, 저장 후 다시 열면 체중 칸이 비었고
+                //  그대로 저장하면 투약 지시량이 0으로 덮어써졌다)
+                ciTodayMeas[r.ratId] = Number(f.weight);
             }
             const total = f.act + f.fur + f.eye;
             if (total > 0 || f.note || f.dead) {
@@ -1565,6 +1547,7 @@ async function ciSave() {
                 const prev = findMine(todayLogs, r.ratId);
                 if (prev) await prev.ref.set(payload, { merge: true });
                 else await db.collection('dailyLogs').add(payload);
+                ciTodayLogs[r.ratId] = { scores: payload.scores, note: payload.note };
             }
             if (f.dead) await ciMarkDead(r, dateStr, now);
             else if (total > 0) {

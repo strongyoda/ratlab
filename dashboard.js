@@ -274,12 +274,11 @@ function dbPrep() {
         stock = Number(rule.stockConc) || stock;
         sub = rule.substance || sub;
 
-        // 예상 섭취량은 최근 평일 구간 평균 (케이지별 입력의 대비책과 같은 기준)
-        const rows = feeds.filter(f => String(f.cageId) === String(cage.id)
-            && !(f.flags || []).length
-            && typeof f.waterPerCapita === 'number' && f.waterPerCapita > 0)
-            .sort((a, b) => b.dateStr.localeCompare(a.dateStr)).slice(0, 5);
-        const pc = rows.length ? rows.reduce((a, b) => a + b.waterPerCapita, 0) / rows.length : null;
+        // 예상 섭취량은 케이지별 입력과 똑같이 뽑는다 (global.js 의 공용 함수).
+        // 주말 구간을 한쪽만 넣으면 두 화면의 '오늘 만들 원액'이 갈린다.
+        const rows = feeds.filter(f => String(f.cageId) === String(cage.id))
+            .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
+        const pc = recentWaterPc(rows) ?? recentWaterPc(rows, { includeWeekend: true });
         const bw = (lastFeed[String(cage.id)] || {}).sumBW;
 
         const item = { number: cage.number, n: occ.length, pc, bw };
@@ -293,7 +292,10 @@ function dbPrep() {
     const avg = known.reduce((a, r) => a + r.mg, 0) / known.length;
     const totalMg = known.reduce((a, r) => a + r.mg, 0) + unknown.length * avg;
     const needCc = totalMg / stock;
-    const makeCc = Math.ceil((needCc * 1.3) / 10) * 10;      // 30% 여유 후 10 mL 단위
+    // 30% 여유를 얹고 1 mL 단위로 올린다. 최소 5 mL.
+    // 10 mL 단위로 올리던 때가 있었는데, 원액을 100 mg/mL 로 올리고 나니
+    // 그 한 칸이 가루 1 g 이라 소량을 만들 때 두 배 넘게 만들게 됐다.
+    const makeCc = Math.max(5, Math.ceil(needCc * 1.3));
     return { sub, stock, fill, needCc, makeCc, known, unknown };
 }
 
