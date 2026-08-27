@@ -384,21 +384,22 @@ function rowSpansWeekend(row) {
     return spansWeekend(end - h * 3600000, end);
 }
 
-// 최근 마리당 섭취량 (mL/마리·일).
+// 최근 마리당 섭취량 (mL/마리·일). 다음 회차 메트포민 농도를 정하는 기준값.
+//
+// 평균이 아니라 '최근에 보인 최대'를 쓴다. 아파서 덜 마시는 구간의 낮은 값에
+// 농도를 맞추면, 그 쥐가 회복하는 순간 물을 정상만큼 마시면서 목표의 몇 배를
+// 삼키게 된다 (파일럿에서 마리당 25 mL 에 맞춘 농도로 73.9 mL 를 마시면 3배였다).
+// 최대값을 쓰면 이런 일이 없다.
+//  · 정상적으로 크는 동안에는 최근 값이 곧 최대라 사실상 최근값과 같다
+//  · 아플 때만 하한처럼 작동해 농도가 올라가지 않게 막는다
+//  · 덜 마시는 동안에는 약도 덜 들어간다. 목표를 넘기는 것보다 낫다
+// 잘못 잰 큰 값이 섞였으면 그 구간에 「이상」을 체크해 빼면 된다.
+//
 //  · 이상 플래그가 붙은 구간은 뺀다
 //  · 주말이 낀 구간은 밤낮 비중이 달라 마리당 값이 왜곡되므로 기본에서 뺀다
-//
-// 최근 두 구간만 쓴다. 다섯 개를 평균 내던 때가 있었는데, 고염식처럼 섭취량이
-// 계단식으로 뛰는 변화가 있으면 옛 구간이 평균을 눌러 실제보다 낮게 나왔다.
-// 마리당 값이 낮게 잡히면 약을 더 진하게 타라는 뜻이 되어 원액을 필요보다
-// 많이 만들게 된다. 뒤를 길게 볼수록 변화에 늦으므로 짧게 본다.
-const RECENT_PC_TAKE = 2;
-
 function recentWaterPc(rows, opts) {
-    const take = (opts && opts.take) || RECENT_PC_TAKE;
     const clean = (rows || []).filter(r => !(r.flags || []).length
         && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0);
     const list = (opts && opts.includeWeekend) ? clean : clean.filter(r => !rowSpansWeekend(r));
-    const v = list.slice(0, take).map(r => r.waterPerCapita);
-    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+    return list.length ? Math.max(...list.map(r => r.waterPerCapita)) : null;
 }

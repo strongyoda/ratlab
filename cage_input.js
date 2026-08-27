@@ -19,6 +19,7 @@ let ciLastFeed = {};     // cageId -> 직전 방문 기록 (오늘 것일 수도
 let ciPrevFeed = {};     // cageId -> 오늘 이전의 마지막 기록 (오늘 재입력 시 비교 기준)
 let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day). 주말 낀 구간은 뺀 값
 let ciRecentPcAny = {};  // 위와 같되 주말 구간도 포함. 평일 기록이 아예 없을 때만 쓴다
+let ciCageRows = {};     // cageId -> 최근 기록(신→구). 직접 입력할 때 근거를 보여주려고 남긴다
 let ciWeighDates = {};   // cageId -> Set('YYYY-MM-DD'). 체중을 잰 날 = 그날 케이지를 열었다는 뜻
 let ciTodayMeas = {};    // ratId -> 오늘 저장된 체중 (다시 열었을 때 되살리기 위함)
 let ciTodayLogs = {};    // ratId -> 오늘 저장된 상태 점수·메모
@@ -156,7 +157,7 @@ const CI_SPAN_TOL_H = 3;   // 24시간 배수에서 이만큼까지는 이번 �
 const ciRowSpansWeekend = rowSpansWeekend;
 
 async function ciLoadHistory() {
-    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {}; ciWeighDates = {};
+    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {}; ciWeighDates = {}; ciCageRows = {};
     ciTodayMeas = {}; ciTodayLogs = {};
     const todayStr = ciDate || getTodayStr();
 
@@ -206,6 +207,7 @@ async function ciLoadHistory() {
         if (!rows || !rows.length) return;
         rows.sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
 
+        ciCageRows[cage.id] = rows;
         ciLastFeed[cage.id] = rows[0];
         // 오늘 기록을 다시 여는 경우, 섭취량은 '오늘 이전 마지막 기록'과 비교해야 한다.
         // 오늘 자신과 비교하면 몇 분짜리 구간이 되어 계산이 통째로 빠지고,
@@ -1163,6 +1165,57 @@ function ciCageDoseState(cageId, rats) {
              label:`투약 시작 D${d}`, color: soon ? '#e65100' : '#888', bg: soon ? '#fff3e0' : '#fafafa' };
 }
 
+// 예상 섭취량을 직접 넣어야 할 때, 아무 근거 없이 숫자를 요구하면 넣을 수가 없다.
+// 옆 케이지가 지금 얼마인지, 이 케이지의 지난 구간은 왜 빠졌는지, 넣으면 얼마가 되는지를
+// 같이 보여준다. (실제로 새 케이지 첫 회차에 빈 칸만 덩그러니 뜬 적이 있다)
+function ciManualPcBox(rule, sumBW, aliveN, fill, stock) {
+    const why = r => {
+        const f = (r.flags || []).join(' · ');
+        if (f) return f;
+        if (ciRowSpansWeekend(r)) return '주말 낌';
+        if (!(r.waterPerCapita > 0)) return '섭취량 없음';
+        return '';
+    };
+    // 같은 코호트 다른 케이지가 지금 쓰는 값
+    const others = ciCages
+        .filter(c => String(c.id) !== ciCurrent && ciRecentPc[c.id])
+        .map(c => `${c.number}번 <b>${ciRecentPc[c.id].toFixed(1)}</b>`);
+
+    // 이 케이지의 지난 기록과 못 쓰는 이유
+    const mine = (ciCageRows[ciCurrent] || []).filter(r => r.dateStr !== (ciDate || getTodayStr()))
+        .slice(0, 4)
+        .map(r => `${r.dateStr.slice(5)} ${r.waterPerCapita > 0 ? r.waterPerCapita.toFixed(1) : '–'}` +
+                  `${why(r) ? ` <span style="opacity:0.75;">(${why(r)})</span>` : ''}`);
+
+    const v = Number(ciForm.manualPc);
+    const preview = (v > 0) ? (() => {
+        const k = Number(rule.value) * (sumBW / 1000) / (v * aliveN);
+        const mg = (k < stock) ? (k * fill) / (1 - k / stock)
+                               : Number(rule.value) * (sumBW / 1000) * (fill / (v * aliveN));
+        return `넣으면 → 원액 <b>${(mg / stock).toFixed(1)} cc</b> · 물통 농도 ${(mg / fill).toFixed(3)} mg/mL`;
+    })() : '값을 넣으면 원액 양이 여기에 나옵니다.';
+
+    return `
+    <div style="margin-top:9px; padding-top:9px; border-top:1px dashed #ffe082;">
+        <div style="font-size:0.8rem; color:#7a5c00; margin-bottom:6px;">
+            예상 섭취량을 직접 넣으면 그 값으로 계산합니다. 손으로 넣었다는 것이 기록에 남습니다.
+        </div>
+        <div style="font-size:0.78rem; color:#7a5c00; background:#fffdf5; border-radius:5px;
+                    padding:7px 9px; margin-bottom:7px; line-height:1.6;">
+            ${others.length ? `오늘 다른 케이지 · ${others.join(' &nbsp; ')}<br>` : ''}
+            ${mine.length ? `이 케이지 지난 기록 · ${mine.join(' &nbsp; ')}` :
+                            '이 케이지는 지난 기록이 없습니다. 다른 케이지 값을 보고 넣으세요.'}
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+            <input type="number" inputmode="decimal" value="${ciForm.manualPc || ''}"
+                   onchange="ciSetManualPc(this.value)" placeholder="마리당 mL/day"
+                   style="width:150px; height:38px;">
+            <span style="font-size:0.8rem; color:#7a5c00;">mL / 마리 / 일</span>
+        </div>
+        <div style="font-size:0.78rem; color:#7a5c00; margin-top:6px;">${preview}</div>
+    </div>`;
+}
+
 function ciUpdateDose() {
     const box = document.getElementById('ci-dose');
     if (!box) return;
@@ -1276,19 +1329,7 @@ function ciUpdateDose() {
                     : '이전 섭취 기록이 없어 예상 섭취량을 알 수 없습니다.<br>') : ''}
                 ${!stock ? '코호트 설정에 원액 농도가 없습니다.<br>' : ''}
             </div>
-            ${(!expectedPc && !missing.length && stock && fill) ? `
-            <div style="margin-top:9px; padding-top:9px; border-top:1px dashed #ffe082;">
-                <div style="font-size:0.8rem; color:#7a5c00; margin-bottom:5px;">
-                    예상 섭취량을 직접 입력하면 그 값으로 계산합니다.
-                    옆 케이지 값이나 지난 회차를 보고 넣으세요. 손으로 넣었다는 것이 기록에 남습니다.
-                </div>
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <input type="number" inputmode="decimal" value="${ciForm.manualPc || ''}"
-                           onchange="ciSetManualPc(this.value)" placeholder="마리당 mL/day"
-                           style="width:150px; height:38px;">
-                    <span style="font-size:0.8rem; color:#7a5c00;">mL / 마리 / 일</span>
-                </div>
-            </div>` : ''}
+            ${(!expectedPc && !missing.length && stock && fill) ? ciManualPcBox(rule, sumBW, alive.length, fill, stock) : ''}
         </div>`;
         return;
     }
