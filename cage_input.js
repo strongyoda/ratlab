@@ -153,6 +153,7 @@ function ciOffFrom24(hours) {
     return Math.abs(hours - Math.max(1, Math.round(hours / 24)) * 24);
 }
 const CI_SPAN_TOL_H = 3;   // 24시간 배수에서 이만큼까지는 이번 구간을 그대로 쓴다
+const CI_DAYS_CAP = 10;    // 채우는 물이 예상 섭취의 이 일수를 넘으면 계산을 멈춘다
 
 const ciRowSpansWeekend = rowSpansWeekend;
 
@@ -1327,7 +1328,22 @@ function ciUpdateDose() {
     const fill = Number(ciForm.waterGiven) || 0;
     const stock = Number(rule.stockConc) || 0;
 
-    if (missing.length || !expectedPc || !stock || !fill) {
+    // 하한 : 아파서 덜 마신 값으로 농도를 잡으면 회복하는 순간 과다투여가 된다.
+    // 대비책 경로뿐 아니라 '이번 구간' 값에도 걸어야 한다.
+    // (파일럿에서 이번 구간 마리당 1.5 mL 가 그대로 쓰여 원액 194 cc 가 나온 적이 있다)
+    const floorPc = ciRecentPc[ciCurrent] || 0;
+    if (!(Number(ciForm.manualPc) > 0) && floorPc > expectedPc) {
+        expectedPc = floorPc;
+        pcSource = '최근 최대 (이번 구간이 그보다 낮아 하한 적용)';
+    }
+
+    // 채우는 물이 예상 섭취의 몇 일치인가. 평일 3일치 · 금요일 4~5일치가 정상이다.
+    // 섭취량이 비정상적으로 낮게 잡히면 이 값이 수십~수백 일치로 튀고, 그대로 두면
+    // 물통 하나에 몇 g 을 타라는 지시가 나온다. 그때는 계산을 멈추고 손으로 받는다.
+    const daysWorth = (expectedPc > 0) ? fill / (expectedPc * alive.length) : Infinity;
+    const wild = daysWorth > CI_DAYS_CAP;
+
+    if (missing.length || !expectedPc || !stock || !fill || wild) {
         // 계산 못 하면 지시량도 0으로 — 이전 계산값이 남은 채 저장되면
         // 화면엔 지시가 없었는데 기록에는 투약한 것으로 남는다
         ciForm._doseCc = 0; ciForm._doseMg = 0;
@@ -1339,8 +1355,12 @@ function ciUpdateDose() {
                     ? '이 구간을 계산에서 뺐고, 대신 쓸 최근 기록도 없습니다.<br>'
                     : '이전 섭취 기록이 없어 예상 섭취량을 알 수 없습니다.<br>') : ''}
                 ${!stock ? '코호트 설정에 원액 농도가 없습니다.<br>' : ''}
+                ${wild ? `예상 섭취량이 마리당 <b>${(expectedPc || 0).toFixed(1)} mL/일</b>로 너무 낮습니다.
+                    이대로 계산하면 채우는 물이 <b>${daysWorth.toFixed(0)}일치</b>가 되어
+                    물통 하나에 원액을 몇십 cc씩 넣으라는 지시가 나옵니다.
+                    쥐가 실제로 마실 만한 값을 손으로 넣으세요.<br>` : ''}
             </div>
-            ${(!expectedPc && !missing.length && stock && fill) ? ciManualPcBox(rule, sumBW, alive.length, fill, stock) : ''}
+            ${((!expectedPc || wild) && !missing.length && stock && fill) ? ciManualPcBox(rule, sumBW, alive.length, fill, stock) : ''}
         </div>`;
         return;
     }
