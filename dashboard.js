@@ -246,7 +246,7 @@ function dbPrep() {
         if (!lastFeed[k] || f.dateStr > lastFeed[k].dateStr) lastFeed[k] = f;
     });
 
-    let stock = null, fill = 700, sub = '원액';
+    let stock = null, sub = '원액', housing = null;
     const known = [], unknown = [];
 
     cages.forEach(cage => {
@@ -255,7 +255,6 @@ function dbPrep() {
         if (!occ.length) return;
         const cfg = configs[String(occ[0].cohort)];
         if (!cfg || !cfg.dosing) return;
-        fill = Number((cfg.housing || {}).waterFill) || fill;
 
         const gkey = cage.group || ('G' + String(occ[0].group || 1).replace(/^G/, ''));
         const rule = cfg.dosing.find(x => x.medium === 'water'
@@ -273,6 +272,7 @@ function dbPrep() {
 
         stock = Number(rule.stockConc) || stock;
         sub = rule.substance || sub;
+        housing = cfg.housing || housing;
 
         // 예상 섭취량은 케이지별 입력과 똑같이 뽑는다 (global.js 의 공용 함수).
         // 주말 구간을 한쪽만 넣으면 두 화면의 '오늘 만들 원액'이 갈린다.
@@ -281,22 +281,25 @@ function dbPrep() {
         const pc = recentWaterPc(rows) ?? recentWaterPc(rows, { includeWeekend: true });
         const bw = (lastFeed[String(cage.id)] || {}).sumBW;
 
+        // 필요 약물량은 채우는 물의 양에 정비례한다. 물양을 정하지 않고 계수만 모아둔다.
         const item = { number: cage.number, n: occ.length, pc, bw };
         if (pc && bw) {
-            item.mg = Number(rule.value) * (bw / 1000) * (fill / (pc * occ.length));
+            item.k = Number(rule.value) * (bw / 1000) / (pc * occ.length);
             known.push(item);
         } else unknown.push(item);
     });
 
     if (!known.length || !stock) return null;
-    const avg = known.reduce((a, r) => a + r.mg, 0) / known.length;
-    const totalMg = known.reduce((a, r) => a + r.mg, 0) + unknown.length * avg;
-    const needCc = totalMg / stock;
-    // 30% 여유를 얹고 1 mL 단위로 올린다. 최소 5 mL.
-    // 10 mL 단위로 올리던 때가 있었는데, 원액을 100 mg/mL 로 올리고 나니
-    // 그 한 칸이 가루 1 g 이라 소량을 만들 때 두 배 넘게 만들게 됐다.
-    const makeCc = Math.max(5, Math.ceil(needCc * 1.3));
-    return { sub, stock, fill, needCc, makeCc, known, unknown };
+    const avgK = known.reduce((a, r) => a + r.k, 0) / known.length;
+    const totalK = known.reduce((a, r) => a + r.k, 0) + unknown.length * avgK;
+    const opts = fillOptions(housing);
+    // 오늘 물을 얼마나 채울지는 사람이 정한다 (주말·연휴 앞이면 많이).
+    // 앱은 달력을 모르므로 후보마다 만들 양을 적어 보여주기만 한다.
+    const plans = (opts.length ? opts : [700]).map(fill => {
+        const mg = (totalK < stock) ? (totalK * fill) / (1 - totalK / stock) : totalK * fill;
+        return { fill, needCc: mg / stock, makeCc: makeVolume(mg / stock) };
+    });
+    return { sub, stock, plans, known, unknown };
 }
 
 function dbPrepCard(p) {
@@ -315,16 +318,19 @@ function dbPrepCard(p) {
     return `
     <div class="card" style="background:#0d47a1; color:#fff;">
         <div style="font-size:0.78rem; opacity:0.85;">사육실 가기 전 · 실험실에서 만들 ${p.sub} 원액</div>
-        <div style="font-size:1.3rem; font-weight:bold; margin:6px 0;">
-            가루 ${(p.makeCc * p.stock / 1000).toFixed(1)} g &nbsp;+&nbsp; 증류수로 총 ${p.makeCc} mL 눈금까지
-        </div>
-        <div style="font-size:0.8rem; opacity:0.9;">
-            투약 케이지 ${p.known.length + p.unknown.length}개 · 예상 사용 ${p.needCc.toFixed(1)} cc · 원액 ${p.stock} mg/mL
+        ${p.plans.map(x => `
+        <div style="display:flex; align-items:baseline; gap:10px; margin:7px 0;">
+            <span style="font-size:0.9rem; opacity:0.85; min-width:96px;">물 ${x.fill} mL 채우면</span>
+            <b style="font-size:1.2rem;">가루 ${(x.makeCc * p.stock / 1000).toFixed(1)} g</b>
+            <span style="font-size:0.85rem; opacity:0.9;">· 총 ${x.makeCc} mL 눈금까지</span>
+        </div>`).join('')}
+        <div style="font-size:0.8rem; opacity:0.9; margin-top:6px;">
+            투약 케이지 ${p.known.length + p.unknown.length}개 · 원액 ${p.stock} mg/mL · 30% 여유 포함
             ${p.unknown.length ? ` · ${p.unknown.length}개는 지난 기록이 없어 평균으로 추정` : ''}
         </div>
         <div style="font-size:0.75rem; opacity:0.75; margin-top:5px;">
-            물 ${p.makeCc} mL에 녹이는 게 아니라, 가루를 넣고 눈금 ${p.makeCc} mL까지 채웁니다.
-            지난 체중·섭취 기준 추정이라 30% 여유를 얹었습니다.
+            오늘 물을 얼마나 채울지에 따라 골라서 만드세요. 주말·연휴 앞이면 많이 채웁니다.
+            물에 녹이는 게 아니라 가루를 넣고 눈금까지 채웁니다.
         </div>
     </div>`;
 }

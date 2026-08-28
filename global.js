@@ -403,3 +403,19 @@ function recentWaterPc(rows, opts) {
     const list = (opts && opts.includeWeekend) ? clean : clean.filter(r => !rowSpansWeekend(r));
     return list.length ? Math.max(...list.map(r => r.waterPerCapita)) : null;
 }
+
+// 채울 수 있는 물의 양 후보. 평일 구간과 긴 구간(주말·연휴 앞)의 두 가지다.
+// 앱은 달력을 모르므로 어느 쪽인지 추측하지 않는다. 조제 카드에 둘 다 적어두고
+// 물을 채우는 사람이 고른다. (요일로 판정하면 연휴가 낀 주에 틀린다)
+function fillOptions(housing) {
+    const h = housing || {};
+    const v = [Number(h.waterFill) || 0, Number(h.waterFillLong) || 0].filter(x => x > 0);
+    return [...new Set(v)].sort((a, b) => a - b);
+}
+
+// 30% 여유를 얹고 1 mL 단위로 올린다. 최소 5 mL.
+// 10 mL 단위로 올리던 때가 있었는데, 원액을 100 mg/mL 로 올리고 나니
+// 그 한 칸이 가루 1 g 이라 소량을 만들 때 두 배 넘게 만들게 됐다.
+function makeVolume(needCc) {
+    return Math.max(5, Math.ceil(needCc * 1.3));
+}

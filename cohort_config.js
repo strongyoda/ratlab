@@ -29,7 +29,8 @@ function cfgDefaultConfig(cohort) {
         // 로스 상수는 실측값이다. 새 코호트를 만들 때 비어 있으면 보정 없이 계산되어
         // 섭취량이 조금씩 부풀려지므로, 지금까지 잰 값을 기본으로 넣어둔다.
         // (가장 최근 코호트 설정이 있으면 cfgCreateNew에서 그 값을 물려받는다)
-        housing: { ratsPerCage: 3, cageCount: 24, waterFill: 700, foodFill: 250, bottleCount: 1,
+        housing: { ratsPerCage: 3, cageCount: 24, waterFill: 500, waterFillLong: 700,
+                   foodFill: 250, bottleCount: 1,
                    bottleTare: 0, evapPerHour: 0.0625, lossPerHandling: 1.36 },
         dosing: [
             { substance: 'NaCl',      medium: 'food',  mode: 'percent',    value: 8,
@@ -134,7 +135,7 @@ async function cfgCreateNew() {
         if (prev) {
             const h = prev.data().housing;
             // 케이지 수·마리수는 실험 규모라 코호트마다 다르므로 물려받지 않는다
-            ['waterFill', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling']
+            ['waterFill', 'waterFillLong', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling']
                 .forEach(k => { if (h[k] !== undefined && h[k] !== null) cfgDraft.housing[k] = h[k]; });
             inherited = prev.id;
         }
@@ -299,7 +300,8 @@ function cfgHousingCard(c) {
         <div style="display:flex; gap:15px; flex-wrap:wrap;">
             ${num('cageCount',   '케이지 수',      '개',  '')}
             ${num('ratsPerCage', '케이지당 마리수', '마리', '')}
-            ${num('waterFill',   '물 채우는 양',   'mL',  '매일 리셋')}
+            ${num('waterFill',     '물 채우는 양',     'mL', '평일 구간 (2일)')}
+            ${num('waterFillLong', '긴 구간 채움량',   'mL', '금요일처럼 3일을 버텨야 할 때')}
             ${num('foodFill',    '사료 채우는 양', 'g',   '매일 리셋')}
             ${num('bottleCount', '물통 개수',      '개',  '1이면 입력창에서 숨김')}
         </div>

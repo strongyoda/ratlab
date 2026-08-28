@@ -280,7 +280,6 @@ function ciRenderList() {
 // 사육실에 가기 전 벤치에서 만들어야 하므로, 라운드를 돌기 전에 필요량을 알아야 한다.
 // 지난 라운드의 체중(sumBW)과 마리당 섭취량으로 추정한다. 정확할 수는 없으니 여유를 얹는다.
 function ciPrepPlan() {
-    const fill = Number((ciConfig && ciConfig.housing && ciConfig.housing.waterFill)) || 700;
     const rows = [];
     let stock = null;
 
@@ -294,41 +293,53 @@ function ciPrepPlan() {
         const bw = (ciLastFeed[cage.id] || {}).sumBW;
         const pc = ciRecentPc[cage.id] || ciRecentPcAny[cage.id];   // 지시량과 같은 기준으로
 
+        // 필요 약물량은 채우는 물의 양에 정비례한다 (mg = k × 물양).
+        // 그래서 물양을 정하지 않고 계수 k 만 모아뒀다가, 카드에서 500·700 각각으로 곱한다.
         rows.push({
             number: cage.number,
-            mg: (bw && pc && n) ? Number(st.rule.value) * (bw / 1000) * (fill / (pc * n)) : null
+            k: (bw && pc && n) ? Number(st.rule.value) * (bw / 1000) / (pc * n) : null
         });
     });
-    return { rows, stock, fill };
+    return { rows, stock };
 }
 
 function ciPrepPreviewCard() {
     const { rows, stock } = ciPrepPlan();
     if (!rows.length || !stock) return '';
-
-    const known = rows.filter(r => r.mg !== null);
-    const unknown = rows.filter(r => r.mg === null);
+    const known = rows.filter(r => r.k !== null);
+    const unknown = rows.filter(r => r.k === null);
     if (!known.length) return '';
 
     // 모르는 케이지는 아는 케이지의 평균으로 메운다
-    const avg = known.reduce((a, r) => a + r.mg, 0) / known.length;
-    const totalMg = known.reduce((a, r) => a + r.mg, 0) + unknown.length * avg;
-    const needCc = totalMg / stock;
-    const makeCc = Math.ceil((needCc * 1.3) / 10) * 10;    // 30% 여유 후 10 mL 단위
+    const avgK = known.reduce((a, r) => a + r.k, 0) / known.length;
+    const totalK = known.reduce((a, r) => a + r.k, 0) + unknown.length * avgK;
+
+    // 물통 안 총 부피 = 물 + 원액. 원액 부피까지 감안해 푼 식이 아래.
+    const need = fill => {
+        const mg = (totalK < stock) ? (totalK * fill) / (1 - totalK / stock) : totalK * fill;
+        return { cc: mg / stock, make: makeVolume(mg / stock) };
+    };
+    const opts = fillOptions(ciConfig && ciConfig.housing);
+    const list = opts.length ? opts : [700];
 
     return `
     <div class="card" style="background:#0d47a1; color:#fff; padding:14px 16px;">
         <div style="font-size:0.78rem; opacity:0.85;">사육실 가기 전 · 오늘 만들 원액</div>
-        <div style="font-size:1.35rem; font-weight:bold; margin:6px 0;">
-            가루 ${(makeCc * stock / 1000).toFixed(1)} g &nbsp;+&nbsp; 증류수로 총 ${makeCc} mL 눈금까지
-        </div>
-        <div style="font-size:0.78rem; opacity:0.9;">
-            투약 케이지 ${rows.length}개 · 예상 사용 ${needCc.toFixed(0)} cc · 원액 ${stock} mg/mL
+        ${list.map(f => {
+            const n = need(f);
+            return `<div style="display:flex; align-items:baseline; gap:10px; margin:7px 0;">
+                <span style="font-size:0.9rem; opacity:0.85; min-width:96px;">물 ${f} mL 채우면</span>
+                <b style="font-size:1.25rem;">가루 ${(n.make * stock / 1000).toFixed(1)} g</b>
+                <span style="font-size:0.85rem; opacity:0.9;">· 총 ${n.make} mL 눈금까지</span>
+            </div>`;
+        }).join('')}
+        <div style="font-size:0.78rem; opacity:0.9; margin-top:6px;">
+            투약 케이지 ${rows.length}개 · 원액 ${stock} mg/mL · 30% 여유 포함
             ${unknown.length ? ` · ${unknown.length}개는 지난 기록이 없어 평균으로 추정` : ''}
         </div>
         <div style="font-size:0.73rem; opacity:0.75; margin-top:5px;">
-            물 ${makeCc} mL에 녹이는 게 아니라, 가루를 넣고 눈금 ${makeCc} mL까지 채웁니다.
-            지난 체중 기준 추정이라 30% 여유를 얹었습니다.
+            오늘 물을 얼마나 채울지에 따라 골라서 만드세요. 주말·연휴 앞이면 많이 채웁니다.
+            물에 녹이는 게 아니라 가루를 넣고 눈금까지 채웁니다.
         </div>
     </div>`;
 }
