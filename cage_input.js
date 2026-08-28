@@ -153,7 +153,11 @@ function ciOffFrom24(hours) {
     return Math.abs(hours - Math.max(1, Math.round(hours / 24)) * 24);
 }
 const CI_SPAN_TOL_H = 3;   // 24시간 배수에서 이만큼까지는 이번 구간을 그대로 쓴다
-const CI_DAYS_CAP = 10;    // 채우는 물이 예상 섭취의 이 일수를 넘으면 계산을 멈춘다
+// 채우는 물이 예상 섭취의 이 일수를 넘으면 계산을 멈추고 손으로 받는다.
+// 정상은 2.7~4.7일치다 (물 500~700, 고염식 마리당 74~91).
+// 5로 잡으면 물 700 을 채울 때 마리당 70 미만이 전부 막혀 정상 케이지도 걸린다.
+// 7이면 50 미만에서만 걸리는데, 그 정도로 안 마시는 케이지는 사람이 봐야 하는 게 맞다.
+const CI_DAYS_CAP = 7;
 
 const ciRowSpansWeekend = rowSpansWeekend;
 
@@ -1390,6 +1394,7 @@ function ciUpdateDose() {
         <div style="font-size:0.75rem; color:#1565c0;">
             총체중 ${sumBW.toFixed(0)}g · 목표 ${rule.value} mg/kg/day · 필요 ${needMg.toFixed(0)}mg
             · 예상섭취 ${expectedIntake.toFixed(0)}mL<span style="opacity:0.8;"> (${pcSource})</span>
+            · 채우는 물은 <b>${daysWorth.toFixed(1)}일치</b>${daysWorth > 5 ? ' ⚠' : ''}
             · 원액 ${stock}mg/mL · 통 안 총량 ${totalVol.toFixed(0)}mL
             ${deadNow ? `<br>사망 표시한 ${deadNow}마리는 빼고 ${alive.length}마리 기준으로 계산했습니다.` : ''}
         </div>
@@ -1458,6 +1463,28 @@ async function ciSave() {
 
     const occ = ciOccupants(savingCage);
     const c = ciComputeIntake();
+
+    // 잔량이 지난번 채운 양보다 많으면 마신 양이 음수가 된다. 물리적으로 불가능하므로
+    // 측정이나 입력이 틀린 것이다 — 저울 영점, 사료 흘림 주워 담김, 통 짝 바뀜 등.
+    // 소량(측정 오차 범위)은 조용히 넘어가고, 그 이상이면 저장 전에 알린다.
+    // (실제로 사료 '마심'이 -3 g 으로 저장돼 섭취량 평균을 끌어내린 일이 있다)
+    if (c && !c.tooShort) {
+        const probs = [];
+        // 물은 로스 추정이 섞여 있어 -5 mL 까지는 추정 오차로 본다.
+        // 사료는 보정이 없으므로 저울 흔들림(-2 g)을 넘는 음수는 전부 이상하다.
+        if (typeof c.water === 'number' && c.water < -5)
+            probs.push(`물 마심이 ${c.water.toFixed(0)} mL — 잔량(${ciForm.waterRemaining} g)이 지난번 채운 양보다 많습니다`);
+        if (typeof c.food === 'number' && c.food !== null && c.food < -2)
+            probs.push(`사료 마심이 ${c.food.toFixed(1)} g — 잔량(${ciForm.foodRemaining} g)이 지난번 채운 양(전 회차)보다 많습니다`);
+        if (probs.length && !confirm(
+            '측정값이 앞뒤가 맞지 않습니다.\n\n· ' + probs.join('\n· ') +
+            '\n\n저울값을 다시 확인해주세요. 이대로 저장하면 음수 섭취량이 기록에 남습니다.' +
+            '\n\n그래도 저장할까요?')) {
+            ciSaving = false; ciBusy(false);
+            return;
+        }
+    }
+
     const now = firebase.firestore.Timestamp.fromDate(new Date(ciWorkMs()));
     const dateStr = ciDate || getTodayStr();
     const by = (firebase.auth().currentUser && firebase.auth().currentUser.email) || null;
@@ -1661,7 +1688,8 @@ async function ciSave() {
             ciRats = rats.filter(r => String(r.cohort) === String(ciCohort));
         }
 
-        if (next) ciOpen(next.id); else ciBackToList();
+        if (next) { ciOpen(next.id); window.scrollTo(0, 0); }
+        else { ciBackToList(); window.scrollTo(0, 0); }
     }
     } catch (e) {
         console.error(e);
