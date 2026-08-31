@@ -476,7 +476,7 @@ function ciRestoreToday(row) {
     ciForm.note           = row.note || '';
     ciForm.handlings      = row.handlings ? String(row.handlings) : '';
     ciForm.manualPc       = row.manualPerCapita ? String(row.manualPerCapita) : '';
-    ciForm.flags          = (row.flags || []).filter(f => ['이상', '처치일', '수술일'].includes(f));
+    ciForm.flags          = (row.flags || []).filter(f => ['이상', '처치일', '수술일', 'BP일'].includes(f));
 
     if (row.bottleSwapped && Number(row.newBottleTare) > 0) {
         ciForm.bottleSwap = true;
@@ -528,6 +528,7 @@ function ciRenderForm() {
     //             마취 때문에 덜 마셨을 뿐이라, 기록은 남기고 약물 산정에서만 뺀다.
     //  · MR·BP  : 물통을 남이 다뤄 로스 상수가 성립하지 않는다. 잔량을 재도 쓸 수 없다.
     const proc = ciForm.flags.includes('처치일');
+    const bpDay = ciForm.flags.includes('BP일');
     // 이 케이지의 첫 기록이면 뺄 잔량이 없다. 잰 값을 넣을 칸이 보이면
     // 채운 통 무게를 거기에 적게 되므로(실제로 그런 일이 있었다) 아예 감춘다.
     const first = !last;
@@ -559,8 +560,8 @@ function ciRenderForm() {
         <div style="font-size:0.78rem; color:#999; margin-bottom:8px;">1 · 꺼내서 무게 재기</div>
 
         <div style="margin-bottom:10px; padding:9px 11px; border-radius:6px;
-                    background:${(proc || surg) ? '#fff3e0' : '#fafafa'};
-                    border:1px solid ${(proc || surg) ? '#ffb74d' : '#e0e0e0'};">
+                    background:${(proc || surg || bpDay) ? '#fff3e0' : '#fafafa'};
+                    border:1px solid ${(proc || surg || bpDay) ? '#ffb74d' : '#e0e0e0'};">
             <div style="font-size:0.78rem; color:#888; margin-bottom:6px;">
                 ${last ? `${lastStr} 이후` : '지난 기록 이후'}에 있었던 일
             </div>
@@ -575,9 +576,19 @@ function ciRenderForm() {
             </label>
             <label style="display:block; font-size:0.88rem; cursor:pointer; margin-top:7px;
                           padding-top:7px; border-top:1px dashed #e0d0b0;">
+                <input type="checkbox" ${ciForm.flags.includes('BP일') ? 'checked' : ''}
+                       onchange="ciToggleBP(this.checked)" style="width:auto;">
+                <b>혈압 측정 (BP)</b>
+                <div style="font-size:0.77rem; color:#666; margin:3px 0 0 22px;">
+                    물통은 우리가 다루므로 <b>잔량은 평소대로 재서 기록</b>합니다.
+                    재는 동안 몇 시간 물을 못 마셔 낮게 나온 값이라 <b>약물 지시량 계산에서만</b> 빠집니다.
+                </div>
+            </label>
+            <label style="display:block; font-size:0.88rem; cursor:pointer; margin-top:7px;
+                          padding-top:7px; border-top:1px dashed #e0d0b0;">
                 <input type="checkbox" ${proc ? 'checked' : ''}
                        onchange="ciToggleProcedure(this.checked)" style="width:auto;">
-                <b>MR · BP</b>
+                <b>MR 촬영</b>
                 <div style="font-size:0.77rem; color:#666; margin:3px 0 0 22px;">
                     물통을 우리 방식대로 다루지 않아 로스를 알 수 없습니다.
                     <b>잔량은 재지 않고</b> 채울 양만 넣으면 됩니다.
@@ -948,7 +959,16 @@ function ciToggleBottleSwap(on) {
 // 수술일. 측정은 유효하므로 잔량 칸을 그대로 두고, 플래그만 붙여 약물 산정에서 뺀다.
 function ciToggleSurgery(on) {
     ciToggleFlag('수술일', on);
-    if (on) ciToggleFlag('처치일', false);   // 둘을 동시에 켜면 잔량 입력이 사라져 앞뒤가 안 맞는다
+    if (on) { ciToggleFlag('처치일', false); ciToggleFlag('BP일', false); }
+    ciRenderForm();
+}
+
+// BP 측정일. 물통은 우리가 다루므로 측정은 유효하다 — 수술일과 같은 취급.
+// 다만 재는 동안 몇 시간 물을 못 마셔 마리당 값이 낮게 나오므로 농도 산정에서만 뺀다.
+// (MR과 묶어 '잔량을 재지 않는' 처치일로 취급하던 것을 분리했다 — 멀쩡한 측정을 버리고 있었다)
+function ciToggleBP(on) {
+    ciToggleFlag('BP일', on);
+    if (on) { ciToggleFlag('처치일', false); ciToggleFlag('수술일', false); }
     ciRenderForm();
 }
 
@@ -956,6 +976,7 @@ function ciToggleProcedure(on) {
     ciToggleFlag('처치일', on);
     if (on) {
         ciToggleFlag('수술일', false);
+        ciToggleFlag('BP일', false);
         ciForm.waterRemaining = ''; ciForm.foodRemaining = '';
         ciForm.waterScale = ''; ciForm.handlings = '';
         ciForm.noWater = false;      // 안 채우면 다음 구간의 기준이 사라진다
@@ -1323,7 +1344,8 @@ function ciUpdateDose() {
         expectedPc = ciRecentPc[ciCurrent];
         const why = (c && c.spansWeekend) ? '주말이 껴서'
                   : (ciForm.flags || []).includes('수술일') ? '수술일이라'
-                  : (ciForm.flags || []).includes('처치일') ? 'MR·BP가 껴서'
+                  : (ciForm.flags || []).includes('BP일') ? 'BP를 재느라 물을 몇 시간 못 마셔서'
+                  : (ciForm.flags || []).includes('처치일') ? 'MR이 껴서'
                   : (ciForm.flags || []).includes('이상')   ? '이상이 있어서'
                   : spanOdd ? `구간이 24h에서 ${spanOff.toFixed(1)}h 벗어나서` : null;
         pcSource = why ? `최근 평일 평균 (이번 구간은 ${why} 제외)` : '최근 평일 평균';
