@@ -126,7 +126,8 @@ function dbRender(main) {
         <div style="flex:1; min-width:340px;">${dbWatchCard(watch)}</div>
         <div style="flex:1; min-width:340px;">${dbIntakeCard(intake)}</div>
     </div>
-    ${dbCohortCard(cohorts)}`;
+    ${dbCohortCard(cohorts)}
+    ${dbAiCard()}`;
 }
 
 // ---------- ① 오늘 할 일 ----------
@@ -790,4 +791,43 @@ function dbCohortCard(list) {
             </div>` : `<div style="font-size:0.84rem; color:#999;">최근 급여 기록이 없습니다.</div>`}
         </div>`).join('')}
     </div>`;
+}
+
+
+// ---------- 어시스턴트 ----------
+// 떠 있는 챗봇 버튼은 아무도 안 눌렀다. 매일 여는 첫 화면에 칸으로 상주시킨다.
+// 파이프라인은 ai_assistant.js 그대로 — 데이터 조회 + 운영지침 근거 절차 답변.
+function dbAiCard() {
+    if (typeof sendAiMessageFrom !== 'function') return '';
+    const chip = q => `<button onclick="dbAiAsk('${q}')"
+        style="border:1px solid #cfd8dc; background:#f7f9fa; border-radius:14px; padding:4px 11px;
+               font-size:0.78rem; color:#455a64; cursor:pointer;">${q}</button>`;
+    return `
+    <div class="card">
+        <h4 style="margin:0 0 4px 0; color:var(--navy);">어시스턴트</h4>
+        <div style="font-size:0.78rem; color:#888; margin-bottom:9px;">
+            데이터를 찾아주고, 절차는 운영지침에 근거해 답합니다. 투약량 계산은 하지 않습니다 — 그건 조제 지시 카드가 정확합니다.
+        </div>
+        <div id="db-ai-messages" style="max-height:260px; overflow-y:auto; margin-bottom:9px;"></div>
+        <div style="display:flex; gap:7px;">
+            <input type="text" id="db-ai-input" placeholder="예: 최근 체중 많이 빠진 애 / 사료 오늘 갈아야 해?"
+                   style="flex:1; height:40px; padding:0 11px; border:1px solid #ccc; border-radius:6px;"
+                   onkeypress="if(event.key==='Enter') sendAiMessageFrom('db-ai-input','db-ai-messages')">
+            <button class="btn-small btn-blue" style="height:40px; padding:0 16px;"
+                    onclick="sendAiMessageFrom('db-ai-input','db-ai-messages')">질문</button>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+            ${chip('체중 많이 빠진 애 5마리')}
+            ${chip('사료는 언제 갈아?')}
+            ${chip('물통 번호가 지워졌어')}
+            ${chip('체중만 재는 날 뭐 체크해?')}
+        </div>
+    </div>`;
+}
+
+function dbAiAsk(q) {
+    const inp = document.getElementById('db-ai-input');
+    if (!inp) return;
+    inp.value = q;
+    sendAiMessageFrom('db-ai-input', 'db-ai-messages');
 }

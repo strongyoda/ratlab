@@ -13,14 +13,12 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 firebase.auth().onAuthStateChanged((user) => {
+    // 떠 있는 챗봇 버튼은 쓰지 않는다 — 어시스턴트는 대시보드 칸으로 옮겼다.
+    // (아무도 안 누르던 버튼이라, 매일 여는 첫 화면에 상주시키는 편이 쓰인다)
     const aiFab = document.getElementById('ai-chat-fab');
     const aiWindow = document.getElementById('ai-chat-window');
-    if (user) {
-        if (aiFab) aiFab.style.display = 'flex';
-    } else {
-        if (aiFab) aiFab.style.display = 'none';
-        if (aiWindow) aiWindow.style.display = 'none';
-    }
+    if (aiFab) aiFab.style.display = 'none';
+    if (!user && aiWindow) aiWindow.style.display = 'none';
 });
 
 function toggleAiChat() {
@@ -30,8 +28,11 @@ function toggleAiChat() {
     }
 }
 
+// 어시스턴트가 어디에 답을 그릴지. 대시보드 칸에서 부르면 그쪽으로 바뀐다.
+let aiMsgBoxId = 'ai-chat-messages';
+
 function appendMessage(sender, html, id = null) {
-    const box = document.getElementById('ai-chat-messages');
+    const box = document.getElementById(aiMsgBoxId);
     if (!box) return;
     const div = document.createElement('div');
     div.className = sender === 'user' ? 'msg-user' : 'msg-bot';
@@ -98,6 +99,17 @@ async function smartMatchRatIds(aiProvidedIds) {
 
 
 // ===== [4] 시스템 프롬프트 (AI는 JSON action으로만 응답) =====
+// 운영지침 요약 — 절차 질문에 근거로 쓴다. 문서(2. Cohort 14 운영 지침)와 어긋나면 문서가 우선.
+const AI_PROTOCOL = `[운영지침 요약 · Cohort 14]
+상수: 물 약 700mL 언저리로 채우고 무게로 확정 · 물 교체 월수금(2마리 기준 700mL가 4일을 못 버티므로 거르지 않음) · 사료 250g 리셋, 남은 양 보고 최소 주2회 · 케이지 2마리 한 군만 · 메트포민 원액 100mg/mL 목표 150mg/kg/day, 만들 양은 대시보드 조제 지시 카드 · 라운드 매일 오후 1~3시(기준 2시), 잰 시각이 크게 흔들리면 섭취량 최대 40% 왜곡.
+물통: 견출지 번호 = 케이지 번호. 매 교체일 시설에서 세척·소독된 새 통을 받아 쓰고 쓰던 통은 비워 반납. 빈 통 무게는 코호트 기본값 하나로 충분(채움·잔량에서 상쇄됨). 짝이 어긋나면 그 케이지 섭취량이 통째로 틀어짐.
+라운드 순서: (1)실험실—대시보드 확인, 원액 조제(가루 넣고 증류수로 눈금까지, 물 OmL에 녹이는 것 아님, 갈색병 냉장, 남은 원액 이어 씀) (2)걷어내기—랙에서 물통만 먼저 전부, 그 다음 케이지 내림, 통은 번호 순 정렬 (3)벤치 한 대씩—짝 물통 저울(급수구 위로)→1단계 물, 사료 잔량, 체중·상태 두 마리 모두(하나라도 비면 지시량 계산 불가), 새 통에 같은 번호 붙이고 물 채워 원액 넣기 전에 2단계 무게, 지시된 원액 넣고 저장 (4)되돌리기—케이지 먼저 랙에, 그 다음 물통, 쓰던 통 반납, 「오늘 입력이 모두 끝났습니다」 확인.
+갈림길: 체중만 재는 날→「물·사료 안 채우고 그대로 둠」 체크(빠뜨리면 다음 구간 섭취량 부풀려짐) · 한쪽만 가는 날→「물 그대로 둠」/「사료 그대로 둠」 · 통 번호 잃음→짝 추측 금지, 「이상」 체크로 구간 제외 · 사망→개체 칸 「사망」 체크 한 번(계획된 희생은 일괄 입력) · 누수·엎어짐→「이상」 · MR·BP 찍은 날→「처치일」(잔량 안 잼) · 수술한 날→「수술일」(잔량 재고 기록, 농도 산정에서만 제외).
+공휴일 낀 주: 교체 간격이 5~7일이 되므로 중간에 한 번 들어가 물만 채운다.
+하지 말 것: 짝 아닌 통 달기 · 물통 단 채로 케이지를 랙에 넣고 빼기(손실 2.5~3배) · 잔량 안 재고 새로 채우기(복구 불가) · 나중에 몰아서 입력.
+꼬리 색 번호: 검정1 파랑2 빨강5 초록10 보라20 주황50, 값 큰 색부터 꼬리 뿌리 쪽. 합이 개체 번호(37=보라+초록+빨강+파랑). 지워지면 같은 케이지 나머지 개체로 역산, 둘 다 지워졌으면 추측 말고 메모.
+섭취량 원리: 마신 물 = 지난 채움 − 이번 잔량 − 로스(증발 0.0625g/h + 탈착 1.36g/회, 체중 잰 날 수로 셈). 통계 단위는 케이지(n=케이지 수).`;
+
 function buildSystemPrompt() {
     return `너는 뇌동맥류 실험 랫드 데이터 분석 어시스턴트야.
 사용자의 한국어 요청을 받아 아래 스키마의 JSON 한 개만 반환해. 마크다운(\`\`\`) 절대 금지, 순수 JSON만.
@@ -152,8 +164,14 @@ function buildSystemPrompt() {
    - "memo_keyword" 필수
    - 예: "럽쳐 언급된 애" → {"action":"search_memo","memo_keyword":"럽쳐","reply":"메모에 '럽쳐'가 들어간 개체를 찾습니다."}
 
-8) "talk" — 분석 의도가 아닌 일반대화/모름
-   - 예: 인사, 모르는 질문 → {"action":"talk","reply":"안녕하세요! 어떤 분석을 도와드릴까요?"}
+8) "talk" — 분석 의도가 아닌 일반대화
+   - 예: 인사 → {"action":"talk","reply":"안녕하세요! 어떤 분석을 도와드릴까요?"}
+
+9) "answer" — 절차·규칙 질문 (운영지침 근거)
+   - 아래 [운영지침 요약]에 근거해 reply에 바로 답한다. 이 액션만 reply가 여러 문장 가능.
+   - 지침에 없는 내용은 지어내지 말고 "운영지침에 없는 내용입니다. 계획서나 담당자에게 확인하세요"라고 답한다.
+   - 예: "사료 오늘 갈아야 해?" → {"action":"answer","reply":"사료는 남은 양을 보고 채우되 최소 주 2회면 됩니다. 250 g으로 리셋하고, 안 가는 날은 2단계에서 「사료 그대로 둠」을 체크하세요."}
+   - 예: "물통 번호 지워졌는데" → {"action":"answer","reply":"짝을 추측하지 마세요. 어느 케이지 통인지 확실하지 않으면 「이상」을 체크해 그 구간을 계산에서 빼는 것이 규칙입니다."}
 
 [ID 규칙]
 - 풀네임 "C{코호트2자리}{번호2자리}G{그룹}" 형식. 예 C1201G1.
@@ -173,15 +191,21 @@ function buildSystemPrompt() {
 1. JSON 객체 1개만. 코드블록·주석·설명 금지.
 2. reply는 반드시 포함, 한 줄 한국어.
 3. 모호하면 가장 합리적 해석으로 채우고 reply에 그 해석을 명시.
-4. 분석 의도가 아니면 action="talk".`;
+4. 절차·규칙·방법 질문이면 action="answer"로 운영지침에 근거해 답한다. 분석도 절차도 아니면 action="talk".
+
+${AI_PROTOCOL}`;
 }
 
 
 // ===== [5] 메인 송신 ========================================
-async function sendAiMessage() {
-    const inp = document.getElementById('ai-chat-input');
+async function sendAiMessage() { return sendAiMessageFrom('ai-chat-input', 'ai-chat-messages'); }
+
+// 대시보드 칸에서도 같은 파이프라인을 쓴다. 입력칸과 출력칸만 다르다.
+async function sendAiMessageFrom(inputId, boxId) {
+    const inp = document.getElementById(inputId);
     const text = inp.value.trim();
     if (!text) return;
+    aiMsgBoxId = boxId;
 
     appendMessage('user', escapeHtml(text));
     inp.value = '';
@@ -251,6 +275,10 @@ async function dispatchAction(spec) {
             case 'stat':          return await handleStat(spec);
             case 'get_field':     return await handleGetField(spec);
             case 'search_memo':   return await handleSearchMemo(spec);
+            case 'answer':
+                // 절차 답변은 여러 문장이라 줄바꿈을 살린다
+                appendMessage('bot', escapeHtml(reply || '').split('\n').join('<br>'));
+                return;
             case 'talk':
             default:
                 appendMessage('bot', escapeHtml(reply || '요청을 처리했습니다.'));
