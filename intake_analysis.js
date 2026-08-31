@@ -120,6 +120,16 @@ function iaStat(arr) {
 }
 const iaFmt = (s, d = 1) => s ? `${s.mean.toFixed(d)} ± ${s.sd.toFixed(d)}` : '-';
 
+// 이 구간에 실제로 들어간 메트포민 (mg/kg/day). 투약 전이거나 계산 불가면 null.
+// iaRender가 붙여둔 __conc(구간 시작 시점의 물통 농도)를 쓴다.
+function iaMetDose(r) {
+    if (!(r.__conc > 0) || typeof r.waterConsumed !== 'number') return null;
+    const bw = iaCageBW(r);
+    const days = r.animalDays / (r.ratCount || 1);
+    if (!bw || !(days > 0)) return null;
+    return r.__conc * r.waterConsumed / (bw / 1000) / days;
+}
+
 // 사료 속 물질의 실제 투여량 (mg/kg/day)
 // 케이지 총 체중으로 나누므로 개체 배분 가정이 없다.
 function iaFoodDose(row, mgPerG) {
@@ -159,14 +169,23 @@ function iaRender() {
     const usable = iaRows.filter(iaUsable);
     const excluded = iaRows.length - usable.length;
 
-    // 이 구간에 마신 물은 '지난 방문 때 탄' 물이다.
-    // 오늘 행의 doseMg는 다음 구간용이므로, 농도는 같은 케이지의 직전 행에서 가져온다.
-    // (안 그러면 투약 첫날 — 약 없는 물을 마신 구간 — 이 투약된 것으로 잡힌다)
-    const prevByCage = {};
+    // 이 구간에 마신 물은 '지난 방문이 끝난 뒤 물통에 있던' 물이다.
+    // 직전 행의 doseMg만 보면 안 된다 — 물을 안 간 날(그대로 둠)은 doseMg가 0이지만
+    // 통 안에는 그 전에 탄 약물이 그대로 남아 있다. 그래서 농도를 케이지별로
+    // 끌고 다니며, 물을 새로 간 방문에서만 갱신한다.
+    // (이 버그로 '그대로 둠' 다음 구간의 투여량이 전부 0으로 잡혔었다)
+    const concByCage = {};
     iaRows.forEach(r => {                  // iaRows는 시간순 정렬됨
         const c = String(r.cageId);
-        r.__prev = prevByCage[c] || null;
-        prevByCage[c] = r;
+        r.__conc = concByCage[c] || 0;     // 이 구간에 마신 물의 농도 (mg/mL)
+        const kept = (r.noWater !== undefined && r.noWater !== null) ? !!r.noWater : !!r.noRefill;
+        if (!kept && Number(r.waterGiven) > 0) {
+            // waterGiven은 물 + 원액 총량 (fillWater가 있는 기록부터). 옛 기록은 물만이라 원액을 더한다.
+            const totalVol = (typeof r.fillWater === 'number')
+                ? Number(r.waterGiven)
+                : Number(r.waterGiven) + (Number(r.doseCc) || 0);
+            concByCage[c] = (Number(r.doseMg) || 0) / totalVol;
+        }
     });
 
     // 군별로 케이지 평균을 낸 뒤, 그 케이지 값들로 통계 (n = 케이지 수)
@@ -179,22 +198,9 @@ function iaRender() {
         byGroup[g][c].water.push(r.waterPerCapita);
         if (typeof r.foodPerCapita === 'number') byGroup[g][c].food.push(r.foodPerCapita);
 
-        // 메트포민: 실제로 마신 물 × '지난 방문 때 탄' 농도 ÷ 케이지 총 체중
-        const p = r.__prev;
-        if (p && p.doseMg && p.waterGiven && typeof r.waterConsumed === 'number') {
-            const bw = iaCageBW(r);
-            const days = r.animalDays / (r.ratCount || 1);
-            if (bw && days > 0) {
-                // waterGiven은 물 + 원액을 합한 총량이다 (fillWater가 있는 기록부터).
-                // 그 이전 기록은 물만 담겨 있으므로 원액 부피를 더해준다.
-                const totalVol = (typeof p.fillWater === 'number')
-                    ? Number(p.waterGiven)
-                    : Number(p.waterGiven) + (Number(p.doseCc) || 0);
-                const conc = p.doseMg / totalVol;                        // mg/mL
-                const taken = conc * r.waterConsumed;                    // mg
-                byGroup[g][c].met.push(taken / (bw / 1000) / days);
-            }
-        }
+        // 메트포민: 실제로 마신 물 × 구간 시작 시점의 물통 농도 ÷ 케이지 총 체중
+        const md = iaMetDose(r);
+        if (md !== null) byGroup[g][c].met.push(md);
         // 사료 속 물질
         (iaConfig && iaConfig.dosing || []).filter(d => d.medium === 'food').forEach(d => {
             if (!(d.groups || []).includes(g)) return;
@@ -329,6 +335,8 @@ function iaCageTable(usable) {
         const list = byCage[c];
         const w = iaStat(list.map(r => r.waterPerCapita));
         const f = iaStat(list.map(r => r.foodPerCapita).filter(v => typeof v === 'number'));
+        const doses = list.map(iaMetDose).filter(v => v !== null);
+        const m = iaStat(doses);
         const g = iaGroupOf(list[0]);
         return `<tr onclick="iaToggleChart('${c}')" style="cursor:pointer; border-bottom:1px solid #f0f0f0;">
             <td style="padding:7px; font-weight:bold;">${c}번</td>
@@ -336,11 +344,13 @@ function iaCageTable(usable) {
             <td style="padding:7px; text-align:center;">${list.length}</td>
             <td style="padding:7px; text-align:center;">${iaFmt(w, 0)}</td>
             <td style="padding:7px; text-align:center;">${f ? iaFmt(f, 1) : '-'}</td>
+            <td style="padding:7px; text-align:center; color:#0d47a1; font-weight:bold;">
+                ${m ? `${iaFmt(m, 0)}<br><span style="font-weight:normal; font-size:0.72rem; color:#888;">투약 ${doses.length}구간</span>` : '-'}</td>
             <td style="padding:7px; text-align:center; color:#bbb; font-size:0.75rem;"
                 id="ia-caret-${c}">▾</td>
         </tr>
         <tr id="ia-chartrow-${c}" style="display:none;">
-            <td colspan="6" style="padding:10px 7px 16px; background:#fafbfc;">
+            <td colspan="7" style="padding:10px 7px 16px; background:#fafbfc;">
                 <div style="height:230px;"><canvas id="ia-chart-${c}"></canvas></div>
                 <div style="font-size:0.76rem; color:#888; margin-top:6px;">
                     계산에 쓴 구간만 표시합니다. 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
@@ -361,7 +371,9 @@ function iaCageTable(usable) {
             <thead><tr style="background:#f5f5f5;">
                 <th style="padding:7px; text-align:left;">케이지</th><th style="padding:7px; text-align:left;">군</th>
                 <th style="padding:7px;">구간</th><th style="padding:7px;">물 mL/day/마리</th>
-                <th style="padding:7px;">사료 g/day/마리</th><th style="padding:7px;"></th>
+                <th style="padding:7px;">사료 g/day/마리</th>
+                <th style="padding:7px;">Metformin<br><span style="font-weight:normal; font-size:0.72rem;">mg/kg/day</span></th>
+                <th style="padding:7px;"></th>
             </tr></thead>
             <tbody>${rows}</tbody>
         </table>
@@ -498,6 +510,8 @@ function iaDrawChart(cageId) {
                     if (r.intervalHours) parts.push(`구간 ${r.intervalHours.toFixed(1)}h`);
                     if (typeof r.waterConsumed === 'number') parts.push(`섭취 ${r.waterConsumed.toFixed(1)} mL`);
                     if (r.animalDays) parts.push(`${r.animalDays.toFixed(2)} 마리·일`);
+                    const md = iaMetDose(r);
+                    if (md !== null) parts.push(`Metformin ${md.toFixed(0)} mg/kg/일`);
                     return parts.join(' · ');
                 } } }
             },
