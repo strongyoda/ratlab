@@ -300,9 +300,13 @@ function ciPrepPlan() {
 
         // 필요 약물량은 채우는 물의 양에 정비례한다 (mg = k × 물양).
         // 그래서 물양을 정하지 않고 계수 k 만 모아뒀다가, 카드에서 500·700 각각으로 곱한다.
+        // 예측 섭취량이 비정상적으로 낮은 케이지는 계수가 폭주하므로 평균으로 메운다.
+        const opts = fillOptions(ciConfig && ciConfig.housing);
+        const maxFill = Math.max(...(opts.length ? opts : [700]));
+        const ok = bw && pc && n && pcUsableForPrep(pc, n, maxFill);
         rows.push({
             number: cage.number,
-            k: (bw && pc && n) ? Number(st.rule.value) * (bw / 1000) / (pc * n) : null
+            k: ok ? Number(st.rule.value) * (bw / 1000) / (pc * n) : null
         });
     });
     return { rows, stock };
@@ -340,7 +344,7 @@ function ciPrepPreviewCard() {
         }).join('')}
         <div style="font-size:0.78rem; opacity:0.9; margin-top:6px;">
             투약 케이지 ${rows.length}개 · 원액 ${stock} mg/mL · 30% 여유 포함
-            ${unknown.length ? ` · ${unknown.length}개는 지난 기록이 없어 평균으로 추정` : ''}
+            ${unknown.length ? ` · ${unknown.length}개(${unknown.map(u => u.number + '번').join(', ')})는 기록이 없거나 최근 섭취가 비정상이라 평균으로 추정` : ''}
         </div>
         <div style="font-size:0.73rem; opacity:0.75; margin-top:5px;">
             오늘 물을 얼마나 채울지에 따라 골라서 만드세요. 주말·연휴 앞이면 많이 채웁니다.

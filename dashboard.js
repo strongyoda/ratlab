@@ -282,8 +282,11 @@ function dbPrep() {
         const bw = (lastFeed[String(cage.id)] || {}).sumBW;
 
         // 필요 약물량은 채우는 물의 양에 정비례한다. 물양을 정하지 않고 계수만 모아둔다.
+        // 예측 섭취량이 비정상적으로 낮은 케이지(거부·질병)는 계수가 폭주하므로
+        // '기록 없음'과 같이 취급해 평균으로 메운다.
+        const maxFill = Math.max(...(fillOptions(housing).length ? fillOptions(housing) : [700]));
         const item = { number: cage.number, n: occ.length, pc, bw };
-        if (pc && bw) {
+        if (pc && bw && pcUsableForPrep(pc, occ.length, maxFill)) {
             item.k = Number(rule.value) * (bw / 1000) / (pc * occ.length);
             known.push(item);
         } else unknown.push(item);
@@ -326,7 +329,7 @@ function dbPrepCard(p) {
         </div>`).join('')}
         <div style="font-size:0.8rem; opacity:0.9; margin-top:6px;">
             투약 케이지 ${p.known.length + p.unknown.length}개 · 원액 ${p.stock} mg/mL · 30% 여유 포함
-            ${p.unknown.length ? ` · ${p.unknown.length}개는 지난 기록이 없어 평균으로 추정` : ''}
+            ${p.unknown.length ? ` · ${p.unknown.length}개(${p.unknown.map(u => u.number + '번').join(', ')})는 기록이 없거나 최근 섭취가 비정상이라 평균으로 추정` : ''}
         </div>
         <div style="font-size:0.75rem; opacity:0.75; margin-top:5px;">
             오늘 물을 얼마나 채울지에 따라 골라서 만드세요. 주말·연휴 앞이면 많이 채웁니다.

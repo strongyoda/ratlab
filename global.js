@@ -413,6 +413,15 @@ function fillOptions(housing) {
     return [...new Set(v)].sort((a, b) => a - b);
 }
 
+// 조제 어림에서 케이지 하나의 예측 섭취량이 너무 낮으면 (채우는 물이 7일치를
+// 넘게 남을 값이면) 그 케이지의 계수를 버리고 다른 케이지 평균으로 메운다.
+// 계수는 섭취량의 역수라, 거부 케이지(마리당 1.3 mL) 하나가 전체 조제량을
+// 수십 배로 끌어올린다 — 실제로 가루 27 g 지시가 나온 적이 있다.
+const FILL_DAYS_CAP = 7;
+function pcUsableForPrep(pc, n, maxFill) {
+    return pc > 0 && (maxFill / (pc * n)) <= FILL_DAYS_CAP;
+}
+
 // 30% 여유를 얹고 1 mL 단위로 올린다. 최소 5 mL.
 // 10 mL 단위로 올리던 때가 있었는데, 원액을 100 mg/mL 로 올리고 나니
 // 그 한 칸이 가루 1 g 이라 소량을 만들 때 두 배 넘게 만들게 됐다.
