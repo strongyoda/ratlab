@@ -335,17 +335,27 @@ function iaCageTable(usable) {
         const list = byCage[c];
         const w = iaStat(list.map(r => r.waterPerCapita));
         const f = iaStat(list.map(r => r.foodPerCapita).filter(v => typeof v === 'number'));
-        const doses = list.map(iaMetDose).filter(v => v !== null);
-        const m = iaStat(doses);
         const g = iaGroupOf(list[0]);
+        const doses = list.map(iaMetDose).filter(v => v !== null);   // list는 시간순 → 마지막이 최근
+        const m = iaStat(doses);
+        const latest = doses.length ? doses[doses.length - 1] : null;
+        // 이 케이지 군의 목표 용량 — 최근 구간이 목표의 몇 %인지 보여준다.
+        // 평균 ± 표준편차는 초기 사고 구간(과다·미달)이 섞여 폭만 커 보이고,
+        // 지금 잘 맞고 있는지는 최근 구간이 말해준다.
+        const rule = ((iaConfig && iaConfig.dosing) || [])
+            .find(d => d.medium === 'water' && (d.groups || []).includes(g) && Number(d.value) > 0);
         return `<tr onclick="iaToggleChart('${c}')" style="cursor:pointer; border-bottom:1px solid #f0f0f0;">
             <td style="padding:7px; font-weight:bold;">${c}번</td>
             <td style="padding:7px; font-size:0.8rem; color:#666;">${iaGroupName(g)}</td>
             <td style="padding:7px; text-align:center;">${list.length}</td>
             <td style="padding:7px; text-align:center;">${iaFmt(w, 0)}</td>
             <td style="padding:7px; text-align:center;">${f ? iaFmt(f, 1) : '-'}</td>
-            <td style="padding:7px; text-align:center; color:#0d47a1; font-weight:bold;">
-                ${m ? `${iaFmt(m, 0)}<br><span style="font-weight:normal; font-size:0.72rem; color:#888;">투약 ${doses.length}구간</span>` : '-'}</td>
+            <td style="padding:7px; text-align:center;">
+                ${latest !== null ? `
+                    <b style="color:#0d47a1;">최근 ${latest.toFixed(0)}</b>
+                    ${rule ? `<b style="color:${Math.abs(latest / Number(rule.value) - 1) <= 0.15 ? '#2e7d32' : 'var(--red)'};">
+                        (${(latest / Number(rule.value) * 100).toFixed(0)}%)</b>` : ''}
+                    <br><span style="font-size:0.72rem; color:#888;">평균 ${iaFmt(m, 0)} · ${doses.length}구간</span>` : '-'}</td>
             <td style="padding:7px; text-align:center; color:#bbb; font-size:0.75rem;"
                 id="ia-caret-${c}">▾</td>
         </tr>
