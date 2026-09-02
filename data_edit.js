@@ -7,6 +7,10 @@ let deRats = [];
 let deCageRows = [];
 let deCageId = null;
 
+// 손으로 켜고 끌 수 있는 플래그 (케이지별 입력의 체크박스와 같은 목록).
+// 재실변동·사망발생은 저장 시 자동 판정된 기록이라 여기서는 건드리지 않고 보존한다.
+const DE_FLAGS = ['이상', '처치일', '수술일', 'BP일'];
+
 // ---------- 공통 ----------
 async function deFillCohortSel(selId, onchange) {
     const sel = document.getElementById(selId);
@@ -92,7 +96,8 @@ async function deLoadCageRecords(cageId, cohort) {
     <div class="card" style="margin-top:12px;">
         <h4 style="margin-top:0; color:var(--navy);">${cageId}번 케이지 · 급여 기록 ${deCageRows.length}건</h4>
         <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
-            값을 고치면 그 구간의 섭취량이 다시 계산됩니다. 뒤 구간 계산에도 영향을 주니 확인 후 저장하세요.
+            값을 고치면 그 구간의 섭취량이 다시 계산됩니다. 뒤 구간 계산에도 영향을 주니 확인 후 저장하세요.<br>
+            플래그도 여기서 고칠 수 있습니다 — 「이상」을 켜면 그 구간은 섭취량 기준·조제 계산에서 빠집니다 (잰 값 자체는 그대로).
         </div>
         <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
@@ -121,7 +126,15 @@ function deRowHtml(r, i) {
             ${typeof r.foodConsumed === 'number' ? r.foodConsumed.toFixed(0) : '-'}
             ${typeof r.waterPerCapita === 'number' ? `<br><span style="font-size:0.72rem; color:#888;">마리당 ${r.waterPerCapita.toFixed(0)}</span>` : ''}
         </td>
-        <td style="padding:6px; font-size:0.75rem; color:var(--red);">${(r.flags || []).join(', ') || '-'}</td>
+        <td style="padding:6px; font-size:0.75rem; white-space:nowrap;">
+            ${DE_FLAGS.map(f => `
+            <label style="display:inline-flex; align-items:center; gap:3px; margin-right:7px; cursor:pointer;
+                          color:${f === '이상' ? 'var(--red)' : '#555'};">
+                <input type="checkbox" id="de-fl-${i}-${f}" ${(r.flags || []).includes(f) ? 'checked' : ''}
+                       style="width:auto; margin:0;">${f}</label>`).join('')}
+            ${(r.flags || []).filter(f => !DE_FLAGS.includes(f)).length
+                ? `<span style="color:var(--red);">${(r.flags || []).filter(f => !DE_FLAGS.includes(f)).join(', ')}</span>` : ''}
+        </td>
         <td style="padding:6px; white-space:nowrap;">
             <button class="btn-small btn-blue" onclick="deSaveRow(${i})" style="padding:3px 9px;">저장</button>
             <button class="btn-small btn-red" onclick="deDeleteRow(${i})" style="padding:3px 9px;">삭제</button>
@@ -233,15 +246,22 @@ async function deSaveRow(i) {
     const g = id => { const el = document.getElementById(id); return el && el.value !== '' ? Number(el.value) : null; };
     const wr = g(`de-wr-${i}`), wg = g(`de-wg-${i}`), fr = g(`de-fr-${i}`), fg = g(`de-fg-${i}`);
 
+    // 체크박스의 수동 플래그 + 원래 있던 자동 플래그(재실변동 등)를 합쳐 저장한다
+    const flags = DE_FLAGS.filter(f => {
+        const el = document.getElementById(`de-fl-${i}-${f}`);
+        return el && el.checked;
+    }).concat((r.flags || []).filter(f => !DE_FLAGS.includes(f)));
+
     const base = {
         waterRemaining: wr, waterGiven: wg, foodRemaining: fr, foodGiven: fg,
+        flags: flags,
         editedAt: firebase.firestore.FieldValue.serverTimestamp(),
         editedBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || null
     };
 
     try {
         await db.collection('cageFeeding').doc(r._id).set(base, { merge: true });
-        Object.assign(r, { waterRemaining: wr, waterGiven: wg, foodRemaining: fr, foodGiven: fg });
+        Object.assign(r, { waterRemaining: wr, waterGiven: wg, foodRemaining: fr, foodGiven: fg, flags: flags });
 
         const prev = deCageRows[i + 1];               // 배열은 최신순 → i+1이 시간상 이전
         if (prev) await deRecomputeRow(r, prev, true);

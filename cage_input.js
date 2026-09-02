@@ -159,6 +159,25 @@ const CI_SPAN_TOL_H = 3;   // 24시간 배수에서 이만큼까지는 이번 �
 // 7이면 50 미만에서만 걸리는데, 그 정도로 안 마시는 케이지는 사람이 봐야 하는 게 맞다.
 const CI_DAYS_CAP = 7;
 
+// 마리당 물 섭취가 비정상적으로 크면 현장에서 바로 되묻는다.
+// (파일럿 30번: 누수로 마리당 213 mL 가 그냥 저장돼, 나중에 긴가민가한 채로 남았다)
+// 절대 상한은 랫드가 실제로 마실 수 있는 범위를 한참 넘는 값.
+// 배수 상한 2배는 BP 다음날 몰아 마시기도 걸릴 수 있는데, 그날도 누수인지
+// 실제인지 눈으로 가려둘 가치가 있어 일부러 걸리게 뒀다.
+const CI_PC_ABS_MAX = 80;    // mL/마리·일
+const CI_PC_JUMP = 2;        // 최근 평일 최대의 몇 배부터 의심하나
+
+// 이번 구간의 마리당 물 섭취가 의심스러우면 이유를 돌려준다. 정상이면 null.
+function ciWaterPcSuspect(c) {
+    if (!c || c.tooShort || typeof c.waterPc !== 'number' || !(c.waterPc > 0)) return null;
+    const base = ciRecentPc[ciCurrent] || null;
+    if (c.waterPc > CI_PC_ABS_MAX)
+        return { pc: c.waterPc, why: `실제로 마실 수 있는 범위(~${CI_PC_ABS_MAX} mL)를 넘습니다` };
+    if (base && c.waterPc > base * CI_PC_JUMP)
+        return { pc: c.waterPc, why: `최근 이 케이지 평일 최대(${base.toFixed(0)} mL)의 ${(c.waterPc / base).toFixed(1)}배입니다` };
+    return null;
+}
+
 const ciRowSpansWeekend = rowSpansWeekend;
 
 async function ciLoadHistory() {
@@ -1081,9 +1100,12 @@ function ciUpdateCalc() {
         </div>`;
     } else {
         const bad = c.water < 0;
+        // 「이상」을 이미 체크했으면 본인이 알고 있는 것이므로 다시 묻지 않는다
+        const susp = ciForm.flags.includes('이상') ? null : ciWaterPcSuspect(c);
         box.innerHTML = `
         <div style="padding:9px 11px; border-radius:6px; font-size:0.85rem;
-                    background:${bad ? '#ffebee' : '#e8f5e9'}; color:${bad ? '#b71c1c' : '#1b5e20'};">
+                    background:${bad ? '#ffebee' : susp ? '#fff3e0' : '#e8f5e9'};
+                    color:${bad ? '#b71c1c' : susp ? '#e65100' : '#1b5e20'};">
             섭취 · 물 <b>${c.water.toFixed(0)} mL</b>
             ${c.food !== null ? ` / 사료 <b>${c.food.toFixed(0)} g</b>` : ''}
             &nbsp;·&nbsp; 마리당 <b>${c.waterPc ? c.waterPc.toFixed(0) : '-'} mL/day</b>
@@ -1097,6 +1119,10 @@ function ciUpdateCalc() {
                 ${(!c.spansWeekend && ciOffFrom24(c.hours) > CI_SPAN_TOL_H)
                     ? `<br>구간이 24시간 배수에서 ${ciOffFrom24(c.hours).toFixed(1)}시간 벗어났습니다. 밤낮 비중이 치우쳐 하루치가 ${c.hours < 24 ? '부풀' : '줄'}었을 수 있어, 투약 농도는 최근 평일 값으로 계산합니다.` : ''}
                 ${bad ? '<br><b>잔량이 채운 양보다 많습니다. 입력을 확인하세요.</b>' : ''}
+                ${susp ? `<br><b style="color:#b71c1c;">⚠ 마리당 ${susp.pc.toFixed(0)} mL/일은 비정상적으로 큽니다 — ${susp.why}.</b><br>
+                    지금 물통 누수·엎어짐·저울값·빈 통 무게를 확인하세요.
+                    누수 등이 맞으면 아래 <b>「이상」</b>을 체크하세요 (조제 계산도 최근 값으로 바뀝니다).
+                    BP 다음날 몰아 마신 것처럼 실제일 수도 있습니다 — 확인했고 맞으면 그대로 저장하면 됩니다.` : ''}
             </div>
         </div>`;
     }
@@ -1508,6 +1534,29 @@ async function ciSave() {
             '\n\n그래도 저장할까요?')) {
             ciSaving = false; ciBusy(false);
             return;
+        }
+    }
+
+    // 큰 쪽 이상값도 저장 전에 한 번 더 잡는다 — 화면의 경고를 못 보고 지나쳤을 때의
+    // 마지막 그물. 긴가민가한 값이 표시 없이 저장되면 나중엔 아무도 판정 못 한다.
+    if (c && !c.tooShort && !ciForm.flags.includes('이상')) {
+        const susp = ciWaterPcSuspect(c);
+        if (susp) {
+            const really = confirm(
+                `물 섭취가 마리당 ${susp.pc.toFixed(0)} mL/일로 비정상적으로 큽니다.\n(${susp.why})\n\n` +
+                `물통 누수·엎어짐·저울값·빈 통 무게를 지금 확인해주세요.\n\n` +
+                `실제로 이만큼 마신 게 맞습니까?\n(맞으면 확인 → 그대로 저장)`);
+            if (!really) {
+                if (confirm(
+                    `이 구간에 「이상」을 표시하고 저장할까요?\n` +
+                    `잰 값은 그대로 남고, 섭취량 기준·조제 계산에서만 빠집니다.\n\n` +
+                    `(취소하면 저장하지 않습니다 — 값을 고친 뒤 다시 저장하세요)`)) {
+                    ciForm.flags.push('이상');
+                } else {
+                    ciSaving = false; ciBusy(false);
+                    return;
+                }
+            }
         }
     }
 
