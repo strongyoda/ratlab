@@ -2,10 +2,11 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rat Lab Manager Pro</title>
     
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
     <!-- Firebase v9 compat -->
@@ -19,21 +20,21 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
     <script src="global.js?v=20260901a"></script>
-    <script src="router.js?v=20260901a"></script>
+    <script src="router.js?v=20260903a"></script>
     <script src="input.js?v=20260901a"></script>
-    <script src="chart.js?v=20260901a"></script>
+    <script src="chart.js?v=20260903b"></script>
     <script src="cohort_config.js?v=20260901a"></script>
     <script src="cage_manager.js?v=20260901a"></script>
-    <script src="dashboard.js?v=20260901a"></script>
-    <script src="cage_input.js?v=20260902a"></script>
+    <script src="dashboard.js?v=20260903d"></script>
+    <script src="cage_input.js?v=20260903a"></script>
     <script src="intake_analysis.js?v=20260901a"></script>
-    <script src="rat_detail.js?v=20260901a"></script>
+    <script src="rat_detail.js?v=20260903a"></script>
     <script src="data_edit.js?v=20260902a"></script>
     <script src="batch_entry.js?v=20260901a"></script>
     <script src="media.js?v=20260901a"></script>
     <script src="admin.js?v=20260901a"></script>
     
-    <link rel="stylesheet" href="style.css?v=20260901a">
+    <link rel="stylesheet" href="style.css?v=20260904b">
 </head>
 <body>
 
@@ -43,7 +44,7 @@
 
     <div id="login-screen" style="display:none;">
         <div class="login-box">
-            <h2 style="color:var(--navy)">LAB MANAGER</h2>
+            <h2 style="color:var(--ink); letter-spacing:-0.01em;">LAB MANAGER</h2>
             <input type="text" id="uid" placeholder="ID" style="margin-bottom:10px">
             <input type="password" id="upw" placeholder="PW" style="margin-bottom:20px" onkeypress="if(event.key==='Enter') login()">
             <button class="btn btn-green" onclick="login()">LOGIN</button>
@@ -64,13 +65,13 @@
     </style>
 
     <div id="main-app">
-        <header style="display:flex; align-items:flex-end; padding:0 20px; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.05); box-sizing:border-box;">
+        <header style="display:flex; align-items:flex-end; padding:0 20px; background:var(--sheet); border-bottom:2px solid var(--ink); box-sizing:border-box;">
             <div style="display:flex; align-items:center; height:60px; padding-bottom:8px; box-sizing:border-box;">
                 <div class="menu-btn-box" onclick="toggleMenu()" style="margin-right:15px; cursor:pointer;">
-                    <i class="material-icons" style="color:var(--navy)">menu</i>
+                    <i class="material-icons" style="color:var(--ink)">menu</i>
                     <span class="menu-btn-text">MENU</span>
                 </div>
-                <span style="font-weight:900; color:var(--navy); font-size:1.2rem; margin-right:20px; white-space:nowrap;">RLM Pro</span>
+                <span style="font-weight:900; color:var(--ink); font-size:1.15rem; margin-right:20px; white-space:nowrap; letter-spacing:-0.02em;">RLM<span style="color:var(--stamp);"> Pro</span></span>
             </div>
             
             <div style="display:flex; flex:1; overflow-x:auto; align-items:flex-end; gap:5px; height:60px; box-sizing:border-box;">
@@ -111,8 +112,8 @@
 
         <main id="tab-views-container"></main>
 
-        <div id="ai-chat-window" style="display:none; position:fixed; bottom:80px; right:20px; width:350px; height:500px; background:white; border-radius:12px; box-shadow:0 5px 25px rgba(0,0,0,0.2); z-index:10000; display:flex; flex-direction:column;">
-        <div class="ai-chat-header" style="background:var(--navy); color:white; padding:15px; border-radius:12px 12px 0 0; display:flex; justify-content:space-between;">
+        <div id="ai-chat-window" style="display:none; position:fixed; bottom:80px; right:20px; width:350px; height:500px; background:var(--sheet); border-radius:2px; border:1px solid var(--ink); z-index:10000; display:flex; flex-direction:column;">
+        <div class="ai-chat-header" style="background:var(--ink); color:var(--paper); padding:15px; display:flex; justify-content:space-between;">
             <span>RLM AI Analyst</span>
             <button onclick="toggleAiChat()" style="background:none; border:none; color:white; cursor:pointer;">&times;</button>
         </div>
@@ -125,7 +126,7 @@
         </div>
 </div>
 
-<button id="ai-chat-fab" onclick="toggleAiChat()" style="position:fixed; bottom:20px; right:20px; width:50px; height:50px; border-radius:50%; background:var(--navy); color:white; border:none; cursor:pointer; z-index:10000; box-shadow:0 4px 10px rgba(0,0,0,0.3);">
+<button id="ai-chat-fab" onclick="toggleAiChat()" style="position:fixed; bottom:20px; right:20px; width:50px; height:50px; border-radius:2px; background:var(--ink); color:var(--paper); border:none; cursor:pointer; z-index:10000;">
     <i class="material-icons">auto_awesome</i>
 </button>
 

@@ -58,27 +58,10 @@ function renderTabs() {
     appTabs.forEach(t => {
         const isActive = (t.id === activeTabId);
         const tabEl = document.createElement('div');
-        tabEl.style.cssText = `
-            padding: 8px 15px; 
-            background: ${isActive ? '#f4f6f8' : '#d5d9e0'}; 
-            color: ${isActive ? 'var(--navy)' : '#555'}; 
-            border-radius: 8px 8px 0 0; 
-            font-size: 0.9rem; 
-            font-weight: ${isActive ? 'bold' : 'normal'};
-            cursor: pointer; 
-            display: flex; 
-            align-items: center; 
-            gap: 8px;
-            border: 1px solid ${isActive ? '#ccc' : 'transparent'};
-            border-bottom: none;
-            white-space: nowrap;
-            box-shadow: ${isActive ? '0 -2px 5px rgba(0,0,0,0.05)' : 'none'};
-            margin-top: ${isActive ? '0' : '4px'};
-            transition: 0.2s;
-        `;
+        tabEl.className = 'app-tab' + (isActive ? ' active' : '');   // 모양은 style.css의 기록지 문법이 정한다
         tabEl.innerHTML = `
             <span onclick="switchTab('${t.id}')" style="flex:1;">${t.title}</span>
-            ${appTabs.length > 1 ? `<span onclick="closeTab('${t.id}', event)" style="color:#d32f2f; font-weight:bold; font-size:1.2rem; line-height:1; margin-left:5px; padding:0 3px;">&times;</span>` : ''}
+            ${appTabs.length > 1 ? `<span class="tab-close" onclick="closeTab('${t.id}', event)">&times;</span>` : ''}
         `;
         tc.appendChild(tabEl);
     });

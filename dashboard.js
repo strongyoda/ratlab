@@ -17,6 +17,23 @@ const DB_MIN_WATER_PC = 5;      // 마리당 mL/day. 이 아래면 비율과 무
 const DB_MIN_FOOD_PC  = 2;      // 마리당 g/day
 const DB_STAGE_ECHO_DAYS = 3;   // 처치 시작 며칠까지는 '예상된 변화'로 안내
 
+// 개체번호·물질명 같은 기록값이 HTML 속 따옴표·꺾쇠로 화면을 깨뜨리지 않게 한다
+const dbEsc = s => String(s).replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// 클릭은 한 곳에서 받는다. 버튼에 기록값을 인라인 onclick 으로 박으면
+// 따옴표 든 개체번호 하나에 그 줄이 조용히 죽는다.
+function dbOnClick(e) {
+    const el = e.target.closest('[data-db-action]');
+    if (!el) return;
+    switch (el.dataset.dbAction) {
+        case 'detail': go('detail', el.dataset.rat); break;
+        case 'toggle': dbToggleRow(el.dataset.idx); break;
+        case 'ask':    dbAiAsk(el.dataset.q); break;
+        case 'go':     go(el.dataset.view); break;
+    }
+}
+
 async function renderDashboardView(main) {
     main.innerHTML = `<div class="card">불러오는 중...</div>`;
     try {
@@ -95,6 +112,7 @@ function dbTpDays(label) {
 
 // ---------- 화면 ----------
 function dbRender(main) {
+    if (!main.dbBound) { main.addEventListener('click', dbOnClick); main.dbBound = true; }
     const todo    = dbTodo();
     const alerts  = dbAlerts();
     const watch   = dbWatchList();
@@ -105,17 +123,22 @@ function dbRender(main) {
     const dow = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
 
     main.innerHTML = `
-    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-        <div>
-            <h3 style="margin:0;">${dbData.today} (${dow})</h3>
-            <div style="font-size:0.85rem; color:#666; margin-top:4px;">
-                진행 중 코호트 ${dbData.active.length}개 · 생존 ${dbData.alive.length}마리
+    <div class="db-sheet">
+    <div class="card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+            <div class="stamp-in" style="border:2px solid var(--ink); padding:5px 12px; border-radius:2px;">
+                <div style="font-size:0.66rem; letter-spacing:0.16em; color:var(--ink-soft); font-weight:700;">DAILY RECORD</div>
+                <div class="mono" style="font-size:1.12rem; font-weight:700; color:var(--ink);">${dbData.today} <span style="font-family:var(--font-ui);">(${dow})</span></div>
+            </div>
+            <div style="font-size:0.85rem; color:var(--ink-soft); line-height:1.65;">
+                진행 중 코호트 <b class="mono" style="color:var(--ink);">${dbData.active.length}</b>개
+                · 생존 <b class="mono" style="color:var(--ink);">${dbData.alive.length}</b>마리
             </div>
         </div>
-        <div style="display:flex; gap:8px;">
-            <button class="btn-small btn-blue" onclick="go('cageinput')">케이지별 입력</button>
-            <button class="btn-small" style="background:#eee; color:#333;" onclick="go('dash')">랫드 명부</button>
-            <button class="btn-small" style="background:#eee; color:#333;" onclick="renderDashboardView(document.getElementById('view_' + activeTabId))">새로고침</button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn-small btn-blue db-tap" onclick="go('cageinput')">케이지별 입력</button>
+            <button class="btn-small db-tap" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);" onclick="go('dash')">랫드 명부</button>
+            <button class="btn-small db-tap" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);" onclick="renderDashboardView(document.getElementById('view_' + activeTabId))">새로고침</button>
         </div>
     </div>
 
@@ -127,7 +150,8 @@ function dbRender(main) {
         <div style="flex:1; min-width:340px;">${dbIntakeCard(intake)}</div>
     </div>
     ${dbCohortCard(cohorts)}
-    ${dbAiCard()}`;
+    ${dbAiCard()}
+    </div>`;
 }
 
 // ---------- ① 오늘 할 일 ----------
@@ -186,8 +210,9 @@ function dbTodo() {
 }
 
 function dbTodoCard(t) {
-    const chip = (txt, bg, col) => `<span style="display:inline-block; padding:3px 9px; margin:2px 4px 2px 0;
-        background:${bg}; color:${col}; border-radius:11px; font-size:0.82rem; font-weight:bold;">${txt}</span>`;
+    // 원장 셀: 스톡 색은 면 전용이므로(칩 금지) 태그는 시트 바탕 + 잉크 괘선으로
+    const chip = (txt, bg, col) => `<span class="mono" style="display:inline-block; padding:3px 9px; margin:2px 4px 2px 0;
+        background:var(--sheet); color:${col}; border:1px solid var(--ink); border-radius:2px; font-size:0.8rem; font-weight:600;">${txt}</span>`;
 
     const rows = [];
 
@@ -196,42 +221,43 @@ function dbTodoCard(t) {
         rows.push(`
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
             <b style="min-width:96px;">케이지 입력</b>
-            <span style="font-size:1.1rem; font-weight:bold; color:${left ? 'var(--navy)' : '#2e7d32'};">
+            <span class="mono" style="font-size:1.1rem; font-weight:700; color:${left ? 'var(--ink)' : 'var(--approve)'};">
                 ${t.doneCount} / ${t.usedCount}
             </span>
-            ${left ? `<span style="color:#666; font-size:0.85rem;">남은 케이지</span>
-                ${t.pending.slice(0, 12).map(c => chip(c.number + '번', '#e3f2fd', '#0d47a1')).join('')}
-                ${left > 12 ? `<span style="color:#888; font-size:0.82rem;">외 ${left - 12}개</span>` : ''}`
-              : `<span style="color:#2e7d32; font-size:0.9rem;">오늘 입력이 모두 끝났습니다</span>`}
+            ${left ? `<span style="color:var(--ink-soft); font-size:0.85rem;">남은 케이지</span>
+                ${t.pending.slice(0, 12).map(c => chip(dbEsc(c.number) + '번', 'var(--stock-blue-soft)', 'var(--ink-blue)')).join('')}
+                ${left > 12 ? `<span style="color:var(--ink-soft); font-size:0.82rem;">외 ${left - 12}개</span>` : ''}`
+              : `<span class="stamp-in" style="color:var(--approve); font-size:0.85rem; font-weight:800; border:2px solid var(--approve); padding:2px 9px; border-radius:2px;">오늘 입력이 모두 끝났습니다</span>`}
         </div>`);
     }
 
     if (t.doseToday.length) rows.push(`
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
             <b style="min-width:96px;">오늘 투약 시작</b>
-            ${t.doseToday.map(x => chip(x.n + '번 · ' + x.sub, '#e8f5e9', '#1b5e20')).join('')}
+            ${t.doseToday.map(x => chip(dbEsc(x.n) + '번 · ' + dbEsc(x.sub), 'var(--stock-green-soft)', 'var(--approve)')).join('')}
         </div>`);
 
     if (t.doseSoon.length) rows.push(`
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
             <b style="min-width:96px;">곧 투약 시작</b>
-            ${t.doseSoon.map(x => chip(x.n + '번 D-' + x.d, '#fff3e0', '#e65100')).join('')}
+            ${t.doseSoon.map(x => chip(dbEsc(x.n) + '번 D-' + x.d, 'var(--stock-canary-soft)', '#7A5C00')).join('')}
         </div>`);
 
     if (t.evMr.length || t.evBp.length) rows.push(`
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
             <b style="min-width:96px;">오늘 예정</b>
-            ${t.evMr.length ? chip('MR ' + t.evMr.length + '마리 (' + [...new Set(t.evMr.map(e => e.tp))].join(',') + ')', '#ede7f6', '#4527a0') : ''}
-            ${t.evBp.length ? chip('BP ' + t.evBp.length + '마리 (' + [...new Set(t.evBp.map(e => e.tp))].join(',') + ')', '#fff8e1', '#e65100') : ''}
-            <span style="color:#888; font-size:0.8rem;">결찰일 + 설정 시점으로 계산한 값입니다</span>
+            ${t.evMr.length ? chip('MR ' + t.evMr.length + '마리 (' + [...new Set(t.evMr.map(e => dbEsc(e.tp)))].join(',') + ')', '#EAE7DD', 'var(--ink)') : ''}
+            ${t.evBp.length ? chip('BP ' + t.evBp.length + '마리 (' + [...new Set(t.evBp.map(e => dbEsc(e.tp)))].join(',') + ')', 'var(--stock-canary-soft)', '#7A5C00') : ''}
+            <span style="color:var(--ink-soft); font-size:0.8rem;">결찰일 + 설정 시점으로 계산한 값입니다</span>
         </div>`);
 
-    if (!rows.length) rows.push(`<div style="color:#888;">오늘 예정된 일이 없습니다.</div>`);
+    if (!rows.length) rows.push(`<div style="color:var(--ink-soft);">오늘 예정된 일이 없습니다.</div>`);
 
     return `
     <div class="card">
-        <h4 style="margin:0 0 12px 0; color:var(--navy);">오늘 할 일</h4>
-        <div style="display:flex; flex-direction:column; gap:10px;">${rows.join('')}</div>
+        <h4 style="margin:0 0 12px 0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">오늘 할 일</h4>
+        <div style="display:flex; flex-direction:column;">${rows.map(r =>
+            `<div style="padding:8px 0; border-bottom:1px solid var(--rule);">${r}</div>`).join('')}</div>
     </div>`;
 }
 
@@ -310,29 +336,29 @@ function dbPrepCard(p) {
     // 투약이 없는 날도 칸을 비워두지 않는다. 자리가 사라지면 '오늘은 없는' 것인지
     // '화면이 잘못된' 것인지 구분이 안 된다.
     if (!p) return `
-    <div class="card" style="background:#eef0f4; border:1px solid #dde1e8;">
-        <div style="font-size:0.78rem; color:#777;">사육실 가기 전 · 실험실에서 만들 원액</div>
-        <div style="font-size:1.05rem; font-weight:bold; color:#555; margin-top:5px;">
+    <div class="card" style="background:var(--paper); border:1px dashed #B9B4A5;">
+        <div style="font-size:0.72rem; color:var(--ink-soft); letter-spacing:0.1em; font-weight:700;">조제 지시 · 사육실 가기 전</div>
+        <div style="font-size:1.02rem; font-weight:bold; color:var(--ink-soft); margin-top:5px;">
             오늘 투약할 케이지가 없습니다 — 만들 원액 없음
         </div>
-        <div style="font-size:0.78rem; color:#999; margin-top:4px;">
+        <div style="font-size:0.78rem; color:var(--ink-soft); margin-top:4px;">
             투약 구간에 들어간 케이지가 생기면 여기에 만들 양이 뜹니다.
         </div>
     </div>`;
     return `
-    <div class="card" style="background:#0d47a1; color:#fff;">
-        <div style="font-size:0.78rem; opacity:0.85;">사육실 가기 전 · 실험실에서 만들 ${p.sub} 원액</div>
+    <div class="card" style="background:var(--ink); color:var(--paper); border-color:var(--ink);">
+        <div style="font-size:0.72rem; letter-spacing:0.14em; font-weight:700; opacity:0.8;">조제 지시 · 사육실 가기 전 · ${dbEsc(p.sub)} 원액</div>
         ${p.plans.map(x => `
-        <div style="display:flex; align-items:baseline; gap:10px; margin:7px 0;">
-            <span style="font-size:0.9rem; opacity:0.85; min-width:96px;">물 ${x.fill} mL 채우면</span>
-            <b style="font-size:1.2rem;">가루 ${(x.makeCc * p.stock / 1000).toFixed(1)} g</b>
-            <span style="font-size:0.85rem; opacity:0.9;">· 총 ${x.makeCc} mL 눈금까지</span>
+        <div style="display:flex; align-items:baseline; gap:10px; margin:8px 0; border-bottom:1px solid rgba(250,249,245,0.18); padding-bottom:8px;">
+            <span style="font-size:0.9rem; opacity:0.85; min-width:110px;">물 <span class="mono">${x.fill}</span> mL 채우면</span>
+            <b class="mono" style="font-size:1.3rem; color:var(--stock-canary); white-space:nowrap;">가루 ${(x.makeCc * p.stock / 1000).toFixed(1)} g</b>
+            <span style="font-size:0.85rem; opacity:0.9;">· 총 <span class="mono">${x.makeCc}</span> mL 눈금까지</span>
         </div>`).join('')}
         <div style="font-size:0.8rem; opacity:0.9; margin-top:6px;">
-            투약 케이지 ${p.known.length + p.unknown.length}개 · 원액 ${p.stock} mg/mL · 30% 여유 포함
-            ${p.unknown.length ? ` · ${p.unknown.length}개(${p.unknown.map(u => u.number + '번').join(', ')})는 기록이 없거나 최근 섭취가 비정상이라 평균으로 추정` : ''}
+            투약 케이지 <span class="mono">${p.known.length + p.unknown.length}</span>개 · 원액 <span class="mono">${p.stock}</span> mg/mL · 30% 여유 포함
+            ${p.unknown.length ? ` · ${p.unknown.length}개(${p.unknown.map(u => dbEsc(u.number) + '번').join(', ')})는 기록이 없거나 최근 섭취가 비정상이라 평균으로 추정` : ''}
         </div>
-        <div style="font-size:0.75rem; opacity:0.75; margin-top:5px;">
+        <div style="font-size:0.75rem; opacity:0.72; margin-top:5px;">
             오늘 물을 얼마나 채울지에 따라 골라서 만드세요. 주말·연휴 앞이면 많이 채웁니다.
             물에 녹이는 게 아니라 가루를 넣고 눈금까지 채웁니다.
         </div>
@@ -368,21 +394,21 @@ function dbAlerts() {
     Object.entries(anchorMap).forEach(([anchor, e]) => {
         if (!e.missing.length) return;
         const name = { ovx: 'OVX일', arrival: '반입일', ligation: '수술일' }[anchor] || anchor;
-        const subs = [...e.subs].join(' · ');
+        const subs = [...e.subs].map(dbEsc).join(' · ');
         const all = e.missing.length === e.total;
         out.push({
             level: all ? 'orange' : 'red',
             head: `${name}이 비어 있는 개체 ${e.missing.length}마리${all ? '' : ` (${e.total}마리 중)`}`,
             body: all
                 ? `아직 하지 않은 처치일 수 있습니다. 이미 했다면 「일괄 입력」에서 넣으세요 — 넣기 전까지 ${subs} 투약이 시작되지 않습니다.`
-                : `같은 조건인데 일부만 비어 있습니다. 입력 누락으로 보입니다 — ${subs} 투약이 시작되지 않습니다. ${e.missing.slice(0, 10).join(', ')}${e.missing.length > 10 ? ' 외' : ''}`
+                : `같은 조건인데 일부만 비어 있습니다. 입력 누락으로 보입니다 — ${subs} 투약이 시작되지 않습니다. ${e.missing.slice(0, 10).map(dbEsc).join(', ')}${e.missing.length > 10 ? ' 외' : ''}`
         });
     });
 
     // 빈 통 무게 미등록 자리
     const noTare = cages.filter(c => dbOccupants(c.id).length && !(Number(c.bottleTare) > 0));
     if (noTare.length) out.push({ level: 'orange', head: `빈 통 무게가 없는 자리 ${noTare.length}개`,
-        body: `코호트 기본값으로 계산되어 그 자리의 섭취량이 한 방향으로 어긋납니다. — ${noTare.map(c => c.number + '번').join(', ')}` });
+        body: `코호트 기본값으로 계산되어 그 자리의 섭취량이 한 방향으로 어긋납니다. — ${noTare.map(c => dbEsc(c.number) + '번').join(', ')}` });
 
     // 로스 상수 미설정 코호트
     dbData.active.forEach(c => {
@@ -402,7 +428,7 @@ function dbAlerts() {
         return !d || dbDiffDays(d, today) > DB_WATCH_DAYS;
     });
     if (stale.length) out.push({ level: 'orange', head: `체중 기록이 ${DB_WATCH_DAYS}일 넘게 없는 개체 ${stale.length}마리`,
-        body: stale.slice(0, 12).map(r => r.ratId).join(', ') + (stale.length > 12 ? ' 외' : '') });
+        body: stale.slice(0, 12).map(r => dbEsc(r.ratId)).join(', ') + (stale.length > 12 ? ' 외' : '') });
 
     // 오래 입력이 없는 케이지
     const lastFeed = {};
@@ -412,25 +438,25 @@ function dbAlerts() {
         .map(c => ({ c, d: lastFeed[String(c.id)] }))
         .filter(x => !x.d || dbDiffDays(x.d, today) > 4);
     if (idle.length) out.push({ level: 'orange', head: `4일 넘게 급여 기록이 없는 케이지 ${idle.length}개`,
-        body: idle.map(x => `${x.c.number}번(${x.d || '기록 없음'})`).join(', ') });
+        body: idle.map(x => `${dbEsc(x.c.number)}번(${x.d || '기록 없음'})`).join(', ') });
 
     return out;
 }
 
 function dbAlertCard(list) {
     if (!list.length) return `
-    <div class="card" style="background:#f1f8e9; border:1px solid #c5e1a5;">
-        <b style="color:#33691e;">짚어야 할 문제가 없습니다.</b>
+    <div class="card" style="background:var(--stock-green-soft); border:1px solid var(--approve);">
+        <b style="color:var(--approve);">짚어야 할 문제가 없습니다.</b>
     </div>`;
     return `
     <div class="card">
-        <h4 style="margin:0 0 10px 0; color:var(--navy);">짚어야 할 것</h4>
+        <h4 style="margin:0 0 10px 0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">짚어야 할 것</h4>
         ${list.map(a => `
-        <div style="padding:9px 11px; margin-bottom:7px; border-radius:6px;
-                    background:${a.level === 'red' ? '#ffebee' : '#fff8e1'};
-                    border:1px solid ${a.level === 'red' ? '#ffcdd2' : '#ffe082'};">
-            <b style="color:${a.level === 'red' ? '#b71c1c' : '#7a5c00'};">${a.head}</b>
-            <div style="font-size:0.83rem; color:#555; margin-top:3px;">${a.body}</div>
+        <div style="padding:9px 11px; margin-bottom:7px; border-radius:2px;
+                    background:${a.level === 'red' ? 'var(--stock-pink-soft)' : 'var(--stock-canary-soft)'};
+                    border:1px solid ${a.level === 'red' ? 'var(--stock-pink)' : '#E3C55C'};">
+            <b style="color:${a.level === 'red' ? 'var(--stamp)' : '#7a5c00'};">${a.head}</b>
+            <div style="font-size:0.83rem; color:${a.level === 'red' ? '#7C2A30' : '#6B571C'}; margin-top:3px;">${a.body}</div>
         </div>`).join('')}
     </div>`;
 }
@@ -462,20 +488,21 @@ function dbWatchList() {
 function dbWatchCard(list) {
     return `
     <div class="card">
-        <h4 style="margin:0 0 10px 0; color:var(--navy);">살펴볼 개체</h4>
-        ${!list.length ? `<div style="color:#888; font-size:0.88rem;">최근 ${DB_WATCH_DAYS}일 안에 체중이 ${DB_WATCH_DROP_PCT}% 넘게 빠진 개체가 없습니다.</div>`
-        : `<div style="font-size:0.8rem; color:#888; margin-bottom:8px;">최근 ${DB_WATCH_DAYS}일 최고치 대비 ${DB_WATCH_DROP_PCT}% 이상 감소</div>
+        <h4 style="margin:0 0 10px 0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">살펴볼 개체</h4>
+        ${!list.length ? `<div style="color:var(--ink-soft); font-size:0.88rem;">최근 ${DB_WATCH_DAYS}일 안에 체중이 ${DB_WATCH_DROP_PCT}% 넘게 빠진 개체가 없습니다.</div>`
+        : `<div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:8px;">최근 ${DB_WATCH_DAYS}일 최고치 대비 ${DB_WATCH_DROP_PCT}% 이상 감소</div>
         ${list.slice(0, 10).map(w => `
-        <div style="display:flex; justify-content:space-between; align-items:center;
-                    padding:7px 4px; border-bottom:1px solid #f0f0f0;">
-            <span style="cursor:pointer; color:var(--navy); font-weight:bold;"
-                  onclick="go('detail','${w.id}')">${w.id}</span>
-            <span style="font-size:0.86rem; color:#555;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;
+                    background:var(--stock-pink-soft); border:1px solid var(--stock-pink); border-radius:2px; padding:0 10px 0 4px;">
+            <button class="db-btn db-tap mono" data-db-action="detail" data-rat="${dbEsc(w.id)}"
+                    title="${dbEsc(w.id)} 상세보기"
+                    style="color:var(--ink); font-weight:600; padding:7px 6px; flex:1; text-decoration:underline; text-underline-offset:3px;">${dbEsc(w.id)}</button>
+            <span class="mono" style="font-size:0.86rem; color:#7C2A30; white-space:nowrap;">
                 ${w.from.toFixed(0)} → ${w.to.toFixed(0)} g
-                <b style="color:var(--red); margin-left:6px;">${w.pct.toFixed(1)}%</b>
+                <b style="color:var(--stamp); margin-left:6px;">${w.pct.toFixed(1)}%</b>
             </span>
         </div>`).join('')}
-        ${list.length > 10 ? `<div style="font-size:0.82rem; color:#888; margin-top:6px;">외 ${list.length - 10}마리</div>` : ''}`}
+        ${list.length > 10 ? `<div style="font-size:0.82rem; color:var(--ink-soft); margin-top:6px;">외 ${list.length - 10}마리</div>` : ''}`}
     </div>`;
 }
 
@@ -624,43 +651,51 @@ function dbNearStage(stages, row) {
 function dbIntakeCard(list) {
     if (!list.length) return `
     <div class="card">
-        <h4 style="margin:0 0 10px 0; color:var(--navy);">섭취량 점검</h4>
-        <div style="color:#888; font-size:0.88rem;">이상이 감지된 케이지가 없습니다.</div>
+        <h4 style="margin:0 0 10px 0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">섭취량 점검</h4>
+        <div style="color:var(--ink-soft); font-size:0.88rem;">이상이 감지된 케이지가 없습니다.</div>
     </div>`;
 
     // 케이지가 24개까지 늘어나므로 기본은 한 줄. 누르면 근거를 펼친다.
     const bad = list.filter(x => x.kind === 'bad').length;
     return `
     <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <h4 style="margin:0; color:var(--navy);">섭취량 점검</h4>
-            <span style="font-size:0.8rem; color:#888;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:3px double var(--ink); padding-bottom:6px;">
+            <h4 style="margin:0; color:var(--ink);">섭취량 점검</h4>
+            <span style="font-size:0.8rem; color:var(--ink-soft);">
                 ${list.length}건${bad ? ` · 확인 필요 ${bad}건` : ''} · 줄을 누르면 근거가 열립니다
             </span>
         </div>
         ${list.map((x, i) => `
-        <div onclick="dbToggleRow(${i})" style="cursor:pointer; padding:6px 4px; border-bottom:1px solid #f0f0f0;">
-            <div style="display:flex; gap:9px; align-items:baseline;">
-                <b style="color:${x.kind === 'bad' ? 'var(--red)' : '#e65100'}; min-width:44px;">${x.n}번</b>
-                <span style="font-size:0.85rem; color:#333; flex:1;">${x.msg}</span>
-                <span id="db-caret-${i}" style="color:#bbb; font-size:0.75rem;">▾</span>
-            </div>
-            <div id="db-detail-${i}" style="display:none; margin:5px 0 3px 53px;">
-                ${x.span ? `<div style="font-size:0.78rem; color:#888;">${x.span}</div>` : ''}
-                ${x.base ? `<div style="font-size:0.78rem; color:#888;">${x.base}</div>` : ''}
-                ${x.caution ? `<div style="font-size:0.78rem; color:#e65100; margin-top:3px;">${x.caution}</div>` : ''}
-            </div>
+        <div style="border-bottom:1px solid var(--rule);">
+            <button id="db-row-${i}" class="db-btn db-tap" data-db-action="toggle" data-idx="${i}"
+                    aria-expanded="false" aria-controls="db-detail-${i}"
+                    style="display:flex; gap:9px; align-items:baseline; width:100%; padding:8px 4px;">
+                <b class="mono" style="color:${x.kind === 'bad' ? 'var(--stamp)' : '#b45309'}; min-width:44px;">${dbEsc(x.n)}번</b>
+                <span style="font-size:0.85rem; color:var(--ink); flex:1;">${x.msg}</span>
+                <svg class="db-caret" aria-hidden="true" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M2 4l4 4 4-4" stroke="var(--ink-soft)" stroke-width="1.6" stroke-linecap="square"/>
+                </svg>
+            </button>
+            <div id="db-detail-${i}" class="db-fold"><div class="db-fold-inner" style="margin:0 0 8px 53px;">
+                ${x.span ? `<div style="font-size:0.78rem; color:var(--ink-soft);">${x.span}</div>` : ''}
+                ${x.base ? `<div style="font-size:0.78rem; color:var(--ink-soft);">${x.base}</div>` : ''}
+                ${x.caution ? `<div style="font-size:0.78rem; color:#b45309; margin-top:3px;">${x.caution}</div>` : ''}
+            </div></div>
         </div>`).join('')}
     </div>`;
 }
 
+// 원장 접기: display 토글 대신 접혔다 펼쳐지는 높이 전환 + 근거 수치 스탬프 등장
 function dbToggleRow(i) {
     const d = document.getElementById('db-detail-' + i);
-    const c = document.getElementById('db-caret-' + i);
+    const b = document.getElementById('db-row-' + i);
     if (!d) return;
-    const open = d.style.display !== 'none';
-    d.style.display = open ? 'none' : 'block';
-    if (c) c.textContent = open ? '▾' : '▴';
+    const open = d.classList.toggle('open');
+    if (b) b.setAttribute('aria-expanded', String(open));
+    if (open) {
+        const inner = d.querySelector('.db-fold-inner');
+        if (inner) { inner.classList.remove('stamp-in'); void inner.offsetWidth; inner.classList.add('stamp-in'); }
+    }
 }
 
 // ---------- ⑤-1 코호트가 어디까지 왔나 ----------
@@ -756,39 +791,41 @@ function dbCohortCard(list) {
     if (!list.length) return '';
     return `
     <div class="card">
-        <h4 style="margin:0 0 10px 0; color:var(--navy);">진행 중 코호트</h4>
-        <div style="font-size:0.8rem; color:#888; margin-bottom:9px;">
+        <h4 style="margin:0 0 10px 0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">진행 중 코호트</h4>
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:9px;">
             최근 2주 기록 기준 · 제외 구간(이상 · MR/BP · 재실변동 · 사망)은 빼고 평균냈습니다
         </div>
         ${list.map(c => `
-        <div style="padding:10px 0; border-top:1px solid #f0f0f0;">
+        <div style="padding:10px 0; border-top:1px solid var(--rule);">
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
-                <b style="font-size:1.02rem; color:var(--navy); cursor:pointer;"
-                   onclick="go('cohort')">Cohort ${c.cohort}</b>
-                <span style="font-size:0.85rem; color:#555;">생존 ${c.alive} / ${c.total}</span>
-                <span style="font-size:0.85rem; color:#666;">${c.podTxt}</span>
+                <button class="db-btn db-tap" data-db-action="go" data-view="cohort"
+                        title="코호트 분석 열기"
+                        style="font-size:1.02rem; color:var(--ink); font-weight:800; text-decoration:underline; text-underline-offset:3px;">Cohort ${dbEsc(c.cohort)}</button>
+                <span class="mono" style="font-size:0.85rem; color:var(--ink-soft);">생존 ${c.alive} / ${c.total}</span>
+                <span class="mono" style="font-size:0.85rem; color:var(--ink-soft);">${c.podTxt}</span>
             </div>
             ${c.stages.length ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
                 ${c.stages.map(st => {
-                    const col = st.state === 'on' ? ['#e4f2f4', '#00697a']
-                              : st.state === 'done' ? ['#eef1f6', '#3b4a63']
-                              : st.state === 'partial' ? ['#fff3e0', '#e65100']
-                              : ['#f6f7f9', '#999'];
-                    return `<span style="padding:4px 10px; background:${col[0]}; color:${col[1]};
-                        border-radius:12px; font-size:0.8rem;">
-                        <b>${st.label}</b> <span style="opacity:0.85;">${st.text}</span></span>`;
+                    // 원장 셀(스톡 색은 면 전용): 상태는 잉크 계열 글자색과 괘선 스타일로 구분
+                    const col = st.state === 'on' ? 'var(--ink-blue)'
+                              : st.state === 'done' ? 'var(--ink)'
+                              : st.state === 'partial' ? '#7A5C00'
+                              : 'var(--ink-soft)';
+                    return `<span style="padding:4px 10px; background:var(--sheet); color:${col};
+                        border:1px ${st.state === 'wait' ? 'dashed' : 'solid'} ${st.state === 'wait' ? 'var(--rule)' : 'var(--ink)'}; border-radius:2px; font-size:0.8rem;">
+                        <b>${dbEsc(st.label)}</b> <span class="mono" style="opacity:0.92;">${st.text}</span></span>`;
                 }).join('')}
             </div>` : ''}
             ${c.groups.length ? `<div style="display:flex; gap:8px; flex-wrap:wrap;">
                 ${c.groups.map(g => `
-                <div style="padding:6px 11px; background:#f7f8fa; border:1px solid #e6e9ef; border-radius:6px;">
-                    <b style="font-size:0.85rem; color:var(--navy);">${g.g}</b>
-                    <span style="font-size:0.83rem; color:#555; margin-left:7px;">
+                <div style="padding:6px 11px; background:var(--paper); border:1px solid var(--rule); border-radius:2px;">
+                    <b style="font-size:0.85rem; color:var(--ink);">${dbEsc(g.g)}</b>
+                    <span class="mono" style="font-size:0.83rem; color:var(--ink-soft); margin-left:7px;">
                         물 ${g.water !== null ? g.water.toFixed(1) : '-'} · 사료 ${g.food !== null ? g.food.toFixed(1) : '-'}
-                        <span style="color:#999;">/마리·일</span>
+                        <span style="color:var(--ink-soft); font-family:var(--font-ui);">/마리·일</span>
                     </span>
                 </div>`).join('')}
-            </div>` : `<div style="font-size:0.84rem; color:#999;">최근 급여 기록이 없습니다.</div>`}
+            </div>` : `<div style="font-size:0.84rem; color:var(--ink-soft);">최근 급여 기록이 없습니다.</div>`}
         </div>`).join('')}
     </div>`;
 }
@@ -799,19 +836,19 @@ function dbCohortCard(list) {
 // 파이프라인은 ai_assistant.js 그대로 — 데이터 조회 + 운영지침 근거 절차 답변.
 function dbAiCard() {
     if (typeof sendAiMessageFrom !== 'function') return '';
-    const chip = q => `<button onclick="dbAiAsk('${q}')"
-        style="border:1px solid #cfd8dc; background:#f7f9fa; border-radius:14px; padding:4px 11px;
-               font-size:0.78rem; color:#455a64; cursor:pointer;">${q}</button>`;
+    const chip = q => `<button class="db-tap" data-db-action="ask" data-q="${dbEsc(q)}"
+        style="border:1px solid var(--rule); background:var(--paper); border-radius:2px; padding:6px 12px;
+               font-size:0.78rem; color:var(--ink-soft); cursor:pointer;">${dbEsc(q)}</button>`;
     return `
     <div class="card">
-        <h4 style="margin:0 0 4px 0; color:var(--navy);">어시스턴트</h4>
-        <div style="font-size:0.78rem; color:#888; margin-bottom:9px;">
+        <h4 style="margin:0 0 4px 0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">어시스턴트</h4>
+        <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:9px;">
             데이터를 찾아주고, 절차는 운영지침에 근거해 답합니다. 투약량 계산은 하지 않습니다 — 그건 조제 지시 카드가 정확합니다.
         </div>
         <div id="db-ai-messages" style="max-height:260px; overflow-y:auto; margin-bottom:9px;"></div>
         <div style="display:flex; gap:7px;">
             <input type="text" id="db-ai-input" placeholder="예: 최근 체중 많이 빠진 애 / 사료 오늘 갈아야 해?"
-                   style="flex:1; height:40px; padding:0 11px; border:1px solid #ccc; border-radius:6px;"
+                   style="flex:1; height:40px; padding:0 11px; border:1px solid var(--rule); border-radius:2px;"
                    onkeypress="if(event.key==='Enter') sendAiMessageFrom('db-ai-input','db-ai-messages')">
             <button class="btn-small btn-blue" style="height:40px; padding:0 16px;"
                     onclick="sendAiMessageFrom('db-ai-input','db-ai-messages')">질문</button>

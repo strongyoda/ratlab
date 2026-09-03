@@ -241,7 +241,7 @@ async function loadDashboard() {
         const allTimepoints = Object.keys(globalPodMap).sort((a,b) => globalPodMap[a] - globalPodMap[b]);
 
         sortedCohorts.forEach(c => { 
-            let podTag = `<span style="font-size:0.8rem; color:#888;">수술전</span>`; 
+            let podTag = `<span style="font-size:0.8rem; color:#666;">수술전</span>`; 
             if(grp[c].surg) { 
                 const pod = daysBetween(grp[c].surg);
                 const w = Math.floor(pod/7), d=pod%7; 
@@ -450,32 +450,8 @@ async function loadDetailData(forceId = null) {
             ageAtSurgStr = calcAge > 0 ? calcAge.toFixed(1) : '-';
         }
 
-        let deathInfo = '';
-        if(rat.status === '사망') {
-            const displayCod = rat.cod || (rat.codFull ? extractLegacyCod(rat.codFull) : '미기록');
-            const displayAre = rat.are || '미기록';
-            
-            // 🌟 부원인(Secondary COD) 텍스트 생성 로직 추가 🌟
-            const displayCodSec = (rat.codSec && rat.codSec.length > 0) ? rat.codSec.join(', ') : '';
-            let codText = `COD: ${displayCod}`;
-            if (displayCodSec) {
-                codText += ` <span style="color:#e65100; font-size:0.8rem;">(부원인: ${displayCodSec})</span>`;
-            }
-
-            deathInfo = `<div class="info-item" style="grid-column: span 2; color:var(--red); border:1px solid var(--red); background:#ffebee;">
-                <b>사망: ${rat.deathDate||'날짜미상'} (POD ${pod})</b>
-                <button class="btn-red btn-small" style="float:right; padding:2px 8px;" onclick="openSimpleCod('${docId}', '${displayCod}', '${displayAre}', '${rat.deathDate||''}')">원인 기록</button>
-                <br><span style="font-size:0.9rem; color:#d32f2f; font-weight:bold;">${codText} / ARE: ${displayAre}</span>
-            </div>`;
-        }
-
-        let doseInfo = '';
-        if(rat.doseStartDate) {
-            const doseDay = daysBetween(rat.doseStartDate, baseStr);
-            doseInfo = `<div class="info-item"><b>Day ${doseDay}</b><br>투약 시작(${rat.doseStartDate})</div>`;
-        } else { doseInfo = `<div class="info-item" style="color:#ccc;">-</div>`; }
-
-        const mrOpts = ['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12','Death'];
+        // (옛 레이아웃의 deathInfo/doseInfo 블록은 화면에 삽입되지 않는 죽은 코드라 제거했다.
+        //  사망·투약 표시는 아래 infoBoxes 가 담당한다.)
 
         // --- 갤러리 날짜/시점 정렬 및 HTML 생성 ---
         let photos = rat.photos || [];
@@ -518,16 +494,16 @@ async function loadDetailData(forceId = null) {
 
             return `
             <div style="position:relative; width:130px; height:130px; border:1px solid #ddd; border-radius:8px; overflow:hidden; background:#000; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
-                <img src="${p.url}" draggable="false" style="width:100%; height:100%; object-fit:cover; cursor:pointer; user-select:none; -webkit-user-drag:none;" onclick="openPhotoViewer(${index})">
+                <img src="${p.url}" alt="${chEsc(fName || tpBadgeText || '개체 사진')}" draggable="false" style="width:100%; height:100%; object-fit:cover; cursor:pointer; user-select:none; -webkit-user-drag:none;" onclick="openPhotoViewer(${index})">
                 ${tpBadge}
                 ${rMarkHtml}
-                <button onclick="deletePhoto('${docId}', '${encodeURIComponent(JSON.stringify(p))}')" style="position:absolute; top:5px; right:5px; background:rgba(211,47,47,0.8); color:white; border:none; border-radius:50%; width:24px; height:24px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10;">✖</button>
+                <button data-del-photo="${index}" data-doc="${docId}" aria-label="사진 삭제" style="position:absolute; top:5px; right:5px; background:rgba(211,47,47,0.85); color:white; border:none; border-radius:50%; width:28px; height:28px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:10;">✖</button>
                 <div style="position:absolute; bottom:0; left:0; width:100%; background:rgba(0,0,0,0.7); color:white; font-size:0.75rem; padding:4px; text-align:center; box-sizing:border-box; z-index:5;">
-                    <div style="color:#aed581; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px;">${fName}</div>
-                    <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${p.memo||'메모없음'}</div>
+                    <div style="color:#aed581; font-weight:bold; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:2px;">${chEsc(fName)}</div>
+                    <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${chEsc(p.memo||'메모없음')}</div>
                 </div>
             </div>`;
-        }).join('') : '<div style="color:#888; font-size:0.85rem; padding:10px;">등록된 사진이 없습니다.</div>';
+        }).join('') : '<div style="color:#666; font-size:0.85rem; padding:10px;">등록된 사진이 없습니다.</div>';
 
         // --- 화면 UI 조합 ---
         // --- 화면 UI 조합 ---
@@ -535,8 +511,8 @@ async function loadDetailData(forceId = null) {
         const currentGroupNum = rat.group ? rat.group.replace('G', '') : '1';
         // 1. 정보 박스 구성 (3등분 로직)
         const infoBoxes = [];
-        infoBoxes.push(`<div class="info-row-item"><b>D+${dPlus}</b><br><span style="font-size:0.85rem; color:#666;">반입 후</span><br><span style="font-size:0.8rem; color:#888;">${rat.arrivalDate||'-'}</span></div>`);
-        infoBoxes.push(`<div class="info-row-item"><b>POD ${pod}</b><br><span style="font-size:0.85rem; color:#666;">수술 후</span><br><span style="font-size:0.8rem; color:#888;">약 ${ageAtSurgStr}주령</span></div>`);
+        infoBoxes.push(`<div class="info-row-item"><b>D+${dPlus}</b><br><span style="font-size:0.85rem; color:#666;">반입 후</span><br><span style="font-size:0.8rem; color:#666;">${rat.arrivalDate||'-'}</span></div>`);
+        infoBoxes.push(`<div class="info-row-item"><b>POD ${pod}</b><br><span style="font-size:0.85rem; color:#666;">수술 후</span><br><span style="font-size:0.8rem; color:#666;">약 ${ageAtSurgStr}주령</span></div>`);
         
         if (rat.status === '사망') {
             const deathPod = rat.surgeryDate && rat.deathDate ? Math.floor((new Date(rat.deathDate) - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
@@ -563,15 +539,15 @@ async function loadDetailData(forceId = null) {
                     <div style="display:flex; align-items:center; gap:10px;">
                         <h3 style="margin:0; font-size:1.5rem; color:var(--navy);">${id}</h3>
                         ${typeof batchChipHtml === 'function' ? batchChipHtml(rat, null, { size: '0.8rem' }) : ''}
-                        <select onchange="changeRatGroup('${docId}', '${id}', this.value)"
-                                title="그룹 변경 (선택 시 모든 연동 데이터가 새 ID로 자동 이동)"
+                        <select data-grp-change data-doc="${docId}" data-rat="${chEsc(id)}"
+                                title="그룹 변경 (선택 시 모든 연동 데이터가 새 ID로 자동 이동)" aria-label="그룹 변경"
                                 style="background:#e3f2fd; color:#1565c0; border:1px solid #bbdefb; border-radius:6px; padding:2px 8px; font-weight:bold; font-size:0.85rem; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none; -moz-appearance:none; padding-right:22px; background-image:url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'10\\' viewBox=\\'0 0 24 24\\' fill=\\'%231565c0\\'><path d=\\'M7 10l5 5 5-5z\\'/></svg>'); background-repeat:no-repeat; background-position:right 6px center;">
                             ${[0,1,2,3,4,5].map(n => `<option value="${n}" ${currentGroupNum == n ? 'selected' : ''}>G${n}</option>`).join('')}
                         </select>
                     </div>
-                    <button class="btn-small" onclick="openSimpleCod('${docId}', '${rat.cod || ''}', '${rat.are || ''}', '${rat.deathDate || getTodayStr()}')" 
+                    <button class="btn-small" data-simple-cod data-doc="${docId}" data-cod="${chEsc(rat.cod || '')}" data-are="${chEsc(rat.are || '')}" data-death="${rat.deathDate || getTodayStr()}"
                             style="background:${rat.status==='생존'?'var(--green)':'var(--red)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="클릭하여 사망 정보 수정">
-                        <i class="material-icons" style="font-size:18px;">${rat.status==='생존'?'check_circle':'edit'}</i> ${rat.status === '생존' ? '생존' : '사망 (수정)'}
+                        <i class="material-icons" aria-hidden="true" style="font-size:18px;">${rat.status==='생존'?'check_circle':'edit'}</i> ${rat.status === '생존' ? '생존' : '사망 (수정)'}
                     </button>
                 </div>
                 
@@ -581,7 +557,7 @@ async function loadDetailData(forceId = null) {
                     <h4 style="margin:0 0 8px 0; font-size:0.9rem; color:var(--navy);">
                         <i class="material-icons" style="font-size:18px; vertical-align:middle;">grid_view</i> 케이지 · 섭취량
                     </h4>
-                    <div id="rd-cage-info"><span style="font-size:0.85rem; color:#888;">불러오는 중...</span></div>
+                    <div id="rd-cage-info"><span style="font-size:0.85rem; color:#666;">불러오는 중...</span></div>
                 </div>
 
                 <div style="display:flex; gap:20px; align-items: stretch; flex-wrap:wrap;">
@@ -591,15 +567,15 @@ async function loadDetailData(forceId = null) {
                         <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee; display:flex; flex-wrap:wrap; gap:10px;">
                             <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">반입주령</span>
-                                <select id="arr-age" onchange="rdSet('arrivalAge', this.value)" style="border:none; background:none; font-weight:bold; outline:none;">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}</select>
+                                <select id="arr-age" aria-label="반입주령" onchange="rdSet('arrivalAge', this.value)" style="border:none; background:none; font-weight:bold; outline:none;">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}</select>
                             </div>
                             <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">OVX일자</span>
-                                <input type="date" id="ovx-d" value="${rat.ovxDate||''}" onchange="rdSet('ovxDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
+                                <input type="date" id="ovx-d" value="${rat.ovxDate||''}" aria-label="OVX 일자" onchange="rdSet('ovxDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
                             </div>
                             <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">투약시작</span>
-                                <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" onchange="rdSet('doseStartDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
+                                <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" aria-label="투약 시작일" onchange="rdSet('doseStartDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
                             </div>
                             
                             <div style="width:100%; display:flex; align-items:center; gap:15px; background:#fff3e0; padding:10px 12px; border-radius:8px; border:1px solid #ffcc80; flex-wrap:wrap;">
@@ -610,25 +586,25 @@ async function loadDetailData(forceId = null) {
                                 </label>
                                 <div id="surg-date-wrapper" style="display:${rat.isNonInduction ? 'none' : 'flex'}; align-items:center; gap:6px;">
                                     <span style="font-size:0.85rem; font-weight:bold;">수술일자</span>
-                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" onchange="rdSet('surgeryDate', this.value)" style="border:1px solid #ccc; border-radius:4px; padding:4px;">
+                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" aria-label="수술 일자" onchange="rdSet('surgeryDate', this.value)" style="border:1px solid #ccc; border-radius:4px; padding:4px;">
                                 </div>
                                 <div id="sham-ref-wrapper" style="display:${rat.isNonInduction ? 'flex' : 'none'}; align-items:center; gap:6px;">
                                     <span style="font-size:0.85rem; font-weight:bold; color:var(--red);">비교 기준 주령</span>
-                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" onchange="rdSet('refAge', this.value)" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
+                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" aria-label="비교 기준 주령" onchange="rdSet('refAge', this.value)" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
                                 </div>
                                 
                             </div>
 
                             <div style="width:100%; display:flex; align-items:center; gap:6px; background:#e3f2fd; padding:10px 12px; border-radius:8px; border:1px solid #bbdefb; flex-wrap:wrap;">
                                 <span style="font-size:0.85rem; font-weight:bold; color:var(--navy);">얻은 샘플</span>
-                                <select id="sample-tp" onchange="rdSet('sampleType', this.value)" style="padding:4px; border-radius:4px; border:1px solid #ccc;">
+                                <select id="sample-tp" aria-label="샘플 종류" onchange="rdSet('sampleType', this.value)" style="padding:4px; border-radius:4px; border:1px solid #ccc;">
                                     <option value="">-</option>
                                     <option value="Histology" ${rat.sampleType==='Histology'?'selected':''}>Histology</option>
                                     <option value="Cast" ${rat.sampleType==='Cast'?'selected':''}>Cast</option>
                                     <option value="Fail" ${rat.sampleType==='Fail'?'selected':''}>못함</option>
                                 </select>
-                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" onchange="rdSet('sampleDate', this.value)" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
-                                <input type="text" id="sample-memo" value="${rat.sampleMemo||''}" placeholder="메모" oninput="rdSet('sampleMemo', this.value)" style="flex:1; min-width:120px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" aria-label="샘플 채취일" onchange="rdSet('sampleDate', this.value)" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                <input type="text" id="sample-memo" value="${chEsc(rat.sampleMemo||'')}" placeholder="메모" aria-label="샘플 메모" oninput="rdSet('sampleMemo', this.value)" style="flex:1; min-width:120px; padding:4px; border:1px solid #ccc; border-radius:4px;">
                                 
                             </div>
                         </div>
@@ -639,7 +615,7 @@ async function loadDetailData(forceId = null) {
                             <div id="mr-list-area" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
                                 ${(() => {
                                     const mrArr = rat.mrDates || [];
-                                    if(mrArr.length === 0) return '<span style="font-size:0.85rem; color:#888;">기록된 MR이 없습니다.</span>';
+                                    if(mrArr.length === 0) return '<span style="font-size:0.85rem; color:#666;">기록된 MR이 없습니다.</span>';
                                     
                                     const tpWeightMap = { 'D00':-1, 'D0':0, 'D2':2, 'W1':7, 'W2':14, 'W3':21, 'W4':28, 'W5':35, 'W6':42, 'W7':49, 'W8':56, 'W12':84, 'Death':9999 };
                                     
@@ -653,14 +629,14 @@ async function loadDetailData(forceId = null) {
                                         .map(mr => {
                                             let infStr = '';
                                             if(mr.infarctSize && mr.infarctSize !== 'None') {
-                                                infStr = `<span style="color:#e65100; font-weight:bold; margin-left:4px; cursor:pointer;" title="수정하기" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, '${mr.infarctSize}', '${mr.infarctLoc||'-'}')">[${mr.infarctSize}(${mr.infarctLoc||'-'})]</span>`;
+                                                infStr = `<button class="db-btn" data-infarct data-doc="${docId}" data-idx="${mr.originalIdx}" data-size="${mr.infarctSize}" data-loc="${mr.infarctLoc||'-'}" title="수정하기" aria-label="${mr.timepoint} Infarction 기록 수정" style="color:#b45309; font-weight:bold; margin-left:4px; padding:2px 4px;">[${mr.infarctSize}(${mr.infarctLoc||'-'})]</button>`;
                                             } else {
-                                                infStr = `<span style="color:#2196F3; font-weight:bold; font-size:1.1rem; margin-left:4px; cursor:pointer;" title="Infarct 기록 추가" onclick="openInfarctModal('${docId}', ${mr.originalIdx}, 'None', '-')">[+]</span>`;
+                                                infStr = `<button class="db-btn" data-infarct data-doc="${docId}" data-idx="${mr.originalIdx}" data-size="None" data-loc="-" title="Infarct 기록 추가" aria-label="${mr.timepoint} Infarction 기록 추가" style="color:#1565c0; font-weight:bold; font-size:1.1rem; margin-left:4px; padding:2px 6px;">[+]</button>`;
                                             }
                                             return `
                                             <span style="background:#fff; border:1px solid #ccc; padding:4px 8px; border-radius:6px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
                                                 <b>${mr.timepoint}</b>: ${mr.date} ${infStr}
-                                                <i class="material-icons" style="font-size:1.2rem; color:var(--red); cursor:pointer;" onclick="removeMrDate('${docId}', ${mr.originalIdx})">cancel</i>
+                                                <button class="db-btn" data-mr-del="${mr.originalIdx}" data-doc="${docId}" aria-label="${mr.timepoint} MR 기록 삭제" style="display:inline-flex; padding:4px;"><i class="material-icons" aria-hidden="true" style="font-size:1.2rem; color:var(--red);">cancel</i></button>
                                             </span>
                                             `;
                                         }).join('');
@@ -676,7 +652,7 @@ async function loadDetailData(forceId = null) {
                                         ${['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W12','Death'].map(opt => `<option value="${opt}">${opt}</option>`).join('')}
                                     </select>`
                                 }
-                                <input type="date" id="new-mr-d" value="${getTodayStr()}" style="width:130px; padding:6px; font-size:0.85rem; border-radius:6px; border:1px solid #ccc;">
+                                <input type="date" id="new-mr-d" value="${getTodayStr()}" aria-label="새 MR 촬영일" style="width:130px; padding:6px; font-size:0.85rem; border-radius:6px; border:1px solid #ccc;">
                                 <button class="btn-small btn-green" onclick="addMrDate('${docId}')" style="padding:6px 12px; font-size:0.85rem;">+ 새 MR 추가</button>
                             </div>
                         </div>
@@ -687,7 +663,7 @@ async function loadDetailData(forceId = null) {
                             <span style="font-weight:bold; color:#f57f17; display:flex; align-items:center; gap:5px;"><i class="material-icons" style="font-size:18px;">note</i> 개체 자유 메모</span>
                             
                         </div>
-                        <textarea id="general-memo-area" oninput="rdSet('generalMemo', this.value)" style="flex:1; width:100%; border:1px solid #ffe082; border-radius:8px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${rat.generalMemo || ''}</textarea>
+                        <textarea id="general-memo-area" aria-label="개체 자유 메모" oninput="rdSet('generalMemo', this.value)" style="flex:1; width:100%; border:1px solid #ffe082; border-radius:8px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${chEsc(rat.generalMemo || '')}</textarea>
                     </div>
                 </div>
             </div>
@@ -812,7 +788,7 @@ async function loadDetailData(forceId = null) {
         });
         tableHtml += `</table>`;
         document.getElementById('daily-detail-table').innerHTML = tableHtml;
-        if(dVal.length) new Chart(document.getElementById('dailyChart'), { 
+        if(dVal.length) chMakeChart('dailyChart', {
             type:'line', data:{ labels: dLab, datasets:[{ label:'Score', data: dVal, borderColor:'#1a237e', pointStyle: pStyles, pointRadius: pSizes, pointBackgroundColor: pColors, pointBorderColor: pColors }] }, 
             options:{ maintainAspectRatio:false, scales: { y: { min: 0, max: 17, ticks: { stepSize: 1 } } }, plugins:{ tooltip:{ callbacks:{ footer: (ti) => { const n = dNotes[ti[0].dataIndex]; if(!n) return ''; return ['📝 메모:', ...n.match(/.{1,20}/g)]; } } } } } 
         });
@@ -923,7 +899,7 @@ async function loadDetailData(forceId = null) {
                 }
             };
 
-            new Chart(document.getElementById(`indiv-timeline-${docId}`), {
+            chMakeChart(`indiv-timeline-${docId}`, {
                 type: 'line',
                 data: {
                     datasets: [{
@@ -1019,6 +995,74 @@ function getExpandedSelectedGroups(containerId) {
 }
 
 // 4. 코호트 분석 탭
+// 개체 ID·메모 같은 기록값이 HTML 속성·본문을 깨뜨리지 않게 한다
+const chEsc = s => String(s ?? '').replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// 개체별로 measurements 쿼리를 하나씩 날리면 코호트 40마리에 왕복이 40번이다.
+// 'in' 조건으로 10마리씩 묶는다 — 읽는 문서 수(과금)는 같고,
+// 왕복 횟수와 기록 없는 개체의 최소 1읽기 과금만 줄어든다.
+async function chFetchMeasByRatIds(ratIds) {
+    const byRat = {};
+    ratIds.forEach(id => { byRat[id] = []; });
+    const jobs = [];
+    for (let i = 0; i < ratIds.length; i += 10)
+        jobs.push(db.collection('measurements').where('ratId', 'in', ratIds.slice(i, i + 10)).get());
+    (await Promise.all(jobs)).forEach(snap => snap.forEach(doc => {
+        const d = doc.data();
+        if (byRat[d.ratId]) byRat[d.ratId].push(d);
+    }));
+    return byRat;
+}
+
+// '분석 시작'을 다시 누르면 innerHTML로 캔버스만 갈리고 이전 Chart 인스턴스는
+// 떼어진 캔버스를 문 채 남는다. 같은 id로 다시 만들 때 이전 것을 정리한다.
+window.__chCharts = window.__chCharts || {};
+function chMakeChart(id, cfg) {
+    const old = window.__chCharts[id];
+    if (old) { try { old.destroy(); } catch (e) {} }
+    const c = new Chart(document.getElementById(id), cfg);
+    window.__chCharts[id] = c;
+    return c;
+}
+
+// 개체 ID가 담긴 클릭·체크를 인라인 onclick 대신 문서 위임으로 받는다.
+// (따옴표 든 ID에 죽지 않고, 버튼이라 키보드로도 열린다)
+if (!window.__chDelegationBound) {
+    window.__chDelegationBound = true;
+    document.addEventListener('click', e => {
+        const el = e.target.closest('[data-rat-modal]');
+        if (el && typeof openRatModal === 'function') { openRatModal(el.dataset.ratModal); return; }
+        // 랫드 상세: 사망 정보 수정 (COD는 직접 입력 가능한 자유 텍스트라 인라인 onclick 에 못 넣는다)
+        const cod = e.target.closest('[data-simple-cod]');
+        if (cod) { openSimpleCod(cod.dataset.doc, cod.dataset.cod, cod.dataset.are, cod.dataset.death); return; }
+        // 랫드 상세: MR 기록 삭제 / Infarction 기록
+        const mrDel = e.target.closest('[data-mr-del]');
+        if (mrDel) { removeMrDate(mrDel.dataset.doc, Number(mrDel.dataset.mrDel)); return; }
+        const inf = e.target.closest('[data-infarct]');
+        if (inf) { openInfarctModal(inf.dataset.doc, Number(inf.dataset.idx), inf.dataset.size, inf.dataset.loc); return; }
+        // 랫드 상세: 사진 삭제 — 메모의 아포스트로피가 인라인 onclick 을 깨뜨리던 것을 위임으로 해결
+        const del = e.target.closest('[data-del-photo]');
+        if (del && window.currentRatPhotos) {
+            const p = window.currentRatPhotos[Number(del.dataset.delPhoto)];
+            if (p) deletePhoto(del.dataset.doc, encodeURIComponent(JSON.stringify(p)));
+        }
+    });
+    document.addEventListener('change', e => {
+        const el = e.target.closest('[data-ch-rat-vis]');
+        if (el) { toggleRatVisibility(el.dataset.chart, el.dataset.chRatVis, el.checked); return; }
+        const grp = e.target.closest('[data-grp-change]');
+        if (grp) changeRatGroup(grp.dataset.doc, grp.dataset.rat, grp.value);
+    });
+    // 샘플 상세 모달: ESC로 닫기 (배경 클릭 닫기는 모달 자체에 있음)
+    document.addEventListener('keydown', e => {
+        if (e.key !== 'Escape') return;
+        document.querySelectorAll('[id^="sample-modal-"]').forEach(m => {
+            if (m.style.display === 'flex') m.style.display = 'none';
+        });
+    });
+}
+
 async function loadCohortDetail() {
     // 정의된 변수 이름을 selectedGroups로 통일합니다.
     const selectedGroups = getExpandedSelectedGroups('co-check-list');
@@ -1080,16 +1124,14 @@ async function analyzeTrend() {
 
         if (allRats.length === 0) { container.innerHTML = "선택한 그룹에 데이터가 없습니다."; return; }
 
-        const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
-        const measSnaps = await Promise.all(measPromises);
+        const measByRat = await chFetchMeasByRatIds(allRatIds);
 
         let globalMaxSbp = 0, globalMaxWt = 0, globalMaxPod = 0;
         let globalMinSbp = 9999, globalMinWt = 9999; 
         const stdPodMap = globalPodMap, tempColumns = [], labelSet = new Set();
         const measMap = {}; let globalMaxAge = 0, globalMinAge = 999;
 
-        measSnaps.forEach((snap, idx) => {
-            const rid = allRatIds[idx];
+        allRatIds.forEach(rid => {
             const rInfo = allRats.find(r => r.ratId === rid);
             if(rInfo) {
                 const arrAge = rInfo.arrivalAge ? Number(rInfo.arrivalAge) : 6;
@@ -1102,8 +1144,7 @@ async function analyzeTrend() {
             const surgDate = surgeryMap[rid];
             if(!measMap[rid]) measMap[rid] = {};
 
-            snap.forEach(doc => {
-                const d = doc.data();
+            (measByRat[rid] || []).forEach(d => {
                 if(d.timepoint) measMap[rid][d.timepoint] = d.weight;
                 measMap[rid][d.date] = d.weight; 
                 if(d.sbp) { const s = Number(d.sbp); if(s > globalMaxSbp) globalMaxSbp = s; if(s < globalMinSbp) globalMinSbp = s; }
@@ -1238,14 +1279,11 @@ async function loadGroupComparison() {
             });
         });
 
-        const measPromises = allRatIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
-        const measSnaps = await Promise.all(measPromises);
+        const measByRat = await chFetchMeasByRatIds(allRatIds);
 
         let globalMaxX = 0; const unionStandardTicks = new Set();
-        measSnaps.forEach((snap, i) => {
-            const r = allRatsObj[i];
-            snap.forEach(d => {
-                const v = d.data();
+        allRatsObj.forEach(r => {
+            (measByRat[r.ratId] || []).forEach(v => {
                 let pod = null;
                 if (v.timepoint === 'Arrival') pod = (r.arrivalDate && r.surgeryDate) ? Math.floor((new Date(r.arrivalDate) - new Date(r.surgeryDate)) / 86400000) : null;
                 else if (globalPodMap.hasOwnProperty(v.timepoint)) pod = globalPodMap[v.timepoint];
@@ -1316,8 +1354,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         rats.sort((a, b) => a.ratId.localeCompare(b.ratId));
         const ratIds = rats.map(r => r.ratId);
 
-        const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
-        const snapshots = await Promise.all(promises);
+        const measByRat = await chFetchMeasByRatIds(ratIds);
 
         // [하이브리드] 수술 후 = 실제 POD(수술일 기준), 수술 전 = 반입→수술 구간을 '전체 평균 간격(avgGap)'에 비율 정규화.
         // → Arrival(반입)은 모든 쥐가 x=-avgGap 한 점에, D0(수술)는 모두 x=0에 정렬됨. 개체별 간격 차이는 pre-op 구간에서 미세 변형으로만 흡수.
@@ -1333,12 +1370,12 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const scatterDataWt = [], scatterDataSbp = []; const existTicksWt = new Set(), existTicksSbp = new Set(); const tickLabelMap = {};
         let maxDataPod = 0, minWt = 9999, maxWt = 0, minSbp = 9999, maxSbp = 0;
 
-        snapshots.forEach((snap, idx) => {
-            const r = rats[idx], rid = r.ratId;
+        rats.forEach(r => {
+            const rid = r.ratId;
             const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6; const arrDt = r.arrivalDate ? new Date(r.arrivalDate) : null;
 
-            snap.forEach(doc => {
-                const d = doc.data(); let labelText = d.timepoint; if (!labelText || labelText === 'Manual') labelText = d.date;
+            (measByRat[rid] || []).forEach(d => {
+                let labelText = d.timepoint; if (!labelText || labelText === 'Manual') labelText = d.date;
                 
                 let xVal = null;
                 if (window.isAgeMode) {
@@ -1400,7 +1437,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             if(r.sampleType === 'Histology') smpHist++; else if(r.sampleType === 'Cast') smpCast++; else if(r.sampleType === 'Fail') smpFail++;
             let mrDiffStr = '-';
             if(r.sampleDate && r.mrDates && r.mrDates.length > 0) { const validMr = r.mrDates.filter(m => m.date).sort((a,b) => new Date(a.date) - new Date(b.date)); if(validMr.length > 0) { const diff = Math.round((new Date(r.sampleDate) - new Date(validMr[validMr.length - 1].date)) / 86400000); mrDiffStr = diff >= 0 ? `+${diff}` : `${diff}`; } }
-            sampleModalRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId} <span style="font-size:0.75rem; font-weight:normal; text-decoration:none; color:${r.status==='생존'?'green':'red'};">(${r.status})</span></td><td style="padding:8px; text-align:center;"><span style="color:${r.sampleType==='Fail'?'red':'var(--navy)'}; font-weight:bold;">${r.sampleType||'-'}</span></td><td style="padding:8px; text-align:center;">${r.sampleDate||'-'}</td><td style="padding:8px; text-align:center; color:#e65100; font-weight:bold;">${mrDiffStr !== '-' ? mrDiffStr + '일' : '-'}</td><td style="padding:8px;">${r.sampleMemo||''}</td></tr>`;
+            sampleModalRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center;"><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button> <span style="font-size:0.75rem; color:${r.status==='생존'?'green':'var(--red)'};">(${r.status})</span></td><td style="padding:8px; text-align:center;"><span style="color:${r.sampleType==='Fail'?'var(--red)':'var(--navy)'}; font-weight:bold;">${chEsc(r.sampleType||'-')}</span></td><td style="padding:8px; text-align:center;">${r.sampleDate||'-'}</td><td style="padding:8px; text-align:center; color:#b45309; font-weight:bold;">${mrDiffStr !== '-' ? mrDiffStr + '일' : '-'}</td><td style="padding:8px;">${chEsc(r.sampleMemo||'')}</td></tr>`;
 
             if(r.arrivalDate && r.surgeryDate) { const diff = new Date(r.surgeryDate) - new Date(r.arrivalDate); surgAgeSum += (r.arrivalAge ? Number(r.arrivalAge) : 6) + (diff / 604800000); surgAgeCnt++; }
             if(r.surgeryDate && r.mrDates) {
@@ -1421,7 +1458,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 
         const avgSurgAge = surgAgeCnt > 0 ? (surgAgeSum/surgAgeCnt).toFixed(1) : '-';
         const mrKeys = Object.keys(mrStats).sort((a,b) => podDaysMap[a] - podDaysMap[b]);
-        const mrHtml = mrKeys.length === 0 ? '<span style="color:#888;">데이터 없음</span>' : mrKeys.map(k => {
+        const mrHtml = mrKeys.length === 0 ? '<span style="color:#666;">데이터 없음</span>' : mrKeys.map(k => {
             const stat = mrStats[k]; let devStr = '-'; if(stat.cnt > 0) { const avgDev = (stat.sum / stat.cnt).toFixed(1); devStr = avgDev > 0 ? `+${avgDev}` : avgDev; }
             let ageStr = '-'; let printCnt = stat.cnt > 0 ? stat.cnt : stat.ageCnt; if(stat.ageCnt > 0) ageStr = (stat.sumAge / stat.ageCnt).toFixed(1);
             if (k === 'D00' || k === 'D0') return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
@@ -1453,15 +1490,15 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                     if (r.areList && Array.isArray(r.areList)) { r.areList.forEach(loc => { let locStr = loc.side; if (loc.side !== 'BA' && loc.art && loc.art !== '-') locStr += ' ' + loc.art; if (!areLocStats[locStr]) areLocStats[locStr] = { micro: 0, macro: 0, unk: 0 }; if (loc.type === 'micro') areLocStats[locStr].micro++; else if (loc.type === 'macro') areLocStats[locStr].macro++; else areLocStats[locStr].unk++; }); }
                 } else if (r.are === 'X') { areX++; }
             }
-            if (hasAre) { areDetailRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td style="padding:8px; text-align:center;">${myMicro}</td><td style="padding:8px; text-align:center;">${myMacro}</td><td style="padding:8px; text-align:center;">${myUnk}</td><td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${myMicro + myMacro + myUnk}개</td></tr>`; }
+            if (hasAre) { areDetailRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center;"><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td style="padding:8px; text-align:center;">${myMicro}</td><td style="padding:8px; text-align:center;">${myMacro}</td><td style="padding:8px; text-align:center;">${myUnk}</td><td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${myMicro + myMacro + myUnk}개</td></tr>`; }
         });
         
         const totalN = rats.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`; 
 
         let finalHtml = headerHtml;
-        finalHtml += `<div id="sample-modal-${uniqueSuffix}" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:white; padding:20px; border-radius:12px; width:95%; max-width:700px; max-height:85vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,0.3);"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--navy);">🔬 샘플 획득 상세 내역 (총 ${rats.length}마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="background:#f5f5f5; text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:white; padding:20px; border-radius:12px; width:95%; max-width:700px; max-height:85vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,0.3);"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--navy);">🔬 샘플 획득 상세 내역 (총 ${rats.length}마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="background:#f5f5f5; text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
         finalHtml += `<div class="card" style="border-left:5px solid #00c853;"><h4 style="margin-top:0; color:var(--navy);">📋 기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span style="color:var(--navy); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:#fff3e0; border:1px solid #ffcc80;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:#f8f9fa; padding:10px; border-radius:6px; border:1px solid #eee;"><b style="font-size:0.9rem; color:var(--navy);">📷 MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
-        finalHtml += `<div class="card" style="border-left:5px solid #9c27b0;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4><div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;"><b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateValid}%; background:#F57C00; height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#777;">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div class="card" style="border-left:5px solid #9c27b0;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4><div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;"><b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateValid}%; background:#F57C00; height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#666;">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
 
         const infSizeChartId = `infSizeChart${uniqueSuffix}`; const infLocChartId = `infLocChart${uniqueSuffix}`;
         finalHtml += `<div class="card" style="border-left:5px solid #ff9800;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">⚡ 시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:#666; margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
@@ -1475,7 +1512,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         if (deadRats.length > 0) {
             deadRats.sort((a, b) => { const cA = Number(a.cohort) || 0; const cB = Number(b.cohort) || 0; if (cA !== cB) return cA - cB; return a.ratId.localeCompare(b.ratId); });
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
-            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#e65100; font-weight:bold;">(+${r.codSec.join(', ')})</span>` : ''; survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}${secCodStr}</span></td></tr>`; });
+            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:#666">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
             survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
             
             // 🔥 체크박스 UI 삽입
@@ -1498,7 +1535,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${bpChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${bpChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
         bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
@@ -1506,7 +1543,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${wtChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${wtChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
         wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
@@ -1516,17 +1553,17 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const areLocLabels = Object.keys(areLocStats).sort();
         if(areLocLabels.length > 0) {
             const areLocMicro = areLocLabels.map(l => areLocStats[l].micro); const areLocMacro = areLocLabels.map(l => areLocStats[l].macro); const areLocUnk = areLocLabels.map(l => areLocStats[l].unk);
-            new Chart(document.getElementById(areLocChartId), { type: 'bar', data: { labels: areLocLabels, datasets: [ { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 }, ...(areMaxY ? { max: areMaxY } : {}) } } } });
-        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#999; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
+            chMakeChart(areLocChartId, { type: 'bar', data: { labels: areLocLabels, datasets: [ { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 }, ...(areMaxY ? { max: areMaxY } : {}) } } } });
+        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#6f6f6f; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
 
         const infLabels = infTps.map(tp => { if(infStats[tp].hasData === 0) return `${tp}\n(No Data)`; return `${tp}\n(n=${infStats[tp].validN})`; });
         const sizeDataSmall = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].small / infStats[tp].validN * 100).toFixed(1) : 0);
         const sizeDataLarge = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].large / infStats[tp].validN * 100).toFixed(1) : 0);
-        new Chart(document.getElementById(infSizeChartId), { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'Large', data: sizeDataLarge, backgroundColor: '#d32f2f' }, { label: 'Small', data: sizeDataSmall, backgroundColor: '#ff9800' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, max: 100, title: { display: true, text: '발생률 (%)' } } }, plugins: { tooltip: { callbacks: { label: function(ctx) { const tp = infTps[ctx.dataIndex]; const count = ctx.datasetIndex === 0 ? infStats[tp].large : infStats[tp].small; return `${ctx.dataset.label}: ${ctx.raw}% (${count}마리)`; } } } } } });
+        chMakeChart(infSizeChartId, { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'Large', data: sizeDataLarge, backgroundColor: '#d32f2f' }, { label: 'Small', data: sizeDataSmall, backgroundColor: '#ff9800' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, max: 100, title: { display: true, text: '발생률 (%)' } } }, plugins: { tooltip: { callbacks: { label: function(ctx) { const tp = infTps[ctx.dataIndex]; const count = ctx.datasetIndex === 0 ? infStats[tp].large : infStats[tp].small; return `${ctx.dataset.label}: ${ctx.raw}% (${count}마리)`; } } } } } });
 
         const infMaxY = fixedOptions && fixedOptions.maxInfLoc !== undefined ? Math.max(5, fixedOptions.maxInfLoc + 1) : undefined;
         const locDataR = infTps.map(tp => infStats[tp].locR); const locDataL = infTps.map(tp => infStats[tp].locL); const locDataBoth = infTps.map(tp => infStats[tp].locBoth);
-        new Chart(document.getElementById(infLocChartId), { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' }, { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' }, { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 }, ...(infMaxY ? { max: infMaxY } : {}) } } } });
+        chMakeChart(infLocChartId, { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' }, { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' }, { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 }, ...(infMaxY ? { max: infMaxY } : {}) } } } });
 
         if (deadRats.length > 0) {
             // 전역에 원본 데이터 캐싱 (체크박스 토글 시 재계산용)
@@ -1543,8 +1580,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; rats.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; }); // 🌟 ratDataList -> rats 로 수정
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
             const codBgColors = Object.keys(codCounts).map(k => typeof codColors !== 'undefined' && codColors[k] ? codColors[k] : '#C9CBCF');
-            new Chart(document.getElementById(codChartId), { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: codBgColors }] }, options: dOpt });
-            new Chart(document.getElementById(areChartId), { type: 'doughnut', data: { labels: Object.keys(areCountsObj), datasets: [{ data: Object.values(areCountsObj), backgroundColor: ['#1565C0', '#4CAF50', '#9E9E9E'] }] }, options: dOpt });
+            chMakeChart(codChartId, { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: codBgColors }] }, options: dOpt });
+            chMakeChart(areChartId, { type: 'doughnut', data: { labels: Object.keys(areCountsObj), datasets: [{ data: Object.values(areCountsObj), backgroundColor: ['#1565C0', '#4CAF50', '#9E9E9E'] }] }, options: dOpt });
         }
 
         const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
@@ -1569,11 +1606,11 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         };
 
         const wtOpts = createChartOptions(rangeWtX.min, rangeWtX.max, rangeWtY.min, rangeWtY.max);
-        const wtChart = new Chart(document.getElementById(wtChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
+        const wtChart = chMakeChart(wtChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
         document.getElementById(wtChartId).ondblclick = () => wtChart.resetZoom();
 
         const bpOpts = createChartOptions(rangeSbpX.min, rangeSbpX.max, rangeSbpY.min, rangeSbpY.max);
-        const bpChart = new Chart(document.getElementById(bpChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
+        const bpChart = chMakeChart(bpChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
         document.getElementById(bpChartId).ondblclick = () => bpChart.resetZoom();
 
         const enableCompareSync = (uniqueSuffix && (uniqueSuffix.includes('_comp_') || uniqueSuffix.includes('_grp_')));
@@ -1595,7 +1632,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, customTitle, fixedOptions, groupKey) {
     const resDiv = document.getElementById(targetDivId);
     const headerHtml = `<div style="position:sticky; top:60px; z-index:90; background:#f8f9fa; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);"><span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span></div>`;
-    if (!ratDataList || ratDataList.length === 0) { resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:#777;">해당 그룹에 포함된 개체가 없습니다.</div>`; return; }
+    if (!ratDataList || ratDataList.length === 0) { resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:#666;">해당 그룹에 포함된 개체가 없습니다.</div>`; return; }
     resDiv.innerHTML = headerHtml + `<div class="loader"></div> 로딩 중...`;
 
     try {
@@ -1604,8 +1641,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const ratIds = ratDataList.map(r => r.ratId);
         const ratInfoMap = {}; ratDataList.forEach(r => ratInfoMap[r.ratId] = r);
 
-        const promises = ratIds.map(rid => db.collection("measurements").where("ratId", "==", rid).get());
-        const snapshots = await Promise.all(promises);
+        const measByRat = await chFetchMeasByRatIds(ratIds);
 
         // [하이브리드] 수술 후 = 실제 POD, 수술 전 = 반입→수술 구간을 '전체 평균 간격(avgGap)'에 비율 정규화. (runCohortAnalysis와 동일)
         let gapSum = 0, gapCnt = 0;
@@ -1620,12 +1656,12 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const scatterDataWt = [], scatterDataSbp = []; const existTicksWt = new Set(), existTicksSbp = new Set(); const tickLabelMap = {};
         let minWt = 9999, maxWt = 0, minSbp = 9999, maxSbp = 0, maxDataPod = 0;
 
-        snapshots.forEach((snap, idx) => {
-            const r = ratDataList[idx], rid = r.ratId;
+        ratDataList.forEach(r => {
+            const rid = r.ratId;
             const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6; const arrDt = r.arrivalDate ? new Date(r.arrivalDate) : null;
 
-            snap.forEach(doc => {
-                const d = doc.data(); let labelText = d.timepoint; if (!labelText || labelText === 'Manual') labelText = d.date;
+            (measByRat[rid] || []).forEach(d => {
+                let labelText = d.timepoint; if (!labelText || labelText === 'Manual') labelText = d.date;
                 
                 let xVal = null;
                 if (window.isAgeMode) {
@@ -1684,7 +1720,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             if(r.sampleType === 'Histology') smpHist++; else if(r.sampleType === 'Cast') smpCast++; else if(r.sampleType === 'Fail') smpFail++;
             let mrDiffStr = '-';
             if(r.sampleDate && r.mrDates && r.mrDates.length > 0) { const validMr = r.mrDates.filter(m => m.date).sort((a,b) => new Date(a.date) - new Date(b.date)); if(validMr.length > 0) { const diff = Math.round((new Date(r.sampleDate) - new Date(validMr[validMr.length - 1].date)) / 86400000); mrDiffStr = diff >= 0 ? `+${diff}` : `${diff}`; } }
-            sampleModalRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId} <span style="font-size:0.75rem; font-weight:normal; text-decoration:none; color:${r.status==='생존'?'green':'red'};">(${r.status})</span></td><td style="padding:8px; text-align:center;"><span style="color:${r.sampleType==='Fail'?'red':'var(--navy)'}; font-weight:bold;">${r.sampleType||'-'}</span></td><td style="padding:8px; text-align:center;">${r.sampleDate||'-'}</td><td style="padding:8px; text-align:center; color:#e65100; font-weight:bold;">${mrDiffStr !== '-' ? mrDiffStr + '일' : '-'}</td><td style="padding:8px;">${r.sampleMemo||''}</td></tr>`;
+            sampleModalRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center;"><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button> <span style="font-size:0.75rem; color:${r.status==='생존'?'green':'var(--red)'};">(${r.status})</span></td><td style="padding:8px; text-align:center;"><span style="color:${r.sampleType==='Fail'?'var(--red)':'var(--navy)'}; font-weight:bold;">${chEsc(r.sampleType||'-')}</span></td><td style="padding:8px; text-align:center;">${r.sampleDate||'-'}</td><td style="padding:8px; text-align:center; color:#b45309; font-weight:bold;">${mrDiffStr !== '-' ? mrDiffStr + '일' : '-'}</td><td style="padding:8px;">${chEsc(r.sampleMemo||'')}</td></tr>`;
 
             if(r.arrivalDate && r.surgeryDate) { const diff = new Date(r.surgeryDate) - new Date(r.arrivalDate); surgAgeSum += (r.arrivalAge ? Number(r.arrivalAge) : 6) + (diff / 604800000); surgAgeCnt++; }
             if(r.surgeryDate && r.mrDates) {
@@ -1705,7 +1741,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         const avgSurgAge = surgAgeCnt > 0 ? (surgAgeSum/surgAgeCnt).toFixed(1) : '-';
         const mrKeys = Object.keys(mrStats).sort((a,b) => podDaysMap[a] - podDaysMap[b]);
-        const mrHtml = mrKeys.length === 0 ? '<span style="color:#888;">데이터 없음</span>' : mrKeys.map(k => {
+        const mrHtml = mrKeys.length === 0 ? '<span style="color:#666;">데이터 없음</span>' : mrKeys.map(k => {
             const stat = mrStats[k]; let devStr = '-'; if(stat.cnt > 0) { const avgDev = (stat.sum / stat.cnt).toFixed(1); devStr = avgDev > 0 ? `+${avgDev}` : avgDev; }
             let ageStr = '-'; let printCnt = stat.cnt > 0 ? stat.cnt : stat.ageCnt; if(stat.ageCnt > 0) ageStr = (stat.sumAge / stat.ageCnt).toFixed(1);
             if (k === 'D00' || k === 'D0') return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
@@ -1737,15 +1773,15 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                     if (r.areList && Array.isArray(r.areList)) { r.areList.forEach(loc => { let locStr = loc.side; if (loc.side !== 'BA' && loc.art && loc.art !== '-') locStr += ' ' + loc.art; if (!areLocStats[locStr]) areLocStats[locStr] = { micro: 0, macro: 0, unk: 0 }; if (loc.type === 'micro') areLocStats[locStr].micro++; else if (loc.type === 'macro') areLocStats[locStr].macro++; else areLocStats[locStr].unk++; }); }
                 } else if (r.are === 'X') { areX++; }
             }
-            if (hasAre) { areDetailRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center; font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td style="padding:8px; text-align:center;">${myMicro}</td><td style="padding:8px; text-align:center;">${myMacro}</td><td style="padding:8px; text-align:center;">${myUnk}</td><td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${myMicro + myMacro + myUnk}개</td></tr>`; }
+            if (hasAre) { areDetailRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center;"><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td style="padding:8px; text-align:center;">${myMicro}</td><td style="padding:8px; text-align:center;">${myMacro}</td><td style="padding:8px; text-align:center;">${myUnk}</td><td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${myMicro + myMacro + myUnk}개</td></tr>`; }
         });
         
         const totalN = ratDataList.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`; 
 
         let finalHtml = headerHtml;
-        finalHtml += `<div id="sample-modal-${uniqueSuffix}" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:white; padding:20px; border-radius:12px; width:95%; max-width:700px; max-height:85vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,0.3);"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--navy);">🔬 샘플 획득 상세 내역 (총 ${ratDataList.length}마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="background:#f5f5f5; text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:white; padding:20px; border-radius:12px; width:95%; max-width:700px; max-height:85vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,0.3);"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--navy);">🔬 샘플 획득 상세 내역 (총 ${ratDataList.length}마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="background:#f5f5f5; text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
         finalHtml += `<div class="card" style="border-left:5px solid #00c853;"><h4 style="margin-top:0; color:var(--navy);">📋 기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span style="color:var(--navy); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:#fff3e0; border:1px solid #ffcc80;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:#f8f9fa; padding:10px; border-radius:6px; border:1px solid #eee;"><b style="font-size:0.9rem; color:var(--navy);">📷 MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
-        finalHtml += `<div class="card" style="border-left:5px solid #9c27b0;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4><div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;"><b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateValid}%; background:#F57C00; height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#777;">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div class="card" style="border-left:5px solid #9c27b0;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4><div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;"><b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateValid}%; background:#F57C00; height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#666;">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
 
         const infSizeChartId = `infSizeChart${uniqueSuffix}`; const infLocChartId = `infLocChart${uniqueSuffix}`;
         finalHtml += `<div class="card" style="border-left:5px solid #ff9800;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">⚡ 시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:#666; margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
@@ -1759,7 +1795,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         if (deadRats.length > 0) {
             deadRats.sort((a, b) => { const cA = Number(a.cohort) || 0; const cB = Number(b.cohort) || 0; if (cA !== cB) return cA - cB; return a.ratId.localeCompare(b.ratId); });
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
-            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#e65100; font-weight:bold;">(+${r.codSec.join(', ')})</span>` : ''; survTable += `<tr><td style="font-weight:bold; cursor:pointer; color:#1976d2; text-decoration:underline;" onclick="openRatModal('${r.ratId}')">${r.ratId}</td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:gray">${displayCod}${secCodStr}</span></td></tr>`; });
+            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:#666">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
             survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
             
             // 🔥 체크박스 UI 삽입
@@ -1782,7 +1818,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${bpChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${bpChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
         bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
@@ -1790,7 +1826,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
-        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked onchange="toggleRatVisibility('${wtChartId}', '${id}', this.checked)" style="transform:scale(1.2); cursor:pointer;"></td><td>${rInfo.status === '사망' ? '💀' : '🟢'} ${id}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
+        ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${wtChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
         wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
@@ -1800,17 +1836,17 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const areLocLabels = Object.keys(areLocStats).sort();
         if(areLocLabels.length > 0) {
             const areLocMicro = areLocLabels.map(l => areLocStats[l].micro); const areLocMacro = areLocLabels.map(l => areLocStats[l].macro); const areLocUnk = areLocLabels.map(l => areLocStats[l].unk);
-            new Chart(document.getElementById(areLocChartId), { type: 'bar', data: { labels: areLocLabels, datasets: [ { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 }, ...(areMaxY ? { max: areMaxY } : {}) } } } });
-        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#999; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
+            chMakeChart(areLocChartId, { type: 'bar', data: { labels: areLocLabels, datasets: [ { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 }, ...(areMaxY ? { max: areMaxY } : {}) } } } });
+        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#6f6f6f; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
 
         const infLabels = infTps.map(tp => { if(infStats[tp].hasData === 0) return `${tp}\n(No Data)`; return `${tp}\n(n=${infStats[tp].validN})`; });
         const sizeDataSmall = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].small / infStats[tp].validN * 100).toFixed(1) : 0);
         const sizeDataLarge = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].large / infStats[tp].validN * 100).toFixed(1) : 0);
-        new Chart(document.getElementById(infSizeChartId), { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'Large', data: sizeDataLarge, backgroundColor: '#d32f2f' }, { label: 'Small', data: sizeDataSmall, backgroundColor: '#ff9800' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, max: 100, title: { display: true, text: '발생률 (%)' } } }, plugins: { tooltip: { callbacks: { label: function(ctx) { const tp = infTps[ctx.dataIndex]; const count = ctx.datasetIndex === 0 ? infStats[tp].large : infStats[tp].small; return `${ctx.dataset.label}: ${ctx.raw}% (${count}마리)`; } } } } } });
+        chMakeChart(infSizeChartId, { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'Large', data: sizeDataLarge, backgroundColor: '#d32f2f' }, { label: 'Small', data: sizeDataSmall, backgroundColor: '#ff9800' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, max: 100, title: { display: true, text: '발생률 (%)' } } }, plugins: { tooltip: { callbacks: { label: function(ctx) { const tp = infTps[ctx.dataIndex]; const count = ctx.datasetIndex === 0 ? infStats[tp].large : infStats[tp].small; return `${ctx.dataset.label}: ${ctx.raw}% (${count}마리)`; } } } } } });
 
         const infMaxY = fixedOptions && fixedOptions.maxInfLoc !== undefined ? Math.max(5, fixedOptions.maxInfLoc + 1) : undefined;
         const locDataR = infTps.map(tp => infStats[tp].locR); const locDataL = infTps.map(tp => infStats[tp].locL); const locDataBoth = infTps.map(tp => infStats[tp].locBoth);
-        new Chart(document.getElementById(infLocChartId), { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' }, { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' }, { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 }, ...(infMaxY ? { max: infMaxY } : {}) } } } });
+        chMakeChart(infLocChartId, { type: 'bar', data: { labels: infLabels, datasets: [ { label: 'R (우)', data: locDataR, backgroundColor: '#2196F3' }, { label: 'L (좌)', data: locDataL, backgroundColor: '#4CAF50' }, { label: 'Both (양측)', data: locDataBoth, backgroundColor: '#9C27B0' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, title: { display: true, text: '발생 건수 (마리)' }, ticks: { stepSize: 1 }, ...(infMaxY ? { max: infMaxY } : {}) } } } });
 
         if (deadRats.length > 0) {
             // 전역에 원본 데이터 캐싱 (체크박스 토글 시 재계산용)
@@ -1827,8 +1863,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             const areCountsObj = { 'O':0, 'X':0, '미기록':0 }; ratDataList.forEach(r => { const areMain = r.are ? r.are.split(' ')[0] : '미기록'; if(['O','X'].includes(areMain)) areCountsObj[areMain]++; else areCountsObj['미기록']++; });
             const dOpt = { maintainAspectRatio: false, plugins: { legend: { position: 'right' }, tooltip: { callbacks: { label: (ctx) => { const total = ctx.dataset.data.reduce((a,b)=>a+b,0); return `${ctx.label}: ${ctx.raw} (${((ctx.raw/total)*100).toFixed(1)}%)`; } } } } };
             const codBgColors = Object.keys(codCounts).map(k => typeof codColors !== 'undefined' && codColors[k] ? codColors[k] : '#C9CBCF');
-            new Chart(document.getElementById(codChartId), { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: codBgColors }] }, options: dOpt });
-            new Chart(document.getElementById(areChartId), { type: 'doughnut', data: { labels: Object.keys(areCountsObj), datasets: [{ data: Object.values(areCountsObj), backgroundColor: ['#1565C0', '#4CAF50', '#9E9E9E'] }] }, options: dOpt });
+            chMakeChart(codChartId, { type: 'doughnut', data: { labels: Object.keys(codCounts), datasets: [{ data: Object.values(codCounts), backgroundColor: codBgColors }] }, options: dOpt });
+            chMakeChart(areChartId, { type: 'doughnut', data: { labels: Object.keys(areCountsObj), datasets: [{ data: Object.values(areCountsObj), backgroundColor: ['#1565C0', '#4CAF50', '#9E9E9E'] }] }, options: dOpt });
         }
 
         const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
@@ -1853,11 +1889,11 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         };
 
         const wtOpts = createChartOptions(rangeWtX.min, rangeWtX.max, rangeWtY.min, rangeWtY.max);
-        const wtChart = new Chart(document.getElementById(wtChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
+        const wtChart = chMakeChart(wtChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
         document.getElementById(wtChartId).ondblclick = () => wtChart.resetZoom();
 
         const bpOpts = createChartOptions(rangeSbpX.min, rangeSbpX.max, rangeSbpY.min, rangeSbpY.max);
-        const bpChart = new Chart(document.getElementById(bpChartId), { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
+        const bpChart = chMakeChart(bpChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
         document.getElementById(bpChartId).ondblclick = () => bpChart.resetZoom();
 
         wtChart._syncType = 'wt'; bpChart._syncType = 'sbp'; wtChart._syncScope = 'trend'; bpChart._syncScope = 'trend';
@@ -1944,11 +1980,11 @@ window.updateSurvivalChart = function(suffix, chartId) {
         chartInstance.data.datasets[0].data = survData;
         chartInstance.update();
     } else {
-        new Chart(document.getElementById(chartId), {
+        chMakeChart(chartId, {
             type: 'line',
-            data: { 
-                labels: survLabels, 
-                datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] 
+            data: {
+                labels: survLabels,
+                datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }]
             },
             options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
         });
@@ -2320,8 +2356,8 @@ async function renderGroupSelectors() {
             grpBox.style.cssText = "display:flex; flex-wrap:wrap; gap:4px;";
             sortedGroups.forEach(g => {
                 const lbl = document.createElement('label');
-                lbl.style.cssText = "cursor:pointer; font-size:0.75rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:2px 4px; border-radius:3px; border:1px solid #eee; white-space:nowrap;";
-                lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 3px 0 0; transform:scale(0.9);" onchange="
+                lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
+                lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 4px 0 0; transform:scale(1.1);" onchange="
                 const wrap = this.closest('.cohort-wrapper');
                 const mainCb = wrap.querySelector('.co-main-cb');
                 if(this.checked) { mainCb.checked = false; }
@@ -2372,7 +2408,7 @@ async function renderCohortCheckboxes(containerId) {
         // 상위 코호트 체크박스
         const header = document.createElement('label');
         header.style.cssText = "cursor:pointer; font-weight:900; font-size:0.85rem; color:var(--navy); display:flex; align-items:center; border-bottom:1px solid #eee; padding-bottom:3px; margin-bottom:3px; width:100%; white-space:nowrap;";
-        header.innerHTML = `<input type="checkbox" class="co-main-cb" value="${c}" style="margin:0 4px 0 0; transform:scale(1.0);" onchange="
+        header.innerHTML = `<input type="checkbox" class="co-main-cb" value="${c}" style="margin:0 5px 0 0; transform:scale(1.15);" onchange="
             const wrap = this.closest('.cohort-wrapper');
             const chks = wrap.querySelectorAll('.grp-checkbox');
             if(this.checked) { chks.forEach(chk => chk.checked = false); }
@@ -2385,10 +2421,10 @@ async function renderCohortCheckboxes(containerId) {
 
         sortedGroups.forEach(g => {
             const lbl = document.createElement('label');
-            lbl.style.cssText = "cursor:pointer; font-size:0.75rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:2px 4px; border-radius:3px; border:1px solid #eee; white-space:nowrap;";
+            lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
             
             // 👇 문제의 원인이었던 자동 체크 로직 제거 및 독립 작동으로 변경
-            lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 3px 0 0; transform:scale(0.9);" onchange="
+            lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 4px 0 0; transform:scale(1.1);" onchange="
                 const wrap = this.closest('.cohort-wrapper');
                 const mainCb = wrap.querySelector('.co-main-cb');
                 if(this.checked) { mainCb.checked = false; }
@@ -2456,18 +2492,14 @@ async function loadCohortComparison() {
             }
         }));
 
-        const measPromises = allRats.map(r => db.collection("measurements").where("ratId", "==", r.ratId).get());
-        const measSnaps = await Promise.all(measPromises);
+        const measByRat = await chFetchMeasByRatIds(allRats.map(r => r.ratId));
 
         let globalMinX = 0, globalMaxX = 0, globalMaxSbp = 0, globalMaxWt = 0;
-        let globalMinSbp = 9999, globalMinWt = 9999; 
+        let globalMinSbp = 9999, globalMinWt = 9999;
         const unionStandardTicks = new Set();
 
-        measSnaps.forEach((snap, i) => {
-            const r = allRats[i];
-            snap.forEach(d => {
-                const v = d.data();
-
+        allRats.forEach(r => {
+            (measByRat[r.ratId] || []).forEach(v => {
                 const pod = getPodForLabel(v.timepoint, r.surgeryDate, v.date);
                 if (pod !== null) {
                     if (pod < globalMinX) globalMinX = pod;
@@ -2573,14 +2605,14 @@ window.switchTrendTab = function(grp) {
         btnA.style.cssText = `flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #1565C0; background:#e3f2fd; color:#1565C0; border-radius:8px; ${mode === 'single' ? 'cursor:default;' : 'cursor:pointer;'}`;
         
         if(mode !== 'single') {
-            btnB.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#888; border-radius:8px; cursor:pointer;";
+            btnB.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#666; border-radius:8px; cursor:pointer;";
         }
     } else {
         document.getElementById('trend-panel-a').style.display = 'none';
         document.getElementById('trend-panel-b').style.display = 'block';
         
         btnB.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #2e7d32; background:#e8f5e9; color:#2e7d32; border-radius:8px; cursor:pointer;";
-        btnA.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#888; border-radius:8px; cursor:pointer;";
+        btnA.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#666; border-radius:8px; cursor:pointer;";
     }
 };
 
@@ -2633,7 +2665,7 @@ async function loadTrendCodList() {
 
         const createList = (set, targetContainer, isExc, grp) => {
             if(!targetContainer) return;
-            if(set.size === 0) { targetContainer.innerHTML = '<span style="color:#999; font-size:0.85rem;">기록된 원인 없음</span>'; return; }
+            if(set.size === 0) { targetContainer.innerHTML = '<span style="color:#6f6f6f; font-size:0.85rem;">기록된 원인 없음</span>'; return; }
             targetContainer.innerHTML = '';
             const box = document.createElement('div');
             box.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px;';
@@ -3038,11 +3070,11 @@ window.updateSurvivalChart = function(suffix, chartId) {
         chartInstance.data.datasets[0].data = survData;
         chartInstance.update();
     } else {
-        new Chart(document.getElementById(chartId), {
+        chMakeChart(chartId, {
             type: 'line',
-            data: { 
-                labels: survLabels, 
-                datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }] 
+            data: {
+                labels: survLabels,
+                datasets: [{ label: 'Survival Rate (%)', data: survData, borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.1)', fill: true, stepper: true }]
             },
             options: { maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } } }
         });

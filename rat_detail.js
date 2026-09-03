@@ -145,7 +145,7 @@ async function rdDoseStatusHtml() {
         const view = {
             nodate: { c:'#c62828', bg:'#ffebee', t:'투약 시작일을 알 수 없음',
                       s:`${anchor}이 비어 있습니다. 넣기 전까지 투약이 시작되지 않습니다.` },
-            before: { c:'#e65100', bg:'#fff3e0', t:`투약 시작까지 ${d === null ? '-' : -d}일`,
+            before: { c:'#b45309', bg:'#fff3e0', t:`투약 시작까지 ${d === null ? '-' : -d}일`,
                       s:`${anchor} +${rule.startOffset}일부터 시작합니다.` },
             on:     { c:'#0d47a1', bg:'#e3f2fd', t: d === 0 ? '오늘 투약 시작' : `투약 중 · ${d}일째`,
                       s:`${rule.value} ${rule.unit || 'mg/kg/day'} · 음수 투여` },
@@ -175,15 +175,21 @@ async function rdRenderCageInfo(ratId, containerId) {
         const current = recs.find(r => !r.to);
 
         if (!current) {
-            box.innerHTML = doseHtml + `<div style="color:#888; font-size:0.85rem;">
+            box.innerHTML = doseHtml + `<div style="color:#666; font-size:0.85rem;">
                 배정된 케이지가 없습니다. ${recs.length ? `(지난 재실 ${recs.length}건)` : ''}</div>`;
             return;
         }
 
-        // 이 케이지의 최근 급여 기록
-        const fs = await db.collection('cageFeeding').where('cageId', '==', String(current.cageId)).get();
+        // 이 케이지의 최근 급여 기록.
+        // 케이지 전체 이력을 다 읽으면 코호트가 길어질수록 읽기가 무한정 늘어난다.
+        // 화면에 쓰는 건 최근 7건뿐이라 날짜 하한을 두고, 케이지는 화면에서 거른다.
+        // (cageId 등호 + 날짜 범위를 한 쿼리에 넣으면 복합 인덱스가 필요해서 —
+        //  대시보드·케이지별 입력과 같은 '날짜 범위 단일 조회' 방식을 쓴다)
+        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 21);
+        const fs = await db.collection('cageFeeding').where('dateStr', '>=', cutoff.toISOString().slice(0, 10)).get();
         const rows = [];
-        fs.forEach(d => { const v = d.data(); if (typeof v.waterPerCapita === 'number') rows.push(v); });
+        fs.forEach(d => { const v = d.data();
+            if (String(v.cageId) === String(current.cageId) && typeof v.waterPerCapita === 'number') rows.push(v); });
         rows.sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
         const recent = rows.filter(r => !(r.flags || []).length).slice(0, 7);
 
@@ -198,19 +204,19 @@ async function rdRenderCageInfo(ratId, containerId) {
         box.innerHTML = doseHtml + `
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <div style="flex:1; min-width:110px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center;">
-                <div style="font-size:0.75rem; color:#888;">현재 케이지</div>
+                <div style="font-size:0.75rem; color:#666;">현재 케이지</div>
                 <div style="font-size:1.4rem; font-weight:bold; color:var(--navy);">${current.cageId}번</div>
-                <div style="font-size:0.72rem; color:#999;">${since}부터</div>
+                <div style="font-size:0.72rem; color:#6f6f6f;">${since}부터</div>
             </div>
             <div style="flex:1; min-width:110px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center;">
-                <div style="font-size:0.75rem; color:#888;">물 (최근 ${recent.length}일)</div>
+                <div style="font-size:0.75rem; color:#666;">물 (최근 ${recent.length}일)</div>
                 <div style="font-size:1.4rem; font-weight:bold; color:#1565c0;">${w ? w.toFixed(0) : '-'}</div>
-                <div style="font-size:0.72rem; color:#999;">mL/일 · 케이지 평균</div>
+                <div style="font-size:0.72rem; color:#6f6f6f;">mL/일 · 케이지 평균</div>
             </div>
             <div style="flex:1; min-width:110px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center;">
-                <div style="font-size:0.75rem; color:#888;">사료 (최근 ${recent.length}일)</div>
-                <div style="font-size:1.4rem; font-weight:bold; color:#e65100;">${f ? f.toFixed(1) : '-'}</div>
-                <div style="font-size:0.72rem; color:#999;">g/일 · 케이지 평균</div>
+                <div style="font-size:0.75rem; color:#666;">사료 (최근 ${recent.length}일)</div>
+                <div style="font-size:1.4rem; font-weight:bold; color:#b45309;">${f ? f.toFixed(1) : '-'}</div>
+                <div style="font-size:0.72rem; color:#6f6f6f;">g/일 · 케이지 평균</div>
             </div>
             ${last && last.doseCc ? `
             <div style="flex:1; min-width:110px; background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:10px; text-align:center;">
@@ -220,11 +226,11 @@ async function rdRenderCageInfo(ratId, containerId) {
             </div>` : ''}
         </div>
         ${recent.length ? `
-        <div style="margin-top:8px; font-size:0.75rem; color:#888;">
+        <div style="margin-top:8px; font-size:0.75rem; color:#666;">
             물통을 같이 쓰므로 개체별 값이 아니라 케이지 평균입니다.
             ${recs.length > 1 ? ` · 재실 이력 ${recs.length}건` : ''}
         </div>` : `
-        <div style="margin-top:8px; font-size:0.78rem; color:#888;">아직 급여 기록이 없습니다.</div>`}`;
+        <div style="margin-top:8px; font-size:0.78rem; color:#666;">아직 급여 기록이 없습니다.</div>`}`;
     } catch (e) {
         console.error(e);
         box.innerHTML = `<div style="color:#c00; font-size:0.82rem;">케이지 정보를 불러오지 못했습니다.</div>`;
