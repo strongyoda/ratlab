@@ -187,22 +187,26 @@ const CI_SPAN_TOL_H = 3;   // 24시간 배수에서 이만큼까지는 이번 �
 // 7이면 50 미만에서만 걸리는데, 그 정도로 안 마시는 케이지는 사람이 봐야 하는 게 맞다.
 const CI_DAYS_CAP = 7;
 
-// 마리당 물 섭취가 비정상적으로 크면 현장에서 바로 되묻는다.
-// (파일럿 30번: 누수로 마리당 213 mL 가 그냥 저장돼, 나중에 긴가민가한 채로 남았다)
-// 절대 상한은 랫드가 실제로 마실 수 있는 범위를 한참 넘는 값.
-// 배수 상한 2배는 BP 다음날 몰아 마시기도 걸릴 수 있는데, 그날도 누수인지
-// 실제인지 눈으로 가려둘 가치가 있어 일부러 걸리게 뒀다.
-const CI_PC_ABS_MAX = 80;    // mL/마리·일
+// 마리당 물 섭취가 갑자기 튀면 현장에서 바로 되묻는다.
+// 절대 상한(고정 80 mL)으로 잡던 첫 버전은 하루 만에 틀렸다 — 결찰 모델은
+// 진행되면서 진짜로 마리당 100~330 mL 를 마신다 (9/3, 깔짚 전체가 젖는 다뇨로 확인).
+// 그래서 '그 케이지의 최근 기록 대비 몇 배'로만 잡는다. 병으로 서서히 늘면
+// 기준도 같이 올라가 안 걸리고, 하루아침에 배로 튀는 것(누수·엎어짐·오입력)만 걸린다.
+// 절대 상한은 비교할 최근 기록이 아예 없을 때의 안전망으로만 쓴다.
+const CI_PC_ABS_MAX = 80;    // mL/마리·일 — 기준 기록이 없을 때만
 const CI_PC_JUMP = 2;        // 최근 평일 최대의 몇 배부터 의심하나
 
 // 이번 구간의 마리당 물 섭취가 의심스러우면 이유를 돌려준다. 정상이면 null.
 function ciWaterPcSuspect(c) {
     if (!c || c.tooShort || typeof c.waterPc !== 'number' || !(c.waterPc > 0)) return null;
     const base = ciRecentPc[ciCurrent] || null;
+    if (base) {
+        if (c.waterPc > base * CI_PC_JUMP)
+            return { pc: c.waterPc, why: `최근 이 케이지 평일 최대(${base.toFixed(0)} mL)의 ${(c.waterPc / base).toFixed(1)}배입니다` };
+        return null;
+    }
     if (c.waterPc > CI_PC_ABS_MAX)
-        return { pc: c.waterPc, why: `실제로 마실 수 있는 범위(~${CI_PC_ABS_MAX} mL)를 넘습니다` };
-    if (base && c.waterPc > base * CI_PC_JUMP)
-        return { pc: c.waterPc, why: `최근 이 케이지 평일 최대(${base.toFixed(0)} mL)의 ${(c.waterPc / base).toFixed(1)}배입니다` };
+        return { pc: c.waterPc, why: `비교할 최근 기록이 없는데 통상 범위(~${CI_PC_ABS_MAX} mL)를 크게 넘습니다` };
     return null;
 }
 
@@ -1157,10 +1161,10 @@ function ciUpdateCalc() {
                 ${(!c.spansWeekend && ciOffFrom24(c.hours) > CI_SPAN_TOL_H)
                     ? `<br>구간이 24시간 배수에서 ${ciOffFrom24(c.hours).toFixed(1)}시간 벗어났습니다. 밤낮 비중이 치우쳐 하루치가 ${c.hours < 24 ? '부풀' : '줄'}었을 수 있어, 투약 농도는 최근 평일 값으로 계산합니다.` : ''}
                 ${bad ? '<br><b>잔량이 채운 양보다 많습니다. 입력을 확인하세요.</b>' : ''}
-                ${susp ? `<br><b style="color:var(--stamp);">⚠ 마리당 ${susp.pc.toFixed(0)} mL/일은 비정상적으로 큽니다 — ${susp.why}.</b><br>
-                    지금 물통 누수·엎어짐·저울값·빈 통 무게를 확인하세요.
-                    누수 등이 맞으면 아래 <b>「이상」</b>을 체크하세요 (조제 계산도 최근 값으로 바뀝니다).
-                    BP 다음날 몰아 마신 것처럼 실제일 수도 있습니다 — 확인했고 맞으면 그대로 저장하면 됩니다.` : ''}
+                ${susp ? `<br><b style="color:var(--stamp);">⚠ 마리당 ${susp.pc.toFixed(0)} mL/일 — ${susp.why}.</b><br>
+                    지금 물통 누수·엎어짐·저울값·빈 통 무게, 깔짚 젖은 자국을 확인하세요.
+                    누수·오입력이면 아래 <b>「이상」</b>을 체크하세요 (조제 계산도 최근 값으로 바뀝니다).
+                    다음(多飮)이 심해지거나 BP 다음날 몰아 마셔서 실제일 수도 있습니다 — 확인했고 맞으면 그대로 저장하면 됩니다.` : ''}
             </div>
         </div>`;
     }
