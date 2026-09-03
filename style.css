@@ -110,7 +110,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--i
 .btn-small { width: auto; padding: 0.5rem 1rem; font-size: 0.9rem; }
 
 .rating-box { display: flex; gap: 5px; margin-top: 5px; }
-.rate-btn { flex: 1; padding: 12px 0; border: 1px solid #eee; background: white; border-radius: 6px; font-weight: bold; cursor: pointer; }
+.rate-btn { flex: 1; padding: 12px 0; border: 1px solid var(--rule); background: var(--sheet); border-radius: 2px; font-weight: bold; cursor: pointer; font-family: var(--font-mono); }
 .rate-btn.active { background-color: var(--navy) !important; color: white !important; border-color: var(--navy) !important; }
 
 .cohort-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 3px double var(--ink); padding-bottom: 10px; }
@@ -148,29 +148,29 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 #dose-list { list-style: none; padding: 0; margin: 10px 0; font-size: 0.9rem; }
 #dose-list li { margin-bottom: 5px; border-bottom: 1px solid #eee; padding-bottom: 5px; display: flex; justify-content: space-between; }
 
-.tab-container { display: flex; margin-bottom: 15px; border-bottom: 1px solid #ddd; }
-.tab { padding: 10px 20px; cursor: pointer; color: #666; }
+.tab-container { display: flex; margin-bottom: 15px; border-bottom: 2px solid var(--ink); }
+.tab { padding: 10px 20px; cursor: pointer; color: var(--ink-soft); }
 .tab.active { border-bottom: 3px solid var(--navy); color: var(--navy); font-weight: bold; }
 .edit-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
 .edit-row span { flex: 1; }
 
-.loader { border: 4px solid #f3f3f3; border-radius: 50%; border-top: 4px solid var(--navy); width: 20px; height: 20px; -webkit-animation: spin 2s linear infinite; animation: spin 2s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
+.loader { border: 4px solid var(--rule); border-radius: 50%; border-top: 4px solid var(--navy); width: 20px; height: 20px; -webkit-animation: spin 2s linear infinite; animation: spin 2s linear infinite; display: inline-block; vertical-align: middle; margin-right: 10px; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-.edit-table input { border: 1px solid #ddd; border-radius: 4px; padding: 5px; font-size: 0.85rem; width: 100%; box-sizing: border-box; }
+.edit-table input { border: 1px solid var(--rule); border-radius: 2px; padding: 5px; font-size: 0.85rem; width: 100%; box-sizing: border-box; }
 .edit-table td { padding: 5px; }
-.deleted-row { background-color: #ffebee !important; opacity: 0.5; text-decoration: line-through; }
-.del-btn { background: var(--red); color: white; border: none; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 0.7rem; }
-.add-row-btn { background: var(--navy); color: white; border: none; border-radius: 4px; padding: 5px 15px; margin-top: 5px; cursor: pointer; font-size: 0.8rem; display: inline-flex; align-items: center; }
+.deleted-row { background-color: var(--stock-pink-soft) !important; opacity: 0.5; text-decoration: line-through; }
+.del-btn { background: var(--stamp); color: white; border: none; border-radius: 2px; padding: 3px 8px; cursor: pointer; font-size: 0.7rem; }
+.add-row-btn { background: var(--ink); color: white; border: none; border-radius: 2px; padding: 5px 15px; margin-top: 5px; cursor: pointer; font-size: 0.8rem; display: inline-flex; align-items: center; }
 
-.co-memo-box { display: inline-flex; align-items: center; margin-left: 10px; font-size: 0.9rem; color: #555; font-weight: normal; }
+.co-memo-box { display: inline-flex; align-items: center; margin-left: 10px; font-size: 0.9rem; color: var(--ink-soft); font-weight: normal; }
 .co-memo-input { border: 1px solid #C9C5B8; border-radius: 2px; padding: 4px 5px; width: 160px; font-size: 0.85rem; }
 .edit-icon { font-size: 1.1rem; cursor: pointer; color: var(--blue); margin-left: 8px; vertical-align: middle; padding: 5px; }
-.edit-icon:hover { color: var(--navy); background: #eee; border-radius: 50%; }
-.memo-text { font-style: italic; color: #666; margin-left: 5px; font-size: 0.85rem; }
+.edit-icon:hover { color: var(--ink); background: var(--paper); border-radius: 2px; }
+.memo-text { font-style: italic; color: var(--ink-soft); margin-left: 5px; font-size: 0.85rem; }
 
 .mr-check-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: 20px; font-size: 0.8rem; background: var(--paper); border: 1px solid var(--rule); padding: 4px 8px; border-radius: 2px; }
-.mr-check-group label { display: flex; align-items: center; cursor: pointer; margin-bottom: 0; color: #495057; font-weight: normal; }
+.mr-check-group label { display: flex; align-items: center; cursor: pointer; margin-bottom: 0; color: var(--ink-soft); font-weight: normal; }
 .mr-check-group input[type="checkbox"] { width: auto; margin: 0 3px 0 0; padding: 0; transform: scale(0.9); }
 
 .bp-rat-box {
@@ -187,10 +187,10 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 }
 .bp-toggle-btn:hover { filter: brightness(1.1); }
 .bp-log-table {
-    margin: 10px 0; font-size: 13px; background: #f9fafb !important;
-    border: 1px solid #e2e8f0; width: 100%;
+    margin: 10px 0; font-size: 0.8rem; background: var(--paper) !important;
+    border: 1px solid var(--rule); width: 100%;
 }
-.bp-log-table th { background: #edf2f7; color: #4a5568; }
+.bp-log-table th { background: #F1EEE4; color: var(--ink); }
 .bp-controls label { font-weight: bold; margin-right: 15px; cursor: pointer; }
 
 .comp-grid { display: flex; gap: 10px; width: 100%; }
@@ -207,25 +207,25 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 .cod-step-container.active { display:block; }
 
 /* 수정된 통합 편집 테이블 스타일 */
-.edit-container { background: #fff; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin-top: 15px; }
-.edit-section-title { font-size: 1rem; font-weight: bold; color: var(--navy); margin: 20px 0 10px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+.edit-container { background: var(--sheet); padding: 20px; border-radius: 2px; border: 1px solid var(--rule); margin-top: 15px; }
+.edit-section-title { font-size: 1rem; font-weight: 800; color: var(--ink); margin: 20px 0 10px; border-bottom: 3px double var(--ink); padding-bottom: 5px; }
 
 .full-edit-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 0.9rem; }
-.full-edit-table th, .full-edit-table td { border: 1px solid #ddd; padding: 4px; text-align: center; }
-.full-edit-table th { background: #f1f3f5; color: #495057; }
+.full-edit-table th, .full-edit-table td { border: 1px solid var(--rule); padding: 4px; text-align: center; }
+.full-edit-table th { background: #F1EEE4; color: var(--ink); border-bottom: 2px solid var(--ink); }
 .full-edit-table input, .full-edit-table select, .full-edit-table textarea { 
     width: 100%; border: 1px solid transparent; background: transparent; 
     text-align: center; font-size: 0.9rem; padding: 5px; box-sizing: border-box; 
 }
 .full-edit-table input:focus, .full-edit-table select:focus, .full-edit-table textarea:focus { 
-    border: 1px solid var(--blue); background: #fff; outline: none; 
+    border: 1px solid var(--ink); background: var(--sheet); outline: none; 
 }
-.row-del { background-color: #ffebee !important; }
-.row-del input { text-decoration: line-through; color: #aaa; }
+.row-del { background-color: var(--stock-pink-soft) !important; }
+.row-del input { text-decoration: line-through; color: var(--ink-soft); }
 
 .float-save-btn {
     position: fixed; bottom: 20px; right: 20px; width: auto; 
-    padding: 15px 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); 
+    padding: 15px 30px; border: 2px solid var(--ink); 
     z-index: 999; font-size: 1.1rem;
 }
 
@@ -277,7 +277,7 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
     width: 12px;
     height: 12px;
     margin-right: 5px;
-    border-radius: 3px;
+    border-radius: 2px;
     vertical-align: middle;
     border: 1px solid rgba(0,0,0,0.1);
 }
@@ -347,7 +347,7 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
     gap: 10px 15px;
     padding-bottom: 12px;
     margin-bottom: 12px;
-    border-bottom: 1px solid rgba(0,0,0,0.06);
+    border-bottom: 1px solid var(--rule);
 }
 .filter-row:last-child { border-bottom: none; padding-bottom: 0; margin-bottom: 0; }
 
@@ -492,14 +492,14 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
     flex: 1;
     padding: 10px;
     border: 1px solid #ccc;
-    border-radius: 20px;
+    border-radius: 2px;
     outline: none;
     font-size: 0.95rem;
 }
 .ai-chat-input-area button {
     background: none;
     border: none;
-    color: #1565C0;
+    color: var(--ink-blue);
     cursor: pointer;
     padding: 0 10px;
 }
@@ -556,14 +556,14 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
     -webkit-tap-highlight-color: rgba(38,50,56,0.08);
 }
 .db-btn:focus-visible, [data-db-action]:focus-visible {
-    outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px;
+    outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 2px;
 }
 .db-tap { min-height: 34px; }
 @media (pointer: coarse) { .db-tap { min-height: 44px; } }
 
 /* ── 케이지별 입력: 상태 점수 버튼 ──
    이 앱에서 가장 많이 누르는 버튼. 장갑 낀 손 기준으로 폰에서는 44px를 보장한다. */
-.ci-score-btn { width: 36px; height: 36px; padding: 0; font-size: 0.85rem; border-radius: 6px; cursor: pointer; }
+.ci-score-btn { width: 36px; height: 36px; padding: 0; font-size: 0.85rem; border-radius: 2px; cursor: pointer; }
 @media (pointer: coarse) { .ci-score-btn { width: 44px; height: 44px; font-size: 0.95rem; } }
 #ci-body button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
@@ -571,6 +571,6 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
    td onclick 대신 진짜 button — 키보드로 열리고, 링크처럼 보이게 유지한다. */
 .ch-rat-link {
     background: none; border: none; padding: 4px 6px; font: inherit;
-    font-weight: bold; color: #1976d2; text-decoration: underline; cursor: pointer;
+    font-weight: bold; color: var(--ink-blue); text-decoration: underline; cursor: pointer;
 }
-.ch-rat-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+.ch-rat-link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 2px; }

@@ -38,13 +38,13 @@ async function deShowRatList(cohort) {
     deRats = rats;
 
     box.innerHTML = `
-    <div style="font-size:0.82rem; color:#666; margin:10px 0 6px;">${rats.length}마리 · 눌러서 수정</div>
+    <div style="font-size:0.82rem; color:var(--ink-soft); margin:10px 0 6px;">${rats.length}마리 · 눌러서 수정</div>
     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(110px,1fr)); gap:6px;">
         ${rats.map(r => `
         <button onclick="searchForEdit('${r.ratId}')"
-            style="padding:9px 6px; border-radius:8px; cursor:pointer; font-size:0.85rem; text-align:center;
-                   border:1px solid ${r.status === '사망' ? '#ffcdd2' : '#c8e6c9'};
-                   background:${r.status === '사망' ? '#ffebee' : '#f1f8e9'};">
+            style="padding:9px 6px; border-radius:2px; cursor:pointer; font-size:0.85rem; text-align:center;
+                   border:1px solid ${r.status === '사망' ? 'var(--stock-pink)' : 'var(--approve)'};
+                   background:${r.status === '사망' ? 'var(--stock-pink-soft)' : 'var(--stock-green-soft)'};">
             ${r.status === '사망' ? '💀' : '🟢'} ${r.ratId}
         </button>`).join('')}
     </div>`;
@@ -69,14 +69,14 @@ async function deShowCageList(cohort) {
     const keys = Object.keys(byCage).sort((a, b) => Number(a) - Number(b));
 
     box.innerHTML = keys.length ? `
-    <div style="font-size:0.82rem; color:#666; margin:10px 0 6px;">케이지 ${keys.length}개 · 눌러서 기록 보기</div>
+    <div style="font-size:0.82rem; color:var(--ink-soft); margin:10px 0 6px;">케이지 ${keys.length}개 · 눌러서 기록 보기</div>
     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(110px,1fr)); gap:6px;">
         ${keys.map(c => `
         <button onclick="deLoadCageRecords('${c}','${cohort}')"
-            style="padding:9px 6px; border-radius:8px; cursor:pointer; font-size:0.85rem; border:1px solid #bbdefb; background:#e3f2fd;">
-            <b>${c}번</b><br><span style="font-size:0.75rem; color:#666;">${byCage[c]}건</span>
+            style="padding:9px 6px; border-radius:2px; cursor:pointer; font-size:0.85rem; border:1px solid var(--ink-blue); background:var(--stock-blue-soft);">
+            <b>${c}번</b><br><span style="font-size:0.75rem; color:var(--ink-soft);">${byCage[c]}건</span>
         </button>`).join('')}
-    </div>` : '<div style="color:#888; padding:10px;">이 코호트의 급여 기록이 없습니다.</div>';
+    </div>` : '<div style="color:var(--ink-soft); padding:10px;">이 코호트의 급여 기록이 없습니다.</div>';
 }
 
 async function deLoadCageRecords(cageId, cohort) {
@@ -95,13 +95,13 @@ async function deLoadCageRecords(cageId, cohort) {
     box.innerHTML = `
     <div class="card" style="margin-top:12px;">
         <h4 style="margin-top:0; color:var(--navy);">${cageId}번 케이지 · 급여 기록 ${deCageRows.length}건</h4>
-        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">
             값을 고치면 그 구간의 섭취량이 다시 계산됩니다. 뒤 구간 계산에도 영향을 주니 확인 후 저장하세요.<br>
             플래그도 여기서 고칠 수 있습니다 — 「이상」을 켜면 그 구간은 섭취량 기준·조제 계산에서 빠집니다 (잰 값 자체는 그대로).
         </div>
         <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
-            <thead><tr style="background:#f5f5f5;">
+            <thead><tr style="background:var(--paper);">
                 <th style="padding:7px;">날짜</th><th style="padding:7px;">물 잔량</th><th style="padding:7px;">물 채움</th>
                 <th style="padding:7px;">사료 잔량</th><th style="padding:7px;">사료 채움</th>
                 <th style="padding:7px;">섭취(물/사료)</th><th style="padding:7px;">플래그</th><th style="padding:7px;"></th>
@@ -121,10 +121,10 @@ function deRowHtml(r, i) {
         <td style="padding:6px;"><input type="number" step="any" id="de-wg-${i}" value="${num(r.waterGiven)}" style="width:80px; padding:4px;"></td>
         <td style="padding:6px;"><input type="number" step="any" id="de-fr-${i}" value="${num(r.foodRemaining)}" style="width:80px; padding:4px;"></td>
         <td style="padding:6px;"><input type="number" step="any" id="de-fg-${i}" value="${num(r.foodGiven)}" style="width:80px; padding:4px;"></td>
-        <td style="padding:6px; text-align:center; color:#555;">
+        <td style="padding:6px; text-align:center; color:var(--ink-soft);">
             ${typeof r.waterConsumed === 'number' ? r.waterConsumed.toFixed(0) : '-'} /
             ${typeof r.foodConsumed === 'number' ? r.foodConsumed.toFixed(0) : '-'}
-            ${typeof r.waterPerCapita === 'number' ? `<br><span style="font-size:0.72rem; color:#888;">마리당 ${r.waterPerCapita.toFixed(0)}</span>` : ''}
+            ${typeof r.waterPerCapita === 'number' ? `<br><span style="font-size:0.72rem; color:var(--ink-soft);">마리당 ${r.waterPerCapita.toFixed(0)}</span>` : ''}
         </td>
         <td style="padding:6px; font-size:0.75rem; white-space:nowrap;">
             ${DE_FLAGS.map(f => `

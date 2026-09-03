@@ -71,18 +71,18 @@ async function renderCohortConfigView(main) {
     main.innerHTML = `
     <div class="card">
         <h3>⚙️ 코호트 설정</h3>
-        <div style="font-size:0.85rem; color:#666; margin-bottom:12px;">
+        <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:12px;">
             군·시점·약물 농도를 여기서 정하면 케이지 입력과 섭취량 계산이 이 값을 따라갑니다.
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <label style="font-weight:bold; color:var(--navy);">코호트</label>
-            <select id="cfg-cohort-sel" style="padding:8px; border-radius:6px; border:1px solid #ccc; min-width:140px;">
+            <select id="cfg-cohort-sel" style="padding:8px; border-radius:2px; border:1px solid #C9C5B8; min-width:140px;">
                 <option>로딩 중...</option>
             </select>
             <button class="btn-small btn-blue" onclick="cfgLoadSelected()">불러오기</button>
-            <span style="width:1px; height:24px; background:#ddd;"></span>
+            <span style="width:1px; height:24px; background:var(--rule);"></span>
             <input type="number" id="cfg-new-cohort" placeholder="새 코호트 번호"
-                   style="padding:8px; border-radius:6px; border:1px solid #ccc; width:140px;">
+                   style="padding:8px; border-radius:2px; border:1px solid #C9C5B8; width:140px;">
             <button class="btn-small btn-green" onclick="cfgCreateNew()">새로 만들기</button>
         </div>
     </div>
@@ -194,8 +194,8 @@ function cfgRenderBody() {
     ${cfgDosingCard(c)}
 
     <div id="cfg-savebar" style="display:${cfgDirty ? 'flex' : 'none'}; position:sticky; bottom:0; z-index:50;
-         background:var(--navy); color:#fff; padding:12px 78px 12px 18px; border-radius:10px; margin-top:16px;
-         align-items:center; justify-content:space-between; box-shadow:0 -2px 12px rgba(0,0,0,0.15);">
+         background:var(--navy); color:#fff; padding:12px 78px 12px 18px; border-radius:2px; margin-top:16px;
+         align-items:center; justify-content:space-between; border-top:1px solid var(--rule);">
         <span style="font-size:0.9rem;">저장하지 않은 변경사항이 있습니다</span>
         <div style="display:flex; gap:8px;">
             <button class="btn-small" onclick="cfgOpen('${c.cohort}')"
@@ -209,20 +209,20 @@ function cfgGroupsCard(c) {
     const rows = c.groups.map((g, i) => `
         <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
             <input type="color" value="${g.color}" onchange="cfgSetGroup(${i},'color',this.value)"
-                   style="width:38px; height:34px; padding:0; border:1px solid #ccc; border-radius:6px;">
+                   style="width:38px; height:34px; padding:0; border:1px solid #C9C5B8; border-radius:2px;">
             <input type="text" value="${g.key}" onchange="cfgSetGroup(${i},'key',this.value)"
-                   placeholder="G0" style="width:70px; padding:6px; border:1px solid #ccc; border-radius:6px;">
+                   placeholder="G0" style="width:70px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
             <input type="text" value="${g.name}" onchange="cfgSetGroup(${i},'name',this.value)"
-                   placeholder="군 이름" style="width:130px; padding:6px; border:1px solid #ccc; border-radius:6px;">
+                   placeholder="군 이름" style="width:130px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
             <input type="text" value="${g.desc || ''}" onchange="cfgSetGroup(${i},'desc',this.value)"
-                   placeholder="설명" style="flex:1; min-width:180px; padding:6px; border:1px solid #ccc; border-radius:6px;">
+                   placeholder="설명" style="flex:1; min-width:180px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
             <button class="btn-small btn-red" onclick="cfgRemoveGroup(${i})" style="padding:4px 10px;">삭제</button>
         </div>`).join('');
 
     return `
     <div class="card">
         <h4 style="margin-top:0; color:var(--navy);">🧪 실험군</h4>
-        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">
             군 코드(G0/G1…)는 랫드 ID와 연결되므로 실험 시작 후에는 바꾸지 마세요.
         </div>
         ${rows}
@@ -242,8 +242,8 @@ function cfgTimepointsCard(c) {
         const box = tp => {
             const on = picked.includes(tp);
             return `<label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;
-                        padding:5px 9px; border-radius:15px; font-size:0.85rem; white-space:nowrap;
-                        border:1px solid ${on ? color : '#ddd'};
+                        padding:5px 9px; border-radius:2px; font-size:0.85rem; white-space:nowrap;
+                        border:1px solid ${on ? color : 'var(--rule)'};
                         background:${on ? color + '18' : '#fff'}; color:${on ? color : '#555'};
                         font-weight:${on ? 'bold' : 'normal'};">
                 <input type="checkbox" ${on ? 'checked' : ''} style="width:auto; margin:0;"
@@ -252,7 +252,7 @@ function cfgTimepointsCard(c) {
         return `
         <div style="flex:1; min-width:300px;">
             <div style="font-weight:bold; color:var(--navy); margin-bottom:7px;">
-                ${label} <span style="font-weight:normal; color:#888; font-size:0.85rem;">${picked.length}회</span>
+                ${label} <span style="font-weight:normal; color:var(--ink-soft); font-size:0.85rem;">${picked.length}회</span>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:6px;">
                 ${CFG_TIMEPOINTS.map(box).join('')}
@@ -264,14 +264,14 @@ function cfgTimepointsCard(c) {
     return `
     <div class="card">
         <h4 style="margin-top:0; color:var(--navy);">📅 검사 시점</h4>
-        <div style="font-size:0.8rem; color:#666; margin-bottom:12px;">
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:12px;">
             수술일(Ligation)이 기준입니다. W1 = 수술 후 7일, W4 = 28일.
         </div>
         <div style="display:flex; gap:22px; flex-wrap:wrap;">
             ${mk('mr', 'MR 촬영', '#3F51B5')}
             ${mk('bp', '혈압(BP) 측정', '#00897B')}
         </div>
-        <div style="margin-top:10px; padding:8px 10px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; font-size:0.82rem; color:#7a5c00;">
+        <div style="margin-top:10px; padding:8px 10px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; font-size:0.82rem; color:#7a5c00;">
             이 날들은 마취·구속 때문에 물을 평소보다 적게 마십니다. 해당 구간은 <b>처치일</b>로 표시되어
             메트포민 용량 계산에서 자동 제외됩니다.
         </div>
@@ -285,16 +285,16 @@ function cfgHousingCard(c) {
             <label style="font-weight:bold; color:var(--navy);">${label}</label>
             <div style="display:flex; align-items:center; gap:6px;">
                 <input type="number" step="any" value="${h[key]}" onchange="cfgSetHousing('${key}', this.value)"
-                       style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
-                <span style="font-size:0.85rem; color:#666; white-space:nowrap;">${unit}</span>
+                       style="width:100%; padding:8px; border:1px solid #C9C5B8; border-radius:2px;">
+                <span style="font-size:0.85rem; color:var(--ink-soft); white-space:nowrap;">${unit}</span>
             </div>
-            ${hint ? `<div style="font-size:0.75rem; color:#888; margin-top:4px;">${hint}</div>` : ''}
+            ${hint ? `<div style="font-size:0.75rem; color:var(--ink-soft); margin-top:4px;">${hint}</div>` : ''}
         </div>`;
 
     return `
     <div class="card">
         <h4 style="margin-top:0; color:var(--navy);">🏠 사육 기본값</h4>
-        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">
             케이지별 입력 화면에서 이 값이 미리 채워집니다. 그날 다르게 했으면 그 화면에서 고치면 됩니다.
         </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap;">
@@ -307,21 +307,21 @@ function cfgHousingCard(c) {
         </div>
 
         <h4 style="color:var(--navy); margin:18px 0 6px;">⚖️ 빈 물통 무게 (기본값)</h4>
-        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">
             물통은 통마다 무게가 다르므로 <b>케이지 현황에서 자리별로</b> 넣는 것이 정확합니다.
             여기 값은 <b>자리에 값이 없을 때만</b> 쓰이는 예비값입니다.
         </div>
         <div style="display:flex; gap:15px; flex-wrap:wrap;">
             ${num('bottleTare', '기본 빈 통', 'g', '실제 쓰는 상태 그대로 (마개·급수구·패킹 포함), 마른 통으로')}
         </div>
-        <div style="margin-top:8px; padding:8px 10px; background:#f5f5f5; border:1px solid #e0e0e0;
-                    border-radius:6px; font-size:0.8rem; color:#666;">
+        <div style="margin-top:8px; padding:8px 10px; background:var(--paper); border:1px solid #e0e0e0;
+                    border-radius:2px; font-size:0.8rem; color:var(--ink-soft);">
             이 값이 <b>1 g</b> 틀리면 매 기록의 마신 물이 <b>1 mL</b>씩 한 방향으로 어긋납니다.
             저울 원본값이 기록마다 함께 저장되므로 나중에 값을 고쳐도 되돌려 계산할 수 있습니다.
         </div>
 
         <h4 style="color:var(--navy); margin:18px 0 6px;">💧 물 로스 보정</h4>
-        <div style="font-size:0.8rem; color:#666; margin-bottom:10px;">
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">
             빈 케이지에 물통만 걸어두고 잰 값입니다. 증발은 <b>시간에 비례</b>하고,
             탈착 로스는 <b>횟수마다 한 번</b>이라 따로 넣어야 주말(64시간)도 정확해집니다.
         </div>
@@ -330,7 +330,7 @@ function cfgHousingCard(c) {
             ${num('lossPerHandling', '탈착 로스',   'g/회',   '물통 뺐다 끼우기 1회당')}
         </div>
         ${(!Number(h.evapPerHour) && !Number(h.lossPerHandling)) ? `
-        <div style="margin-top:10px; padding:8px 10px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; font-size:0.82rem; color:#7a5c00;">
+        <div style="margin-top:10px; padding:8px 10px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; font-size:0.82rem; color:#7a5c00;">
             아직 실측값이 없어 로스 보정 없이 계산됩니다. 값을 넣으면 이후 기록부터 반영됩니다.
         </div>` : ''}
     </div>`;
@@ -339,7 +339,7 @@ function cfgHousingCard(c) {
 function cfgDosingCard(c) {
     // 전역 CSS가 select를 100% 폭으로 늘리므로 여기서 폭을 지정한다
     const anchorSel = (val, onchange) => `
-        <select onchange="${onchange}" style="width:auto; min-width:120px; padding:6px; border:1px solid #ccc; border-radius:6px; font-size:0.9rem;">
+        <select onchange="${onchange}" style="width:auto; min-width:120px; padding:6px; border:1px solid #C9C5B8; border-radius:2px; font-size:0.9rem;">
             ${Object.entries(CFG_ANCHORS).map(([k, label]) =>
                 `<option value="${k}" ${val === k ? 'selected' : ''}>${label}</option>`).join('')}
         </select>`;
@@ -356,46 +356,46 @@ function cfgDosingCard(c) {
                        style="width:auto; vertical-align:middle;"> ${g.key}
             </label>`).join('') + stale.map(g => `
             <button onclick="cfgToggleDoseGroup(${i}, '${g}', false)"
-                    style="font-size:0.8rem; margin-right:8px; padding:2px 8px; border-radius:12px;
+                    style="font-size:0.8rem; margin-right:8px; padding:2px 8px; border-radius:2px;
                            border:1px solid var(--red); background:#ffebee; color:var(--red); cursor:pointer;">
                 ${g} 없는 군 ✕</button>`).join('');
 
         const concBlock = isWater ? `
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
                 <div style="min-width:160px;">
-                    <div style="font-size:0.78rem; color:#666;">목표 용량</div>
+                    <div style="font-size:0.78rem; color:var(--ink-soft);">목표 용량</div>
                     <div style="display:flex; align-items:center; gap:5px;">
                         <input type="number" step="any" value="${d.value}" onchange="cfgSetDose(${i},'value',this.value)"
-                               style="width:90px; padding:6px; border:1px solid #ccc; border-radius:6px;">
-                        <span style="font-size:0.82rem; color:#666;">mg/kg/day</span>
+                               style="width:90px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                        <span style="font-size:0.82rem; color:var(--ink-soft);">mg/kg/day</span>
                     </div>
                 </div>
                 <div style="min-width:160px;">
-                    <div style="font-size:0.78rem; color:#666;">원액 농도</div>
+                    <div style="font-size:0.78rem; color:var(--ink-soft);">원액 농도</div>
                     <div style="display:flex; align-items:center; gap:5px;">
                         <input type="number" step="any" value="${d.stockConc || 0}" onchange="cfgSetDose(${i},'stockConc',this.value)"
-                               style="width:90px; padding:6px; border:1px solid #ccc; border-radius:6px;">
-                        <span style="font-size:0.82rem; color:#666;">mg/mL</span>
+                               style="width:90px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                        <span style="font-size:0.82rem; color:var(--ink-soft);">mg/mL</span>
                     </div>
                 </div>
             </div>` : `
             <div style="min-width:160px;">
-                <div style="font-size:0.78rem; color:#666;">사료 내 농도</div>
+                <div style="font-size:0.78rem; color:var(--ink-soft);">사료 내 농도</div>
                 <div style="display:flex; align-items:center; gap:5px;">
                     <input type="number" step="any" value="${d.value}" onchange="cfgSetDose(${i},'value',this.value)"
-                           style="width:90px; padding:6px; border:1px solid #ccc; border-radius:6px;">
-                    <span style="font-size:0.82rem; color:#666;">% (w/w)</span>
+                           style="width:90px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                    <span style="font-size:0.82rem; color:var(--ink-soft);">% (w/w)</span>
                     <span style="font-size:0.82rem; color:var(--navy); font-weight:bold;">= ${cfgPercentToMgPerG(d.value)} mg/g</span>
                 </div>
             </div>`;
 
         return `
-        <div style="border:1px solid #e0e0e0; border-left:4px solid ${isWater ? '#1565c0' : '#e65100'};
-                    border-radius:8px; padding:12px; margin-bottom:10px; background:#fafafa;">
+        <div style="border:1px solid ${isWater ? 'var(--ink-blue)' : '#E3C55C'};
+                    border-radius:2px; padding:12px; margin-bottom:10px; background:${isWater ? 'var(--stock-blue-soft)' : 'var(--stock-canary-soft)'};">
             <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
                 <input type="text" value="${d.substance}" onchange="cfgSetDose(${i},'substance',this.value)"
-                       style="width:130px; padding:6px; border:1px solid #ccc; border-radius:6px; font-weight:bold;">
-                <select onchange="cfgSetDoseMedium(${i}, this.value)" style="width:auto; min-width:120px; padding:6px; border:1px solid #ccc; border-radius:6px; font-size:0.9rem;">
+                       style="width:130px; padding:6px; border:1px solid #C9C5B8; border-radius:2px; font-weight:bold;">
+                <select onchange="cfgSetDoseMedium(${i}, this.value)" style="width:auto; min-width:120px; padding:6px; border:1px solid #C9C5B8; border-radius:2px; font-size:0.9rem;">
                     ${Object.entries(CFG_MEDIUMS).map(([k, label]) =>
                         `<option value="${k}" ${d.medium === k ? 'selected' : ''}>${label}에 섞음</option>`).join('')}
                 </select>
@@ -404,31 +404,31 @@ function cfgDosingCard(c) {
 
             ${concBlock}
 
-            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #ddd;">
-                <div style="font-size:0.78rem; color:#666; margin-bottom:4px;">적용 군</div>
+            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--rule);">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">적용 군</div>
                 <div>${groupChecks}</div>
             </div>
 
             <div style="margin-top:10px; display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
                 <div>
-                    <div style="font-size:0.78rem; color:#666; margin-bottom:4px;">시작</div>
+                    <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">시작</div>
                     <div style="display:flex; align-items:center; gap:5px;">
                         ${anchorSel(d.startAnchor, `cfgSetDose(${i},'startAnchor',this.value)`)}
                         <span style="font-size:0.85rem;">+</span>
                         <input type="number" value="${d.startOffset || 0}" onchange="cfgSetDose(${i},'startOffset',this.value)"
-                               style="width:64px; padding:6px; border:1px solid #ccc; border-radius:6px;">
-                        <span style="font-size:0.85rem; color:#666;">일</span>
+                               style="width:64px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                        <span style="font-size:0.85rem; color:var(--ink-soft);">일</span>
                     </div>
                 </div>
                 <div>
-                    <div style="font-size:0.78rem; color:#666; margin-bottom:4px;">종료</div>
+                    <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">종료</div>
                     <div style="display:flex; align-items:center; gap:5px;">
                         ${anchorSel(d.endAnchor, `cfgSetDose(${i},'endAnchor',this.value)`)}
                         ${d.endAnchor === 'end' ? '' : `
                         <span style="font-size:0.85rem;">+</span>
                         <input type="number" value="${d.endOffset || 0}" onchange="cfgSetDose(${i},'endOffset',this.value)"
-                               style="width:64px; padding:6px; border:1px solid #ccc; border-radius:6px;">
-                        <span style="font-size:0.85rem; color:#666;">일</span>`}
+                               style="width:64px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                        <span style="font-size:0.85rem; color:var(--ink-soft);">일</span>`}
                     </div>
                 </div>
             </div>
@@ -438,11 +438,11 @@ function cfgDosingCard(c) {
     return `
     <div class="card">
         <h4 style="margin-top:0; color:var(--navy);">💊 약물 · 식이 프로토콜</h4>
-        <div style="font-size:0.8rem; color:#666; margin-bottom:12px;">
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:12px;">
             개체마다 수술 날짜가 다르므로 <b>절대 날짜가 아니라 "기준 + 며칠 뒤"</b>로 정합니다.
             중간에 농도가 바뀌면 행을 두 개로 나누세요.
         </div>
-        ${rows || '<div style="color:#888; padding:10px;">등록된 항목이 없습니다.</div>'}
+        ${rows || '<div style="color:var(--ink-soft); padding:10px;">등록된 항목이 없습니다.</div>'}
         <button class="btn-small btn-blue" onclick="cfgAddDose()">+ 항목 추가</button>
     </div>`;
 }
@@ -468,7 +468,7 @@ function cfgSetGroup(i, key, val) {
 }
 
 function cfgAddGroup() {
-    cfgDraft.groups.push({ key: 'G' + cfgDraft.groups.length, name: '새 군', desc: '', color: '#888888' });
+    cfgDraft.groups.push({ key: 'G' + cfgDraft.groups.length, name: '새 군', desc: '', color: '#5B5F66' });
     cfgMarkDirty(); cfgRenderBody();
 }
 
@@ -589,8 +589,8 @@ function cfgToast(msg) {
     const t = document.createElement('div');
     t.textContent = msg;
     t.style.cssText = 'position:fixed; bottom:24px; left:50%; transform:translateX(-50%);' +
-        'background:#2e7d32; color:#fff; padding:10px 20px; border-radius:20px; z-index:99999;' +
-        'box-shadow:0 3px 12px rgba(0,0,0,0.25); font-size:0.9rem;';
+        'background:var(--approve); color:#fff; padding:10px 20px; border-radius:2px; z-index:99999;' +
+        'border:1px solid var(--approve); font-size:0.9rem;';
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 1800);
 }

@@ -367,10 +367,10 @@ async function go(view, targetId = null, specificTabId = null) {
         if(pw !== '1234') { alert("비밀번호 오류"); return; }
         main.innerHTML = `
         <div class="card">
-            <h3>🛠 데이터 관리</h3>
+            <h3 style="margin:0 0 14px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">데이터 관리</h3>
 
             <div style="text-align:right; margin-bottom:10px;">
-                <button id="btn-backup" class="btn btn-green btn-small" style="width:auto; background:#2c3e50;" onclick="backupAllData()">💾 전체 데이터 백업(JSON)</button>
+                <button id="btn-backup" class="btn btn-small" style="width:auto; background:var(--ink); color:var(--paper);" onclick="backupAllData()">전체 데이터 백업(JSON)</button>
             </div>
 
             <div class="tab-container">
@@ -378,7 +378,7 @@ async function go(view, targetId = null, specificTabId = null) {
                 <div id="adm-edit" class="tab" onclick="admTab('edit')">데이터 수정</div>
                 <div id="adm-logs" class="tab" onclick="admTab('logs')">로그 삭제</div>
                 <div id="adm-up" class="tab" onclick="admTab('up')">업로드(CSV)</div>
-                <div id="adm-ai" class="tab" onclick="admTab('ai')" style="background:#f3e5f5; color:#6a1b9a; font-weight:bold; border-bottom:3px solid #6a1b9a;">🤖 AI 논문 추출</div>
+                <div id="adm-ai" class="tab" onclick="admTab('ai')" style="background:var(--stock-blue-soft); color:var(--ink); font-weight:bold; border-bottom:3px solid var(--ink-blue);">AI 논문 추출</div>
             </div>
             
             <div id="tab-del">
@@ -386,7 +386,7 @@ async function go(view, targetId = null, specificTabId = null) {
                     <label>개별 랫드 삭제 (ID)</label>
                     <div style="display:flex; gap:10px;"><input type="text" id="del-id" placeholder="C1101"><button class="btn btn-red btn-small" onclick="deleteRat()">삭제</button></div>
                 </div>
-                <hr style="margin:20px 0; border:0; border-top:1px solid #eee;">
+                <hr style="margin:20px 0; border:0; border-top:1px solid var(--rule);">
                 <div class="input-group">
                     <label>코호트 전체 삭제 (Cohort No)</label>
                     <div style="display:flex; gap:10px;"><input type="number" id="del-cohort" placeholder="11"><button class="btn btn-red btn-small" onclick="deleteCohort()">전체 삭제</button></div>
@@ -402,7 +402,7 @@ async function go(view, targetId = null, specificTabId = null) {
                 <div id="de-pane-rat">
                     <div class="input-group">
                         <label>코호트를 고르면 개체 목록이 나옵니다</label>
-                        <select id="de-rat-cohort" style="width:100%; padding:9px; border-radius:6px; border:1px solid #ccc;">
+                        <select id="de-rat-cohort" style="width:100%; padding:9px; border-radius:2px; border:1px solid #C9C5B8;">
                             <option value="">로딩 중...</option>
                         </select>
                     </div>
@@ -413,7 +413,7 @@ async function go(view, targetId = null, specificTabId = null) {
                 <div id="de-pane-cage" style="display:none;">
                     <div class="input-group">
                         <label>코호트를 고르면 케이지 목록이 나옵니다</label>
-                        <select id="de-cage-cohort" style="width:100%; padding:9px; border-radius:6px; border:1px solid #ccc;">
+                        <select id="de-cage-cohort" style="width:100%; padding:9px; border-radius:2px; border:1px solid #C9C5B8;">
                             <option value="">로딩 중...</option>
                         </select>
                     </div>
@@ -431,7 +431,7 @@ async function go(view, targetId = null, specificTabId = null) {
             </div>
 
             <div id="tab-up" style="display:none;">
-                <div style="background:#fff3e0; padding:15px; border-radius:8px; border:1px solid #ffcc80; margin-bottom:15px; font-size:0.9rem; line-height:1.5;">
+                <div style="background:var(--stock-canary-soft); padding:15px; border-radius:2px; border:1px solid #E3C55C; margin-bottom:15px; font-size:0.9rem; line-height:1.5; color:#6B571C;">
                     <b>🚨 엑셀 업로드 주의사항</b><br>
                     1. 엑셀 첫 줄 헤더 명칭을 정확히 일치시켜주세요. (Rat_ID 필수)<br>
                     2. 날짜는 YYYY-MM-DD (예: 2026-02-23) 형식으로 적어주세요.<br>
@@ -447,7 +447,7 @@ async function go(view, targetId = null, specificTabId = null) {
             </div>
 
             <div id="tab-ai" style="display:none;">
-                <div style="background:#f3e5f5; padding:15px; border-radius:8px; border:1px solid #ce93d8; margin-bottom:15px; font-size:0.95rem; line-height:1.5; color:#4a148c;">
+                <div style="background:var(--stock-blue-soft); padding:15px; border-radius:2px; border:1px solid var(--ink-blue); margin-bottom:15px; font-size:0.95rem; line-height:1.5; color:var(--ink);">
                     <b>🧠 AI 딥러닝 & 논문 초안 작성용 데이터 추출기</b><br>
                     - 코호트 조건(메모), 개체별 타임라인(수술/사망/MR/샘플 채취일), 혈압/체중 변화, ARE 발생 여부가 AI가 읽기 가장 좋은 형태로 정리됩니다.<br>
                     - 추출된 텍스트 파일을 <b>Gemini, ChatGPT, Claude</b>에 업로드하고 논문 주제나 초안 작성을 지시하세요.

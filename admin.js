@@ -162,7 +162,7 @@ async function searchForEdit(ratId) {
                     </div>
                     
                     <label style="margin-top:10px; display:block;">부원인 / 동반 (Secondary COD)</label>
-                    <div style="display:flex; gap:5px; flex-wrap:wrap; background:#f8f9fa; padding:8px; border-radius:4px; border:1px solid #ddd;">
+                    <div style="display:flex; gap:5px; flex-wrap:wrap; background:var(--paper); padding:8px; border-radius:2px; border:1px solid var(--rule);">
                         ${['SAH', 'Infarction', 'Vasospasm', 'Bleeding', 'Seizure'].map(sec => `
                             <label style="cursor:pointer; font-size:0.8rem; display:flex; align-items:center;"><input type="checkbox" class="ed-cod-sec-chk" value="${sec}" ${currentCodSec.includes(sec)?'checked':''}> ${sec}</label>
                         `).join('')}
@@ -176,7 +176,7 @@ async function searchForEdit(ratId) {
                             <option value="O" ${areMain==='O'?'selected':''}>O</option>
                             <option value="X" ${areMain==='X'?'selected':''}>X</option>
                         </select>
-                        <div id="ed-are-counts" style="display:${areMain==='O'?'flex':'none'}; gap:8px; align-items:center; background:#f1f3f5; padding:4px 8px; border-radius:4px;">
+                        <div id="ed-are-counts" style="display:${areMain==='O'?'flex':'none'}; gap:8px; align-items:center; background:var(--paper); padding:4px 8px; border-radius:2px;">
                             <label style="font-size:0.8rem; display:flex; align-items:center; margin:0;">mi <input type="number" id="ed-are-micro" value="${cMicro}" style="width:40px; margin-left:4px; padding:2px;"></label>
                             <label style="font-size:0.8rem; display:flex; align-items:center; margin:0;">ma <input type="number" id="ed-are-macro" value="${cMacro}" style="width:40px; margin-left:4px; padding:2px;"></label>
                             <label style="font-size:0.8rem; display:flex; align-items:center; margin:0;">미확인 <input type="number" id="ed-are-unk" value="${cUnk}" style="width:40px; margin-left:4px; padding:2px;"></label>
@@ -211,7 +211,7 @@ async function searchForEdit(ratId) {
                 
                 <div class="input-group" style="grid-column: span 2;">
                     <label>MR 촬영 이력 (Infarction 관찰 포함)</label>
-                    <div id="ed-mr-list" style="background:#f8f9fa; padding:10px; border-radius:6px; border:1px solid #ddd;">
+                    <div id="ed-mr-list" style="background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);">
                         ${(rData.mrDates || []).map(mr => `
                             <div class="ed-mr-row" style="display:flex; gap:5px; margin-bottom:5px;">
                                 <select class="ed-mr-tp" style="width:90px; padding:5px;">
@@ -461,7 +461,7 @@ async function searchLogsDel() {
             <label style="font-size:0.85rem; cursor:pointer; display:block; margin-bottom:5px;">
                 <input type="checkbox" onchange="toggleAllLogs(this, 'chk-daily')"> 전체 선택
             </label>
-            <div style="max-height:250px; overflow-y:auto; border:1px solid #eee;">
+            <div style="max-height:250px; overflow-y:auto; border:1px solid var(--rule);">
                 <table style="font-size:0.85rem;">
                     <thead><tr><th width="30">✔</th><th>날짜</th><th>점수</th><th>메모</th></tr></thead>
                     <tbody>`;
@@ -483,7 +483,7 @@ async function searchLogsDel() {
             <label style="font-size:0.85rem; cursor:pointer; display:block; margin-bottom:5px;">
                 <input type="checkbox" onchange="toggleAllLogs(this, 'chk-dose')"> 전체 선택
             </label>
-            <div style="max-height:250px; overflow-y:auto; border:1px solid #eee;">
+            <div style="max-height:250px; overflow-y:auto; border:1px solid var(--rule);">
                 <table style="font-size:0.85rem;">
                     <thead><tr><th width="30">✔</th><th>날짜</th><th>체중</th><th>용량(ml)</th></tr></thead>
                     <tbody>`;
@@ -668,7 +668,7 @@ function analyzeBP(mode) {
 
     // "선택한 값 저장하기" 버튼 추가
     const actionDiv = document.createElement("div");
-    actionDiv.innerHTML = `<button onclick="openBatchModal()" style="padding:10px 20px; background:#00c853; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:20px;">✅ 선택한 값 DB 저장하기</button>`;
+    actionDiv.innerHTML = `<button onclick="openBatchModal()" style="padding:10px 20px; background:#00c853; color:white; border:none; border-radius:2px; font-weight:bold; cursor:pointer; margin-bottom:20px;">✅ 선택한 값 DB 저장하기</button>`;
     output.appendChild(actionDiv);
 
     Object.keys(grouped).sort().forEach(ratId => {
@@ -735,7 +735,7 @@ function analyzeBP(mode) {
             table.innerHTML += `
                 <tr>
                     <td style="text-align:center;">${radioHtml}</td>
-                    <td style="color:#e67e22; font-weight:500;">${file}</td>
+                    <td style="color:#7A5C00; font-weight:500;">${file}</td>
                     <td>${nVal > 0 ? nVal : `<span style="color:red">0</span>`}</td>
                     <td>${sbpVal}</td>
                     <td>${dbpVal}</td>
@@ -747,7 +747,7 @@ function analyzeBP(mode) {
                     <td colspan="8">
                         <table class="bp-log-table">
                             <tr><th>Time</th><th>SBP</th><th>DBP</th><th>Mean</th><th>Volume</th><th>Reason</th></tr>
-                            ${judged.map(r => `<tr style="${r.reason!=='✅ Accepted'?'color:#aaa':''}"><td>${r.time}</td><td>${r.sbp}</td><td>${r.dbp}</td><td>${r.mean}</td><td>${r.volume}</td><td>${r.reason}</td></tr>`).join("")}
+                            ${judged.map(r => `<tr style="${r.reason!=='✅ Accepted'?'color:var(--ink-soft)':''}"><td>${r.time}</td><td>${r.sbp}</td><td>${r.dbp}</td><td>${r.mean}</td><td>${r.volume}</td><td>${r.reason}</td></tr>`).join("")}
                         </table>
                     </td>
                 </tr>`;
@@ -786,7 +786,7 @@ function openBatchModal() {
 
         const row = `
             <tr style="border-bottom:1px solid #eee;">
-                <td style="padding:10px; color:#888; font-size:13px;">${data.ratId}</td>
+                <td style="padding:10px; color:var(--ink-soft); font-size:0.8rem;">${data.ratId}</td>
                 
                 <td style="padding:10px;">
                     <div style="font-weight:bold; color:#d32f2f;">SBP: ${data.sbp}</div>
@@ -794,21 +794,21 @@ function openBatchModal() {
                 </td>
                 
                 <td style="padding:10px;">
-                    <input type="date" id="save_date_${idx}" value="${data.date}" style="padding:5px; border:1px solid #ddd; border-radius:4px;">
+                    <input type="date" id="save_date_${idx}" value="${data.date}" style="padding:5px; border:1px solid var(--rule); border-radius:2px;">
                 </td>
                 
                 <td style="padding:10px;">
                     <input type="text" id="save_id_${idx}" value="${formattedId}" 
-                        style="padding:6px; width:120px; border:2px solid #00c853; border-radius:4px; font-weight:bold; font-size:14px;">
+                        style="padding:6px; width:120px; border:2px solid #00c853; border-radius:2px; font-weight:bold; font-size:14px;">
                 </td>
                 
                 <td style="padding:10px; display:flex; align-items:center; gap:5px;">
-                    <select id="save_time_${idx}" style="padding:6px; border:1px solid #1a237e; border-radius:4px; font-weight:bold;">
+                    <select id="save_time_${idx}" style="padding:6px; border:1px solid var(--ink); border-radius:2px; font-weight:bold;">
                         <option value="">--선택--</option>
                         ${timeOptions}
                     </select>
                     <input type="text" id="save_time_manual_${idx}" placeholder="직접입력" 
-                        style="padding:6px; width:80px; border:1px solid #ddd; border-radius:4px;">
+                        style="padding:6px; width:80px; border:1px solid var(--rule); border-radius:2px;">
                 </td>
                 
                 <input type="hidden" id="save_data_${idx}" value='${JSON.stringify(data)}'>
@@ -967,8 +967,8 @@ function parseRatUploadCSV(e) {
         if (idIdx === -1) return alert("엑셀 첫 줄에 'Rat_ID' 열이 반드시 있어야 합니다.");
 
         csvUploadData = [];
-        let previewHtml = '<table style="width:100%; border-collapse:collapse; white-space:nowrap;"><thead><tr style="background:#f1f3f5;">';
-        headers.forEach(h => previewHtml += `<th style="border:1px solid #ddd; padding:5px;">${h}</th>`);
+        let previewHtml = '<table style="width:100%; border-collapse:collapse; white-space:nowrap;"><thead><tr style="background:var(--paper);">';
+        headers.forEach(h => previewHtml += `<th style="border:1px solid var(--rule); padding:5px;">${h}</th>`);
         previewHtml += '</tr></thead><tbody>';
 
         for (let i = 1; i < rows.length; i++) {
@@ -980,7 +980,7 @@ function parseRatUploadCSV(e) {
             headers.forEach((h, idx) => {
                 const val = cols[idx] ? cols[idx].trim() : '';
                 rowData[h] = val;
-                previewHtml += `<td style="border:1px solid #eee; padding:5px;">${val}</td>`;
+                previewHtml += `<td style="border:1px solid var(--rule); padding:5px;">${val}</td>`;
             });
             previewHtml += '</tr>';
             csvUploadData.push(rowData);
@@ -1446,7 +1446,7 @@ async function exportForAI() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        statusText.innerHTML = `<span style="color:green;">✅ 데이터가 성공적으로 추출되어 다운로드되었습니다! (파일명: ${fileName})</span><br><span style="font-size:0.9rem; font-weight:normal; color:#555;">이 텍스트 파일을 AI 챗봇에 업로드하고 지시를 내려보세요.</span>`;
+        statusText.innerHTML = `<span style="color:green;">✅ 데이터가 성공적으로 추출되어 다운로드되었습니다! (파일명: ${fileName})</span><br><span style="font-size:0.9rem; font-weight:normal; color:var(--ink-soft);">이 텍스트 파일을 AI 챗봇에 업로드하고 지시를 내려보세요.</span>`;
 
     } catch (e) {
         console.error(e);
@@ -1564,11 +1564,11 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
         extraWrap.id = 'modal-cod-extra-wrap';
         extraWrap.innerHTML = `
             <div id="modal-cod-other-wrap" style="display:none; margin-top:5px;">
-                <input type="text" id="modal-cod-other" placeholder="사망 원인을 직접 입력하세요" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ddd; box-sizing:border-box;">
+                <input type="text" id="modal-cod-other" placeholder="사망 원인을 직접 입력하세요" style="width:100%; padding:8px; border-radius:2px; border:1px solid var(--rule); box-sizing:border-box;">
             </div>
-            <div style="margin-top:15px; padding-top:10px; border-top:1px dashed #ddd;">
-                <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">부원인 / 동반질환 (Secondary COD) <span style="font-weight:normal; color:#666;">- 다중 선택</span></label>
-                <div style="display:flex; flex-wrap:wrap; gap:8px; background:#f8f9fa; padding:10px; border-radius:4px; border:1px solid #ddd;">
+            <div style="margin-top:15px; padding-top:10px; border-top:1px dashed var(--rule);">
+                <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">부원인 / 동반질환 (Secondary COD) <span style="font-weight:normal; color:var(--ink-soft);">- 다중 선택</span></label>
+                <div style="display:flex; flex-wrap:wrap; gap:8px; background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);">
                     <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="SAH"> SAH</label>
                     <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="Infarction"> Infarction</label>
                     <label style="cursor:pointer; font-size:0.85rem; display:flex; align-items:center; gap:4px;"><input type="checkbox" class="modal-cod-sec-chk" value="Vasospasm"> Vasospasm</label>
@@ -1653,8 +1653,8 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
         areListBox.style.gap = '10px';
         areListBox.style.background = '#f8f9fa';
         areListBox.style.padding = '10px 15px';
-        areListBox.style.borderRadius = '8px';
-        areListBox.style.border = '1px solid #ddd';
+        areListBox.style.borderRadius = '2px';
+        areListBox.style.border = '1px solid var(--rule)';
         areListBox.style.boxSizing = 'border-box';
         
         areListBox.innerHTML = `
@@ -1669,7 +1669,7 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
     }
     
     const rowContainer = document.getElementById('modal-are-rows');
-    rowContainer.innerHTML = '<span style="color:#666; font-size:0.85rem;">기록을 불러오는 중...</span>'; 
+    rowContainer.innerHTML = '<span style="color:var(--ink-soft); font-size:0.85rem;">기록을 불러오는 중...</span>'; 
     
     let areList = [];
     let codSecList = []; // 부원인 리스트
@@ -1710,7 +1710,7 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
             deathInputBox.style.marginBottom = '15px';
             deathInputBox.innerHTML = `
                 <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:5px; color:var(--navy);">사망일 (선택)</label>
-                <input type="date" id="modal-death-date" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px; box-sizing:border-box;">
+                <input type="date" id="modal-death-date" style="width:100%; padding:8px; border:1px solid #C9C5B8; border-radius:2px; box-sizing:border-box;">
             `;
             modalContent.insertBefore(deathInputBox, btnDiv);
         }

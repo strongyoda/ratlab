@@ -2366,7 +2366,7 @@ async function renderGroupSelectors() {
             grpBox.style.cssText = "display:flex; flex-wrap:wrap; gap:4px;";
             sortedGroups.forEach(g => {
                 const lbl = document.createElement('label');
-                lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:var(--ink-soft); display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
+                lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:var(--ink-soft); display:flex; align-items:center; background:var(--paper); padding:6px 9px; border-radius:2px; border:1px solid var(--rule); white-space:nowrap; min-height:24px;";
                 lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 4px 0 0; transform:scale(1.1);" onchange="
                 const wrap = this.closest('.cohort-wrapper');
                 const mainCb = wrap.querySelector('.co-main-cb');
@@ -2431,7 +2431,7 @@ async function renderCohortCheckboxes(containerId) {
 
         sortedGroups.forEach(g => {
             const lbl = document.createElement('label');
-            lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:var(--ink-soft); display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
+            lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:var(--ink-soft); display:flex; align-items:center; background:var(--paper); padding:6px 9px; border-radius:2px; border:1px solid var(--rule); white-space:nowrap; min-height:24px;";
             
             // 👇 문제의 원인이었던 자동 체크 로직 제거 및 독립 작동으로 변경
             lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 4px 0 0; transform:scale(1.1);" onchange="
@@ -2710,8 +2710,8 @@ function renderUnifiedTimeline(groupsData, container) {
     wrapper.style.flex = '0 0 100%';     
     wrapper.style.marginBottom = '25px';
     wrapper.style.background = '#fff';
-    wrapper.style.border = '2px solid #1a237e';
-    wrapper.style.borderRadius = '8px';
+    wrapper.style.border = '1px solid var(--rule)';
+    wrapper.style.borderRadius = '2px';
     wrapper.style.padding = '15px';
     wrapper.style.boxShadow = '0 4px 10px rgba(0,0,0,0.05)';
     
@@ -2719,7 +2719,7 @@ function renderUnifiedTimeline(groupsData, container) {
     
     wrapper.innerHTML = `
         <h4 style="margin:0 0 5px 0; color:var(--navy); text-align:center;">⏳ 비교군 통합 이벤트 타임라인</h4>
-        <div style="text-align:center; font-size:0.85rem; color:var(--ink-soft); margin-bottom:10px; background:#f8f9fa; padding:5px; border-radius:4px;">
+        <div style="text-align:center; font-size:0.85rem; color:var(--ink-soft); margin-bottom:10px; background:var(--paper); border:1px solid var(--rule); padding:5px; border-radius:2px;">
             <b>도형 의미:</b> 🔵 MR 촬영 &nbsp;|&nbsp; <b>H</b> Histology 샘플 &nbsp;|&nbsp; <b>C</b> Cast 샘플 <br>
             <span style="font-size:0.75rem;">(노란 점선: 각 비교군에서 진행된 <b>'동일한 시점(이벤트)'의 가장 앞선 기준점</b>을 연결한 선입니다)</span>
         </div>
@@ -2879,7 +2879,7 @@ function renderUnifiedTimeline(groupsData, container) {
                 scales: {
                     y: { 
                         min: -0.5, max: groupsData.length - 0.5,
-                        ticks: { stepSize: 1, callback: function(value) { return groupNames[groupNames.length - 1 - value] || ''; }, font: { weight: 'bold', size: 12 }, color: '#1a237e' },
+                        ticks: { stepSize: 1, callback: function(value) { return groupNames[groupNames.length - 1 - value] || ''; }, font: { weight: 'bold', size: 12 }, color: '#23282E' },
                         grid: { display: false, drawBorder: false } 
                     },
                     x: { 
@@ -2980,8 +2980,8 @@ function openRatModal(ratId) {
         modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;';
         
         modal.innerHTML = `
-            <div style="background:#f4f6f8; width:95%; max-width:1100px; height:90%; border-radius:10px; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,0.5);">
-                <div style="background:var(--navy, #1a237e); color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
+            <div style="background:var(--paper); width:95%; max-width:1100px; height:90%; border-radius:2px; border:1px solid var(--ink); display:flex; flex-direction:column; overflow:hidden;">
+                <div style="background:var(--ink); color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
                     <h3 style="margin:0; font-size:1.2rem;">🐁 개체 상세보기 - <span id="rdm-title"></span></h3>
                     <button onclick="document.getElementById('rat-detail-modal-overlay').style.display='none'" style="background:none; border:none; color:white; font-size:1.8rem; cursor:pointer; line-height:1;">&times;</button>
                 </div>

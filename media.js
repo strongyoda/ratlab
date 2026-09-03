@@ -128,24 +128,24 @@ function renderStagingArea(docId) {
     let html = '';
     stagedPhotos.forEach(p => {
         html += `
-        <div style="display:flex; gap:10px; align-items:center; background:#f1f3f5; padding:10px; border-radius:6px; border:1px solid #ccc;">
-            <img src="${p.url}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border:1px solid #aaa;">
+        <div style="display:flex; gap:10px; align-items:center; background:var(--paper); padding:10px; border-radius:2px; border:1px solid #C9C5B8;">
+            <img src="${p.url}" style="width:70px; height:70px; object-fit:cover; border-radius:2px; border:1px solid #aaa;">
             <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
-                <span style="font-size:0.85rem; font-weight:bold; color:#333; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${p.file.name}</span>
+                <span style="font-size:0.85rem; font-weight:bold; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:200px;">${p.file.name}</span>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <input type="date" id="stage-date-${p.id}" value="${todayStr}" style="width:125px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
-                    <select id="stage-tp-${p.id}" style="width:120px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
+                    <input type="date" id="stage-date-${p.id}" value="${todayStr}" style="width:125px; padding:6px; font-size:0.85rem; border-radius:2px; border:1px solid #C9C5B8;">
+                    <select id="stage-tp-${p.id}" style="width:120px; padding:6px; font-size:0.85rem; border-radius:2px; border:1px solid #C9C5B8;">
                         <option value="none">시점(선택안함)</option>
                         ${tpOptions}
                     </select>
-                    <select id="stage-rmark-${p.id}" style="width:110px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
+                    <select id="stage-rmark-${p.id}" style="width:110px; padding:6px; font-size:0.85rem; border-radius:2px; border:1px solid #C9C5B8;">
                         <option value="none">R 마크 (X)</option>
                         <option value="right">▶ 오른쪽 (R)</option>
                         <option value="left">◀ 왼쪽 (R)</option>
                         <option value="top">▲ 위쪽 (R)</option>
                         <option value="bottom">▼ 아래쪽 (R)</option>
                     </select>
-                    <input type="text" id="stage-memo-${p.id}" placeholder="개별 메모 (예: 조직 채취시 손상)" style="flex:1; min-width:150px; padding:6px; font-size:0.85rem; border-radius:4px; border:1px solid #bbb;">
+                    <input type="text" id="stage-memo-${p.id}" placeholder="개별 메모 (예: 조직 채취시 손상)" style="flex:1; min-width:150px; padding:6px; font-size:0.85rem; border-radius:2px; border:1px solid #C9C5B8;">
                 </div>
             </div>
             <button class="btn-red" onclick="removeStagedPhoto('${p.id}', '${docId}')" style="padding:6px 12px; font-weight:bold; font-size:1.1rem;">✖</button>

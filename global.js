@@ -320,7 +320,7 @@ function batchChipHtml(rat, batchSize, opts) {
     if (!b) return '';
     const o = opts || {};
     return `<span title="Batch ${b} (반입 ${b}차)" style="display:inline-block; padding:1px 6px;
-        background:#eceff1; color:#546e7a; border-radius:9px; font-size:${o.size || '0.72rem'};
+        background:var(--paper); color:var(--ink-soft); border:1px solid var(--rule); border-radius:2px; font-size:${o.size || '0.72rem'};
         font-weight:bold; white-space:nowrap; vertical-align:middle;">B${b}</span>`;
 }
 

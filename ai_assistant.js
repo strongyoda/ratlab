@@ -456,7 +456,7 @@ async function handleFindExtreme(spec, mode /* 'max'|'min' */) {
     const replyMsg = spec.reply ? escapeHtml(spec.reply) : '';
     const html = `
         ${replyMsg ? `<div style="margin-bottom:6px;">${replyMsg}</div>` : ''}
-        <div style="font-size:0.85rem; color:#666; margin-bottom:6px;">${mode === 'max' ? '🔺 최대' : '🔻 최소'} <b>${escapeHtml(targetLabel(target))}</b> · 후보 ${valid.length}마리 중 상위 ${top.length}</div>
+        <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:6px;">${mode === 'max' ? '🔺 최대' : '🔻 최소'} <b>${escapeHtml(targetLabel(target))}</b> · 후보 ${valid.length}마리 중 상위 ${top.length}</div>
         ${renderRatList(top, target)}
         ${top.length > 1 ? renderCompareButton(top.map(t => t.rat.ratId)) : ''}
     `;
@@ -524,7 +524,7 @@ async function handleFilter(spec) {
 
     const html = `
         <div style="margin-bottom:6px;">${escapeHtml(spec.reply || '검색 결과')}</div>
-        <div style="font-size:0.85rem; color:#666; margin-bottom:6px;">총 <b>${rats.length}</b>마리${rats.length > 30 ? ` (앞 30마리만 표시)` : ''}</div>
+        <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:6px;">총 <b>${rats.length}</b>마리${rats.length > 30 ? ` (앞 30마리만 표시)` : ''}</div>
         ${renderRatList(display.map(r => ({ rat: r, value: null })), null)}
         ${rats.length > 1 ? renderCompareButton(rats.slice(0, 10).map(r => r.ratId), '상위 10마리 비교 차트로 보기') : ''}
     `;
@@ -605,7 +605,7 @@ async function handleStat(spec) {
 
     const html = `
         <div style="margin-bottom:6px;">${escapeHtml(spec.reply || '통계 결과')}</div>
-        <div style="background:#f4f6f8; padding:10px 14px; border-radius:8px; border-left:3px solid #1565c0;">
+        <div style="background:#f4f6f8; padding:10px 14px; border-radius:2px; border:1px solid var(--ink-blue);">
             ${resultLine}
         </div>
     `;
@@ -651,7 +651,7 @@ async function handleGetField(spec) {
         } else {
             val = `(미지원 필드: ${escapeHtml(field)})`;
         }
-        lines.push(`<div style="margin-bottom:8px;"><b>${escapeHtml(r.ratId)}</b> · <span style="color:#1565c0;">${escapeHtml(field)}</span><br><span>${val}</span></div>`);
+        lines.push(`<div style="margin-bottom:8px;"><b>${escapeHtml(r.ratId)}</b> · <span style="color:var(--ink-blue);">${escapeHtml(field)}</span><br><span>${val}</span></div>`);
     }
 
     appendMessage('bot', `<div style="margin-bottom:6px;">${escapeHtml(spec.reply || '')}</div>${lines.join('')}`);
@@ -694,16 +694,16 @@ async function handleSearchMemo(spec) {
     const cards = hits.slice(0, 15).map(h => {
         const m = h.matches.slice(0, 3).map(x =>
             `<div style="font-size:0.85rem; padding:2px 0;">
-                <span style="color:#888;">[${escapeHtml(x.src)}]</span> ${highlightKeyword(x.text, kw)}
+                <span style="color:var(--ink-soft);">[${escapeHtml(x.src)}]</span> ${highlightKeyword(x.text, kw)}
             </div>`).join('');
-        return `<div style="border-left:3px solid #ff9800; padding:6px 10px; margin-bottom:8px; background:#fff8e1;">
-            <a href="javascript:void(0)" onclick="goToDetail('${escapeJs(h.rat.ratId)}')" style="font-weight:bold; color:#1565c0; text-decoration:none;">${escapeHtml(h.rat.ratId)}</a>
+        return `<div style="border:1px solid #E3C55C; padding:6px 10px; margin-bottom:8px; background:var(--stock-canary-soft);">
+            <a href="javascript:void(0)" onclick="goToDetail('${escapeJs(h.rat.ratId)}')" style="font-weight:bold; color:var(--ink-blue); text-decoration:none;">${escapeHtml(h.rat.ratId)}</a>
             ${m}
         </div>`;
     }).join('');
 
     appendMessage('bot', `
-        <div style="margin-bottom:6px;">${escapeHtml(spec.reply || '')} <span style="color:#666;">(${hits.length}건)</span></div>
+        <div style="margin-bottom:6px;">${escapeHtml(spec.reply || '')} <span style="color:var(--ink-soft);">(${hits.length}건)</span></div>
         ${cards}
     `);
 }
@@ -836,11 +836,11 @@ function renderRatList(scoredArr, target, showRank = false) {
         const cod = r.cod || (r.codFull ? extractLegacyCod(r.codFull) : '');
         const are = r.are || '';
         const valStr = (s.value != null && target) ? formatValue(target, s.value) : '';
-        return `<div style="border-left:3px solid #1565c0; padding:6px 10px; margin-bottom:6px; background:#f4f6f8; border-radius:4px;">
-            ${showRank ? `<span style="color:#666; font-size:0.85rem;">#${i + 1}</span> ` : ''}
-            <a href="javascript:void(0)" onclick="goToDetail('${escapeJs(r.ratId)}')" style="font-weight:bold; color:#1565c0; text-decoration:none;">${escapeHtml(r.ratId)}</a>
+        return `<div style="border:1px solid var(--ink-blue); padding:6px 10px; margin-bottom:6px; background:#f4f6f8; border-radius:2px;">
+            ${showRank ? `<span style="color:var(--ink-soft); font-size:0.85rem;">#${i + 1}</span> ` : ''}
+            <a href="javascript:void(0)" onclick="goToDetail('${escapeJs(r.ratId)}')" style="font-weight:bold; color:var(--ink-blue); text-decoration:none;">${escapeHtml(r.ratId)}</a>
             ${valStr ? ` <span style="color:#c62828; font-weight:bold;">${escapeHtml(valStr)}</span>` : ''}
-            <div style="font-size:0.8rem; color:#666; margin-top:2px;">
+            <div style="font-size:0.8rem; color:var(--ink-soft); margin-top:2px;">
                 ${escapeHtml(r.status || '-')} ${cod ? `· ${escapeHtml(cod)}` : ''} ${are ? `· ARE ${escapeHtml(are)}` : ''}
             </div>
         </div>`;
@@ -850,7 +850,7 @@ function renderRatList(scoredArr, target, showRank = false) {
 function renderCompareButton(ids, label = '이 개체들 비교 차트로 보기') {
     const idsStr = ids.join(',');
     return `<button onclick="aiTriggerCompareFromIds('${escapeJs(idsStr)}')"
-        style="margin-top:6px; background:var(--navy); color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:0.85rem;">
+        style="margin-top:6px; background:var(--navy); color:white; border:none; padding:6px 12px; border-radius:2px; cursor:pointer; font-size:0.85rem;">
         📊 ${escapeHtml(label)}
     </button>`;
 }
