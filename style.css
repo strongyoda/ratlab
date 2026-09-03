@@ -113,25 +113,29 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--i
 .rate-btn { flex: 1; padding: 12px 0; border: 1px solid #eee; background: white; border-radius: 6px; font-weight: bold; cursor: pointer; }
 .rate-btn.active { background-color: var(--navy) !important; color: white !important; border-color: var(--navy) !important; }
 
-.cohort-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+.cohort-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 3px double var(--ink); padding-bottom: 10px; }
 .d-day-badge { background: var(--ink); color: var(--sheet); padding: 4px 10px; border-radius: 2px; font-size: 0.8rem; font-weight: 700; white-space: nowrap; font-family: var(--font-mono); }
 
 .rat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 10px; }
 
-.rat-badge { 
-    display: flex; justify-content: center; align-items: center; 
-    height: 40px; width: 40px; border-radius: 50%; font-weight: bold; font-size: 0.9rem; 
-    cursor: pointer; transition: transform 0.1s; 
-    background: white; border: 3px solid #eee; 
+/* 개체 배지 = 표본 칸: 원형 대신 원장 셀. 진짜 button으로 쓰므로 리셋 포함 */
+.rat-badge {
+    display: flex; justify-content: center; align-items: center;
+    height: 40px; width: 40px; border-radius: 2px; font-weight: 700; font-size: 0.9rem;
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    cursor: pointer; transition: transform 0.1s; padding: 0;
+    background: var(--sheet); border: 2px solid var(--rule); color: var(--ink);
 }
-.status-normal { border-color: var(--green); color: var(--green); background: #e8f5e9; }
-.status-mild { border-color: var(--orange); color: var(--orange); background: #fff3e0; }
-.status-severe { border-color: var(--red); color: var(--red); background: #ffebee; }
-.status-dead { border-color: var(--gray); background: #eeeeee; color: var(--gray); text-decoration: line-through; }
+.rat-badge:active { transform: translateY(1px); }
+.rat-badge:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.status-normal { border-color: var(--approve); color: var(--approve); background: var(--stock-green-soft); }
+.status-mild { border-color: #E3C55C; color: #7A5C00; background: var(--stock-canary-soft); }
+.status-severe { border-color: var(--stock-pink); color: var(--stamp); background: var(--stock-pink-soft); }
+.status-dead { border-color: var(--rule); background: var(--paper); color: var(--ink-soft); text-decoration: line-through; }
 
 .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
-.info-item { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; }
-.info-val { font-size: 1.2rem; font-weight: bold; color: var(--navy); }
+.info-item { background: var(--paper); padding: 15px; border-radius: 2px; border: 1px solid var(--rule); text-align: center; }
+.info-val { font-size: 1.2rem; font-weight: bold; color: var(--ink); font-family: var(--font-mono); }
 .chart-area { position: relative; height: 350px; width: 100%; margin-top: 20px; } /* 차트 영역 높이 증가 */
 .section-title { font-size: 1.05rem; font-weight: 800; color: var(--ink); margin-bottom: 15px; border-bottom: 3px double var(--ink); padding-bottom: 6px; letter-spacing: -0.01em; }
 
@@ -160,12 +164,12 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 .add-row-btn { background: var(--navy); color: white; border: none; border-radius: 4px; padding: 5px 15px; margin-top: 5px; cursor: pointer; font-size: 0.8rem; display: inline-flex; align-items: center; }
 
 .co-memo-box { display: inline-flex; align-items: center; margin-left: 10px; font-size: 0.9rem; color: #555; font-weight: normal; }
-.co-memo-input { border: 1px solid #ccc; border-radius: 4px; padding: 4px 5px; width: 160px; font-size: 0.85rem; }
+.co-memo-input { border: 1px solid #C9C5B8; border-radius: 2px; padding: 4px 5px; width: 160px; font-size: 0.85rem; }
 .edit-icon { font-size: 1.1rem; cursor: pointer; color: var(--blue); margin-left: 8px; vertical-align: middle; padding: 5px; }
 .edit-icon:hover { color: var(--navy); background: #eee; border-radius: 50%; }
 .memo-text { font-style: italic; color: #666; margin-left: 5px; font-size: 0.85rem; }
 
-.mr-check-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: 20px; font-size: 0.8rem; background: #f1f3f5; padding: 4px 8px; border-radius: 6px; }
+.mr-check-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: 20px; font-size: 0.8rem; background: var(--paper); border: 1px solid var(--rule); padding: 4px 8px; border-radius: 2px; }
 .mr-check-group label { display: flex; align-items: center; cursor: pointer; margin-bottom: 0; color: #495057; font-weight: normal; }
 .mr-check-group input[type="checkbox"] { width: auto; margin: 0 3px 0 0; padding: 0; transform: scale(0.9); }
 
@@ -190,14 +194,15 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 .bp-controls label { font-weight: bold; margin-right: 15px; cursor: pointer; }
 
 .comp-grid { display: flex; gap: 10px; width: 100%; }
-.comp-col { flex: 1; min-width: 0; border: 1px solid #ddd; padding: 10px; border-radius: 8px; background: #fdfdfd; }
+.comp-col { flex: 1; min-width: 0; border: 1px solid var(--rule); padding: 10px; border-radius: 2px; background: var(--sheet); }
 
-/* COD Modal Styles */
+/* COD Modal — 기록지 낱장 모달 */
 #cod-modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center; }
-.cod-box { background:white; padding:20px; border-radius:12px; width:90%; max-width:400px; text-align:center; box-shadow:0 4px 20px rgba(0,0,0,0.2); }
-.cod-btn { width:100%; margin-bottom:10px; padding:12px; border-radius:8px; border:1px solid #eee; background:#f8f9fa; font-weight:bold; cursor:pointer; font-size:1rem; }
-.cod-btn:hover { background:#e3f2fd; color:var(--navy); }
-.cod-title { font-weight:bold; font-size:1.1rem; margin-bottom:15px; color:var(--navy); }
+.cod-box { background:var(--sheet); padding:20px; border-radius:2px; width:90%; max-width:400px; text-align:center; border:1px solid var(--ink); box-shadow:none; }
+.cod-btn { width:100%; margin-bottom:10px; padding:12px; border-radius:2px; border:1px solid var(--rule); background:var(--paper); font-weight:bold; cursor:pointer; font-size:1rem; color:var(--ink); }
+.cod-btn:hover { border-color:var(--ink); background:var(--sheet); }
+.cod-btn:active { transform:translateY(1px); }
+.cod-title { font-weight:800; font-size:1.05rem; margin-bottom:15px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:8px; }
 .cod-step-container { display:none; }
 .cod-step-container.active { display:block; }
 
@@ -226,7 +231,8 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 
 /* COD Checkbox Grid */
 .cod-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; margin-bottom: 15px; }
-.cod-option { display: flex; align-items: center; background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #eee; cursor: pointer; }
+.cod-option { display: flex; align-items: center; background: var(--sheet); padding: 10px; border-radius: 2px; border: 1px solid var(--rule); cursor: pointer; }
+.cod-option:hover { border-color: var(--ink); }
 .cod-option input { width: auto; margin-right: 8px; transform: scale(1.2); }
 
 /* Legend Style 수정: 폰트 축소 및 줄바꿈 허용 */
@@ -248,16 +254,16 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 .cod-legend-table td:nth-child(2) { width: 30%; }
 .cod-legend-table td:nth-child(3) { width: 40%; }
 
-/* 데이터 토글 버튼 스타일 */
+/* 데이터 토글 버튼 — 원장 펼침 줄 */
 .data-toggle-btn {
     display: block;
     width: 100%;
-    background: #f1f3f5;
-    color: #495057;
-    border: none;
+    background: var(--paper);
+    color: var(--ink);
+    border: 1px solid var(--rule);
     padding: 8px 0;
     margin-top: 10px;
-    border-radius: 6px;
+    border-radius: 2px;
     cursor: pointer;
     font-size: 0.85rem;
     font-weight: bold;
@@ -277,16 +283,16 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 }
 
 /* ... 기존 스타일 ... */
-.data-toggle-btn:hover { background: #e9ecef; }
-.data-detail-box { display: none; margin-top: 10px; border-top: 1px dashed #ddd; padding-top: 10px; }
+.data-toggle-btn:hover { background: var(--stock-canary-soft); }
+.data-detail-box { display: none; margin-top: 10px; border-top: 1px dashed var(--rule); padding-top: 10px; }
 /* 동향분석용 분할 레이아웃 */
 .trend-container { display: flex; gap: 20px; width: 100%; }
-.trend-half { flex: 1; min-width: 0; background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+.trend-half { flex: 1; min-width: 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 2px; padding: 10px; }
 @media (max-width: 768px) { .trend-container { flex-direction: column; } }
 
-.trend-opt-box { background: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ddd; }
+.trend-opt-box { background: var(--sheet); padding: 15px; border-radius: 2px; margin-bottom: 15px; border: 1px solid var(--rule); }
 .trend-row { display: flex; align-items: center; margin-bottom: 10px; }
-.trend-label { width: 100px; font-weight: bold; color: var(--navy); }
+.trend-label { width: 100px; font-weight: bold; color: var(--ink); }
 /* [추가] 랫드 샘플 표시용 스타일 */
 .rat-wrapper {
     position: relative;
@@ -308,6 +314,7 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 
 .sample-c { color: #2196f3; } /* 파란색 C (Cast) */
 .sample-h { color: #e91e63; } /* 분홍색 H (Histology) */
+.sample-sf { color: var(--ink-soft); font-size: 0.68rem; } /* Surgical Failure — 분석 제외 표식 */
 
 /* ==========================================
    조건 분석 (Trend Analysis) 전용 UI 폼 디자인
@@ -316,22 +323,22 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
     flex: 1;
     min-width: 320px;
     padding: 20px;
-    border-radius: 10px;
+    border-radius: 2px;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.03);
+    box-shadow: none;
 }
-.filter-box.inc { border: 2px solid #90caf9; background: #e3f2fd; }
-.filter-box.exc { border: 2px solid #ef9a9a; background: #ffebee; }
+.filter-box.inc { border: 1px solid var(--ink-blue); background: var(--stock-blue-soft); }
+.filter-box.exc { border: 1px solid var(--stock-pink); background: var(--stock-pink-soft); }
 
 .filter-title {
     margin: 0 0 15px 0;
     padding-bottom: 12px;
-    font-size: 1.15rem;
-    font-weight: 900;
+    font-size: 1.05rem;
+    font-weight: 800;
 }
-.filter-box.inc .filter-title { color: #1565C0; border-bottom: 2px dashed #90caf9; }
-.filter-box.exc .filter-title { color: #c62828; border-bottom: 2px dashed #ef9a9a; }
+.filter-box.inc .filter-title { color: var(--ink); border-bottom: 3px double var(--ink); }
+.filter-box.exc .filter-title { color: #7C2A30; border-bottom: 3px double #7C2A30; }
 
 .filter-row {
     display: flex;
@@ -355,7 +362,7 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
     margin-top: 5px;
 }
 .filter-label input { transform: scale(1.3); margin: 0; }
-.filter-box.exc .filter-label { color: #c62828; }
+.filter-box.exc .filter-label { color: #7C2A30; }
 
 .filter-controls {
     display: flex;
@@ -368,31 +375,31 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 
 .filter-controls select, .filter-controls input[type="number"] {
     padding: 6px 8px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
+    border: 1px solid #C9C5B8;
+    border-radius: 2px;
     outline: none;
     font-size: 0.9rem;
 }
 .filter-controls select:disabled, .filter-controls input:disabled {
-    background: #f0f0f0;
-    color: #999;
-    border-color: #ddd;
+    background: var(--paper);
+    color: var(--ink-soft);
+    border-color: var(--rule);
 }
 
-/* 체크박스 전용 버튼형 라벨 */
+/* 체크박스 전용 버튼형 라벨 — 원장 셀 */
 .chk-label {
     cursor: pointer;
     font-size: 0.9rem;
     display: flex;
     align-items: center;
     gap: 6px;
-    background: rgba(255,255,255,0.7);
+    background: var(--sheet);
     padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
     transition: 0.2s;
 }
-.chk-label:hover { background: #fff; border-color: #aaa; }
+.chk-label:hover { border-color: var(--ink); }
 .chk-label input { margin: 0; transform: scale(1.2); }
 
 
@@ -510,7 +517,7 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 .btn:hover, .btn-small:hover { filter: brightness(1.08); }
 .btn:active, .btn-small:active { transform: translateY(1px); }
 
-/* --- 랫드 상세 정보 박스 (3등분/2등분) --- */
+/* --- 랫드 상세 정보 박스 (3등분/2등분) — 기록지 낱장 칸 --- */
 .info-row-container {
     display: flex;
     gap: 12px;
@@ -518,13 +525,15 @@ th { background: #F1EEE4; border-bottom: 2px solid var(--ink); font-weight: 700;
 }
 .info-row-item {
     flex: 1; /* 동일한 비율로 나눔 */
-    background: #fff;
+    background: var(--sheet);
     padding: 15px;
-    border-radius: 12px;
-    border: 1px solid #eee;
+    border-radius: 2px;
+    border: 1px solid var(--rule);
     text-align: center;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+    box-shadow: none;
+    font-variant-numeric: tabular-nums;
 }
+.info-row-item > b { font-family: var(--font-mono); letter-spacing: -0.02em; }
 
 /* --- 모바일 반응형 레이아웃 --- */
 @media (max-width: 768px) {

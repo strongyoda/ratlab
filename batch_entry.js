@@ -10,28 +10,40 @@ let beHousing = {};        // ratId -> cageId
 let beType = 'ligation';
 let bePicked = new Set();
 
+// 처치 종류별 색은 새 세계(강조=스탬프 레드 하나)에서 제거 — 선택 상태는 잉크 문법으로 말한다
 const BE_TYPES = {
-    ligation: { label: '수술 (Ligation)', field: 'surgeryDate', color: '#E91E63' },
-    ovx:      { label: 'OVX',             field: 'ovxDate',     color: '#9C27B0' },
-    mr:       { label: 'MR 촬영',          field: 'mrDates',     color: '#3F51B5' },
-    sacrifice:{ label: '희생 / 샘플 채취',  field: 'sampleDate',  color: '#00897B' }
+    ligation: { label: '수술 (Ligation)', field: 'surgeryDate' },
+    ovx:      { label: 'OVX',             field: 'ovxDate' },
+    mr:       { label: 'MR 촬영',          field: 'mrDates' },
+    sacrifice:{ label: '희생 / 샘플 채취',  field: 'sampleDate' }
 };
+
+// 기록값이 HTML 속성을 깨뜨리지 않게 한다
+const beEsc = s => String(s ?? '').replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function renderBatchEntryView(main) {
     main.innerHTML = `
     <div class="card">
-        <h3>⚡ 일괄 입력</h3>
-        <div style="font-size:0.85rem; color:#666; margin-bottom:12px;">
+        <h3 style="margin:0 0 12px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">일괄 입력</h3>
+        <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:12px;">
             오늘 같은 처치를 받은 개체들을 골라 한 번에 기록합니다.
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <label style="font-weight:bold; color:var(--navy);">코호트</label>
-            <select id="be-cohort" style="width:auto; min-width:130px; padding:8px; border-radius:6px; border:1px solid #ccc;">
+            <label for="be-cohort" style="font-weight:bold; color:var(--ink);">코호트</label>
+            <select id="be-cohort" style="width:auto; min-width:130px; padding:8px; border-radius:2px; border:1px solid #C9C5B8;">
                 <option value="">로딩 중...</option>
             </select>
         </div>
     </div>
     <div id="be-body"></div>`;
+
+    // 개체 선택 칩은 ID가 속성에 들어가므로 인라인 onclick 대신 위임으로 받는다
+    const beBody = document.getElementById('be-body');
+    beBody.addEventListener('click', e => {
+        const el = e.target.closest('[data-be-pick]');
+        if (el) bePick(el.dataset.bePick);
+    });
 
     const sel = document.getElementById('be-cohort');
     const rats = await getRatsWithCache();
@@ -78,69 +90,69 @@ function beRender() {
     <div class="card">
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
             ${Object.entries(BE_TYPES).map(([k, v]) => `
-            <button onclick="beSetType('${k}')"
-                style="padding:9px 14px; border-radius:8px; cursor:pointer; font-size:0.9rem; font-weight:bold;
-                       border:2px solid ${beType === k ? v.color : '#ddd'};
-                       background:${beType === k ? v.color : '#fff'}; color:${beType === k ? '#fff' : '#666'};">
+            <button onclick="beSetType('${k}')" aria-pressed="${beType === k}"
+                style="padding:9px 14px; border-radius:2px; cursor:pointer; font-size:0.9rem; font-weight:bold;
+                       border:${beType === k ? '2px solid var(--ink)' : '1px dashed var(--rule)'};
+                       background:${beType === k ? 'var(--ink)' : 'var(--paper)'}; color:${beType === k ? 'var(--paper)' : 'var(--ink-soft)'};">
                 ${v.label}
             </button>`).join('')}
         </div>
 
         <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
             <div>
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">날짜</div>
-                <input type="date" id="be-date" value="${getTodayStr()}" style="width:auto; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">날짜</div>
+                <input type="date" id="be-date" value="${getTodayStr()}" style="width:auto; padding:8px; border:1px solid #C9C5B8; border-radius:2px;">
             </div>
             ${isMr ? `
             <div>
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">시점</div>
-                <select id="be-mr-tp" style="width:auto; min-width:90px; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">시점</div>
+                <select id="be-mr-tp" style="width:auto; min-width:90px; padding:8px; border:1px solid #C9C5B8; border-radius:2px;">
                     ${['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W9','W10','W11','W12']
                         .map(v => `<option value="${v}" ${v === 'W4' ? 'selected' : ''}>${v}</option>`).join('')}
                 </select>
             </div>
             <div>
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">Infarct 크기</div>
-                <select id="be-mr-size" style="width:auto; min-width:90px; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">Infarct 크기</div>
+                <select id="be-mr-size" style="width:auto; min-width:90px; padding:8px; border:1px solid #C9C5B8; border-radius:2px;">
                     <option value="">-</option><option value="None">None</option>
                     <option value="Small">Small</option><option value="Large">Large</option>
                 </select>
             </div>
             <div>
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">위치</div>
-                <select id="be-mr-loc" style="width:auto; min-width:80px; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">위치</div>
+                <select id="be-mr-loc" style="width:auto; min-width:80px; padding:8px; border:1px solid #C9C5B8; border-radius:2px;">
                     <option value="">-</option><option value="R">R</option>
                     <option value="L">L</option><option value="Both">Both</option>
                 </select>
             </div>` : ''}
             ${beType === 'sacrifice' ? `
             <div>
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">샘플 종류</div>
-                <select id="be-sample-type" style="width:auto; min-width:110px; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">샘플 종류</div>
+                <select id="be-sample-type" style="width:auto; min-width:110px; padding:8px; border:1px solid #C9C5B8; border-radius:2px;">
                     <option value="">-</option><option value="Histology">Histology</option>
                     <option value="Cast">Cast</option><option value="Fail">못함</option>
                 </select>
             </div>` : ''}
         </div>
-        ${isMr ? `<div style="font-size:0.78rem; color:#888; margin-top:8px;">
+        ${isMr ? `<div style="font-size:0.78rem; color:var(--ink-soft); margin-top:8px;">
             Infarct는 나중에 판독 후 개체별로 채워도 됩니다. 비워두면 기록만 남습니다.</div>` : ''}
     </div>
 
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-            <h4 style="margin:0; color:var(--navy);">대상 선택
-                <span style="font-size:0.85rem; color:#666; font-weight:normal;">(${bePicked.size}마리 선택됨)</span></h4>
+            <h4 style="margin:0; color:var(--ink);">대상 선택
+                <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); font-weight:normal;">(${bePicked.size}마리 선택됨)</span></h4>
             <div style="display:flex; gap:6px;">
-                <button class="btn-small" onclick="bePickAll(true)" style="background:#eee;">전체 선택</button>
-                <button class="btn-small" onclick="bePickAll(false)" style="background:#eee;">전체 해제</button>
+                <button class="btn-small db-tap" onclick="bePickAll(true)" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">전체 선택</button>
+                <button class="btn-small db-tap" onclick="bePickAll(false)" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">전체 해제</button>
             </div>
         </div>
 
         ${groupKeys.map(g => `
         <div style="margin-bottom:12px;">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:5px;">
-                <b style="font-size:0.85rem; color:#555;">${g}</b>
-                <button class="btn-small" onclick="bePickGroup('${g}')" style="background:#f0f0f0; padding:2px 8px; font-size:0.72rem;">이 묶음 전체</button>
+                <b class="mono" style="font-size:0.85rem; color:var(--ink);">${g}</b>
+                <button class="btn-small" onclick="bePickGroup('${g}')" style="background:var(--paper); color:var(--ink-soft); outline:1px solid var(--rule); padding:2px 8px; font-size:0.72rem;">이 묶음 전체</button>
             </div>
             <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:6px;">
                 ${groups[g].map(r => beRatChip(r)).join('')}
@@ -168,18 +180,17 @@ function beRatChip(r) {
     const picked = bePicked.has(r.ratId);
     const exist = beExistingText(r);
     const dead = r.status === '사망';
-    const color = BE_TYPES[beType].color;
     return `
-    <button onclick="bePick('${r.ratId}')"
-        style="text-align:left; padding:8px 10px; border-radius:8px; cursor:pointer; font-size:0.85rem;
-               border:2px solid ${picked ? color : '#ddd'};
-               background:${picked ? color + '18' : '#fff'};
+    <button data-be-pick="${beEsc(r.ratId)}" aria-pressed="${picked}"
+        style="text-align:left; padding:8px 10px; border-radius:2px; cursor:pointer; font-size:0.85rem;
+               border:${picked ? '2px solid var(--ink)' : '1px solid var(--rule)'};
+               background:${picked ? 'var(--stock-canary-soft)' : 'var(--sheet)'};
                ${dead ? 'opacity:0.5;' : ''}">
         <div style="display:flex; align-items:center; gap:6px;">
-            <span style="font-size:1rem;">${picked ? '☑' : '☐'}</span>
-            <b>${r.ratId}</b>${dead ? ' 💀' : ''}
+            <span aria-hidden="true" style="font-size:1rem;">${picked ? '☑' : '☐'}</span>
+            <b class="mono">${beEsc(r.ratId)}</b>${dead ? ' <span aria-hidden="true">💀</span>' : ''}
         </div>
-        ${exist ? `<div style="font-size:0.72rem; color:#e65100; margin-top:2px;">이미 있음: ${exist}</div>` : ''}
+        ${exist ? `<div style="font-size:0.72rem; color:#7A5C00; margin-top:2px;">이미 있음: ${beEsc(exist)}</div>` : ''}
     </button>`;
 }
 

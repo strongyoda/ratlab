@@ -19,24 +19,43 @@ let cgPickedRat = null;  // 폰에서 끌기 대신 '탭해서 옮기기'용
 // ---------- 진입점 ----------
 // 케이지 현황은 '우리 랩 케이지의 물리적 현황'이므로 코호트와 무관하게 전부 보여준다.
 // 코호트 선택은 아래 배정 패널에서 '지금 넣을 쥐를 고를 때'만 쓴다.
+// 개체 ID가 HTML 속성을 깨뜨리지 않게 한다
+const cgEsc = s => String(s ?? '').replace(/[&<>"']/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 async function renderCageStatusView(main) {
     main.innerHTML = `
     <div class="card">
-        <h3>🏠 케이지 현황</h3>
-        <div style="font-size:0.85rem; color:#666; margin-bottom:12px;">
+        <h3 style="margin:0 0 12px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">케이지 현황</h3>
+        <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:12px;">
             쥐를 끌어다 놓으면 옮겨집니다. 폰에서는 쥐를 누른 뒤 옮길 케이지를 누르세요.
             <b>옮긴 시각이 자동으로 기록</b>되어 섭취량 계산에 반영됩니다.
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <input type="number" id="cg-new-cage" placeholder="케이지 번호"
-                   style="width:120px; padding:8px; border-radius:6px; border:1px solid #ccc;">
+            <input type="number" id="cg-new-cage" placeholder="케이지 번호" aria-label="새 케이지 번호"
+                   style="width:120px; padding:8px; border-radius:2px; border:1px solid #C9C5B8;">
             <button class="btn-small btn-green" onclick="cgAddCage()">케이지 추가</button>
             <button class="btn-small" onclick="cgAutoCreate()"
-                    style="background:#eee; color:#333;">설정대로 일괄 생성</button>
+                    style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">설정대로 일괄 생성</button>
             <button class="btn-small btn-blue" onclick="cgLoadAll()" style="margin-left:auto;">새로고침</button>
         </div>
     </div>
     <div id="cg-body"><div class="card">불러오는 중...</div></div>`;
+
+    // 개체 ID가 담기는 클릭·드래그는 인라인 핸들러 대신 위임으로 받는다
+    const cgBody = document.getElementById('cg-body');
+    cgBody.addEventListener('click', e => {
+        const rm = e.target.closest('[data-cg-remove]');
+        if (rm) { cgRemoveRat(rm.dataset.cgRemove, '사망'); return; }
+        const chip = e.target.closest('[data-cg-rat]');
+        if (chip) { cgPickRat(e, chip.dataset.cgRat); return; }
+        const card = e.target.closest('[data-cg-cage]');
+        if (card) cgCageClicked(card.dataset.cgCage);
+    });
+    cgBody.addEventListener('dragstart', e => {
+        const chip = e.target.closest('[data-cg-rat]');
+        if (chip) cgDragStart(e, chip.dataset.cgRat);
+    });
 
     await cgLoadAll();
 }
@@ -137,7 +156,7 @@ function cgNoTareHtml() {
     const noTare = cgCages.filter(c => !(Number(c.bottleTare) > 0));
     if (!noTare.length) return '';
     return `
-        <div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
+        <div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C;">
             <b style="color:#7a5c00;">빈 물통 무게가 없는 자리 ${noTare.length}개</b>
             <div style="font-size:0.82rem; color:#7a5c00; margin:6px 0;">
                 ${noTare.slice(0, 20).map(c => c.number + '번').join(', ')}${noTare.length > 20 ? ' 외' : ''}
@@ -172,8 +191,8 @@ function cgPaintTare(cageId) {
     const el = document.querySelector(`[data-tare="${cageId}"]`);
     if (el) {
         if (document.activeElement !== el) el.value = cage.bottleTare != null ? cage.bottleTare : '';
-        el.style.borderColor = has ? '#c8e6c9' : '#ffcdd2';
-        el.style.background = has ? '#fff' : '#fff8f8';
+        el.style.borderColor = has ? 'var(--approve)' : 'var(--stock-pink)';
+        el.style.background = has ? 'var(--sheet)' : 'var(--stock-pink-soft)';
     }
     const warn = document.querySelector(`[data-tare-warn="${cageId}"]`);
     if (warn) {
@@ -209,7 +228,7 @@ function cgRenderBody() {
 
     box.innerHTML = `
     ${cgPickedRat ? `
-    <div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
+    <div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C;">
         <b style="color:#7a5c00;">${cgPickedRat}</b>
         <span style="color:#7a5c00;">선택됨 — 옮길 케이지를 누르세요.</span>
         <button class="btn-small" onclick="cgPickedRat=null; cgRenderBody();"
@@ -217,9 +236,9 @@ function cgRenderBody() {
     </div>` : ''}
 
     ${deadHoused.length ? `
-    <div class="card" style="background:#ffebee; border:1px solid #ffcdd2;">
+    <div class="card" style="background:var(--stock-pink-soft); border:1px solid var(--stock-pink);">
         <b style="color:var(--red);">⚠️ 사망 처리됐지만 케이지에 남아있는 개체 ${deadHoused.length}마리</b>
-        <div style="font-size:0.85rem; color:#666; margin:6px 0;">
+        <div style="font-size:0.85rem; color:var(--ink-soft); margin:6px 0;">
             그대로 두면 마리당 섭취량이 실제보다 낮게 계산됩니다.
         </div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -231,22 +250,22 @@ function cgRenderBody() {
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
             <h4 style="margin:0; color:var(--navy);">쥐 배정하기</h4>
             <select onchange="cgPickCohort(this.value)"
-                    style="width:auto; min-width:150px; padding:7px; border-radius:6px; border:1px solid #ccc;">
+                    style="width:auto; min-width:150px; padding:7px; border-radius:2px; border:1px solid #C9C5B8;">
                 <option value="">코호트 선택...</option>
                 ${cohortNums.map(n => `<option value="${n}" ${String(cgCohort) === n ? 'selected' : ''}>코호트 ${n}</option>`).join('')}
             </select>
-            ${cgCohort ? `<span style="font-size:0.85rem; color:#666;">미배정 ${unassigned.length}마리</span>` : ''}
+            ${cgCohort ? `<span style="font-size:0.85rem; color:var(--ink-soft);">미배정 ${unassigned.length}마리</span>` : ''}
         </div>
         <div id="cg-unassigned" ondragover="cgAllowDrop(event)" ondrop="cgDropToUnassigned(event)"
              style="display:flex; flex-wrap:wrap; gap:8px; min-height:52px; padding:10px;
-                    background:#f8f9fa; border:1px dashed #bbb; border-radius:8px;">
+                    background:var(--paper); border:1px dashed var(--rule); border-radius:2px;">
             ${!cgCohort
-                ? '<span style="color:#999; font-size:0.9rem;">넣을 코호트를 고르면 미배정 개체가 여기 나옵니다. (케이지에서 빼려면 이 칸으로 끌어다 놓으세요)</span>'
+                ? '<span style="color:var(--ink-soft); font-size:0.9rem;">넣을 코호트를 고르면 미배정 개체가 여기 나옵니다. (케이지에서 빼려면 이 칸으로 끌어다 놓으세요)</span>'
                 : (unassigned.length
                     ? unassigned.map(r => cgRatChip(r, null)).join('')
                     : (cgRats.some(cgIsAlive)
-                        ? '<span style="color:#999; font-size:0.9rem;">이 코호트는 모두 배정되었습니다</span>'
-                        : '<span style="color:#999; font-size:0.9rem;">이 코호트에 생존 개체가 없습니다</span>'))}
+                        ? '<span style="color:var(--ink-soft); font-size:0.9rem;">이 코호트는 모두 배정되었습니다</span>'
+                        : '<span style="color:var(--ink-soft); font-size:0.9rem;">이 코호트에 생존 개체가 없습니다</span>'))}
         </div>
     </div>
 
@@ -254,11 +273,11 @@ function cgRenderBody() {
 
     <div class="card" style="padding:12px 16px;">
         <b style="color:var(--navy);">케이지 ${cgCages.length}개</b>
-        <span style="font-size:0.85rem; color:#666;">
+        <span style="font-size:0.85rem; color:var(--ink-soft);">
             · 사용중 ${occupied}개 · 비어 있음 ${cgCages.length - occupied}개
             · 재실 ${cgHousing.length}마리
         </span>
-        <div style="font-size:0.78rem; color:#888; margin-top:6px;">
+        <div style="font-size:0.78rem; color:var(--ink-soft); margin-top:6px;">
             케이지 번호는 <b>자리</b>를 뜻합니다. 빈 물통 무게를 자리에 붙여 관리하므로,
             <b>물통에 자리 번호를 적어두고 세척 후에도 같은 자리에 꽂아야</b> 합니다.
         </div>
@@ -268,26 +287,25 @@ function cgRenderBody() {
     <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:12px;">
         ${cgCages.map(c => cgCageCard(c)).join('')}
     </div>` : `
-    <div class="card" style="color:#888;">
+    <div class="card" style="color:var(--ink-soft);">
         아직 케이지가 없습니다. 위에서 번호를 넣어 추가하거나 <b>설정대로 일괄 생성</b>을 누르세요.
     </div>`}`;
 }
 
 function cgRatChip(rat, cageId) {
     const gkey = cgGroupOf(rat);
-    const color = cgGroupColor(gkey, rat.cohort);
+    const color = cgGroupColor(gkey, rat.cohort);   // 군 색은 코호트 설정에서 사용자가 정한 데이터 색
     const picked = cgPickedRat === rat.ratId;
     const dead = !cgIsAlive(rat);
     return `
-    <div draggable="true" ondragstart="cgDragStart(event,'${rat.ratId}')"
-         onclick="cgPickRat(event, '${rat.ratId}')"
-         title="${rat.ratId} (${gkey})"
+    <div draggable="true" data-cg-rat="${cgEsc(rat.ratId)}"
+         title="${cgEsc(rat.ratId)} (${gkey})" role="button" tabindex="0"
          style="display:flex; align-items:center; gap:5px; padding:5px 9px; cursor:pointer;
-                background:${picked ? '#fff3cd' : '#fff'}; border:2px solid ${picked ? '#ff9800' : color};
-                border-radius:16px; font-size:0.85rem; white-space:nowrap;
+                background:${picked ? 'var(--stock-canary-soft)' : 'var(--sheet)'}; border:2px solid ${picked ? 'var(--ink)' : color};
+                border-radius:2px; font-size:0.85rem; white-space:nowrap;
                 ${dead ? 'opacity:0.55; text-decoration:line-through;' : ''}">
-        <span style="width:9px; height:9px; border-radius:50%; background:${color}; display:inline-block;"></span>
-        ${rat.ratId}
+        <span aria-hidden="true" style="width:9px; height:9px; border-radius:2px; background:${color}; display:inline-block;"></span>
+        <span class="mono">${cgEsc(rat.ratId)}</span>
         ${typeof batchChipHtml === 'function' ? batchChipHtml(rat, cgBatchSize(rat)) : ''}
     </div>`;
 }
@@ -309,13 +327,13 @@ function cgCageCard(cage) {
 
     return `
     <div ondragover="cgAllowDrop(event)" ondrop="cgDropToCage(event,'${cage.id}')"
-         onclick="cgCageClicked('${cage.id}')"
-         style="border:1px solid #e0e0e0; border-top:4px solid ${color}; border-radius:10px;
-                padding:10px; background:#fff; min-height:120px; cursor:${cgPickedRat ? 'pointer' : 'default'};
-                ${cgPickedRat ? 'outline:2px dashed #ff9800; outline-offset:2px;' : ''}">
+         data-cg-cage="${cgEsc(cage.id)}"
+         style="border:1px solid var(--rule); border-top:4px solid ${color}; border-radius:2px;
+                padding:10px; background:var(--sheet); min-height:120px; cursor:${cgPickedRat ? 'pointer' : 'default'};
+                ${cgPickedRat ? 'outline:2px dashed var(--ink); outline-offset:2px;' : ''}">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-            <b style="font-size:1.05rem; color:var(--navy);">${cage.number}번</b>
-            <span style="font-size:0.75rem; color:${full ? 'var(--red)' : '#888'};">
+            <b class="mono" style="font-size:1.05rem; color:var(--ink);">${cgEsc(cage.number)}번</b>
+            <span class="mono" style="font-size:0.75rem; color:${full ? 'var(--stamp)' : 'var(--ink-soft)'};">
                 ${occ.length}/${max}
             </span>
         </div>
@@ -327,17 +345,17 @@ function cgCageCard(cage) {
         </div>
 
         <div onclick="event.stopPropagation()"
-             style="margin-top:9px; padding-top:8px; border-top:1px dashed #e8e8e8;
+             style="margin-top:9px; padding-top:8px; border-top:1px dashed var(--rule);
                     display:flex; align-items:center; gap:5px;">
-            <span style="font-size:0.72rem; color:#888; white-space:nowrap;">빈 통</span>
+            <span style="font-size:0.72rem; color:var(--ink-soft); white-space:nowrap;">빈 통</span>
             <input type="number" step="any" inputmode="decimal" data-tare="${cage.id}"
                    value="${cage.bottleTare != null ? cage.bottleTare : ''}"
                    placeholder="${tareFb ? tareFb + ' (기본)' : '미설정'}"
                    onchange="cgSetTare('${cage.id}', this.value)"
                    style="flex:1; min-width:0; height:30px; padding:2px 6px; font-size:0.82rem;
-                          border:1px solid ${hasTare ? '#c8e6c9' : '#ffcdd2'}; border-radius:5px;
-                          background:${hasTare ? '#fff' : '#fff8f8'};">
-            <span style="font-size:0.72rem; color:#888;">g</span>
+                          border:1px solid ${hasTare ? 'var(--approve)' : 'var(--stock-pink)'}; border-radius:2px;
+                          background:${hasTare ? 'var(--sheet)' : 'var(--stock-pink-soft)'};">
+            <span style="font-size:0.72rem; color:var(--ink-soft);">g</span>
         </div>
         <div data-tare-warn="${cage.id}" style="font-size:0.68rem; color:var(--red); margin-top:3px;">${
             !hasTare ? `이 자리의 물통 무게가 없습니다${tareFb ? ` · 지금은 기본 ${tareFb}g으로 계산됩니다` : ''}` : ''

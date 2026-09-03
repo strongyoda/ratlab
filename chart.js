@@ -2,9 +2,10 @@ function toggleCrosshair() {
     isCrosshairEnabled = !isCrosshairEnabled;
     const buttons = document.querySelectorAll('.crosshair-toggle-btn');
     buttons.forEach(btn => {
-        btn.innerHTML = isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF';
-        btn.style.background = isCrosshairEnabled ? '#FFD600' : '#ddd';
-        btn.style.color = isCrosshairEnabled ? '#000' : '#777';
+        btn.innerHTML = isCrosshairEnabled ? '가이드선 ON' : '가이드선 OFF';
+        btn.style.background = isCrosshairEnabled ? 'var(--ink)' : 'var(--paper)';
+        btn.style.borderColor = isCrosshairEnabled ? 'var(--ink)' : 'var(--rule)';
+        btn.style.color = isCrosshairEnabled ? 'var(--paper)' : 'var(--ink-soft)';
     });
     sharedXValue = null;
     Object.values(Chart.instances).forEach(c => c.render({duration: 0}));
@@ -182,9 +183,10 @@ function toggleIndividual() {
     isIndividualVisible = !isIndividualVisible;
     const buttons = document.querySelectorAll('.indiv-toggle-btn');
     buttons.forEach(btn => {
-        btn.innerHTML = isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF';
-        btn.style.background = isIndividualVisible ? '#00c853' : '#ddd';
-        btn.style.color = isIndividualVisible ? '#fff' : '#777';
+        btn.innerHTML = isIndividualVisible ? '개별점 ON' : '개별점 OFF';
+        btn.style.background = isIndividualVisible ? 'var(--ink)' : 'var(--paper)';
+        btn.style.borderColor = isIndividualVisible ? 'var(--ink)' : 'var(--rule)';
+        btn.style.color = isIndividualVisible ? 'var(--paper)' : 'var(--ink-soft)';
     });
 
     // 모든 차트의 개별 데이터(scatter) 데이터셋 숨기기/보이기
@@ -235,13 +237,13 @@ async function loadDashboard() {
             if(d.surgeryDate && !grp[c].surg) grp[c].surg = d.surgeryDate;
         });
         
-        let html = '<div style="width:100%; text-align:right; color:#666; font-size:0.85rem; margin-bottom:10px;"><i class="material-icons" style="font-size:1rem; vertical-align:text-bottom;">touch_app</i> 랫드 번호를 누르면 상세보기로 이동합니다.</div>'; 
+        let html = '<div style="width:100%; text-align:right; color:var(--ink-soft); font-size:0.85rem; margin-bottom:10px;"><i class="material-icons" aria-hidden="true" style="font-size:1rem; vertical-align:text-bottom;">touch_app</i> 랫드 번호를 누르면 상세보기로 이동합니다.</div>';
         
         const sortedCohorts = Object.keys(grp).sort((a,b)=>Number(b)-Number(a));
         const allTimepoints = Object.keys(globalPodMap).sort((a,b) => globalPodMap[a] - globalPodMap[b]);
 
         sortedCohorts.forEach(c => { 
-            let podTag = `<span style="font-size:0.8rem; color:#666;">수술전</span>`; 
+            let podTag = `<span style="font-size:0.8rem; color:var(--ink-soft);">수술전</span>`;
             if(grp[c].surg) { 
                 const pod = daysBetween(grp[c].surg);
                 const w = Math.floor(pod/7), d=pod%7; 
@@ -254,11 +256,11 @@ async function loadDashboard() {
             const config = cData.mrConfig || ['D0','D2','W1','W4','W8','W12','W20'];
             
             // 코호트 전체 메모
-            const memoHtml = `<div class="co-memo-box"><i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i><span id="memo-txt-${c}" class="memo-text">${currentMemo || ''}</span><div id="memo-edit-area-${c}" style="display:none;"><input type="text" id="memo-inp-${c}" class="co-memo-input" value="${currentMemo}"><button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button></div></div>`;
+            const memoHtml = `<div class="co-memo-box"><i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i><span id="memo-txt-${c}" class="memo-text">${chEsc(currentMemo || '')}</span><div id="memo-edit-area-${c}" style="display:none;"><input type="text" id="memo-inp-${c}" class="co-memo-input" aria-label="코호트 ${c} 메모" value="${chEsc(currentMemo)}"><button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button></div></div>`;
             
             // MR 체크 영역
             let mrHtml = `<div class="mr-check-group" style="margin-left:0; margin-top:5px;"><span style="font-weight:bold; color:var(--navy); margin-right:4px;">MR:</span>`;
-            mrHtml += `<i class="material-icons" style="font-size:1.1rem; cursor:pointer; color:#7f8c8d; vertical-align:middle; margin-right:5px;" onclick="toggleMrConfig('${c}')" title="MR 체크리스트 설정">settings</i>`;
+            mrHtml += `<button class="db-btn" onclick="toggleMrConfig('${c}')" title="MR 체크리스트 설정" aria-label="MR 체크리스트 설정" style="display:inline-flex; padding:2px; margin-right:5px;"><i class="material-icons" aria-hidden="true" style="font-size:1.1rem; color:var(--ink-soft); vertical-align:middle;">settings</i></button>`;
             config.forEach(tp => {
                 const isChecked = mrChecks[tp] ? 'checked' : '';
                 mrHtml += `<label><input type="checkbox" onclick="toggleMr(event, '${c}', '${tp}')" ${isChecked}>${tp}</label>`;
@@ -267,17 +269,17 @@ async function loadDashboard() {
 
             // MR 설정 패널
             const configPanel = `
-            <div id="mr-cfg-panel-${c}" style="display:none; width:100%; background:#fff; border:1px solid #ddd; padding:10px; margin-bottom:10px; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.05);">
-                <div style="font-weight:bold; color:var(--navy); font-size:0.9rem; margin-bottom:8px; border-bottom:1px solid #eee; padding-bottom:5px;">⚙️ Cohort ${c} - MR 시점 설정</div>
+            <div id="mr-cfg-panel-${c}" style="display:none; width:100%; background:var(--sheet); border:1px solid var(--rule); padding:10px; margin-bottom:10px; border-radius:2px;">
+                <div style="font-weight:bold; color:var(--ink); font-size:0.9rem; margin-bottom:8px; border-bottom:2px solid var(--ink); padding-bottom:5px;">Cohort ${c} · MR 시점 설정</div>
                 <div style="display:flex; flex-wrap:wrap; gap:8px; max-height:120px; overflow-y:auto; margin-bottom:10px;">
                     ${allTimepoints.map(tp => {
                         const checked = config.includes(tp) ? 'checked' : '';
-                        return `<label style="font-size:0.85rem; cursor:pointer; background:#f8f9fa; padding:2px 6px; border-radius:4px; border:1px solid #eee;"><input type="checkbox" class="mr-cfg-chk-${c}" value="${tp}" ${checked} style="vertical-align:middle;"> ${tp}</label>`;
+                        return `<label class="mono" style="font-size:0.85rem; cursor:pointer; background:var(--paper); padding:3px 7px; border-radius:2px; border:1px solid var(--rule);"><input type="checkbox" class="mr-cfg-chk-${c}" value="${tp}" ${checked} style="vertical-align:middle;"> ${tp}</label>`;
                     }).join('')}
                 </div>
                 <div style="text-align:right;">
                     <button class="btn btn-blue btn-small" style="width:auto; padding:4px 12px;" onclick="saveMrConfig('${c}')">저장</button>
-                    <button class="btn btn-red btn-small" style="width:auto; padding:4px 12px; background:#ccc; border:none;" onclick="toggleMrConfig('${c}')">닫기</button>
+                    <button class="btn btn-small" style="width:auto; padding:4px 12px; background:var(--paper); color:var(--ink); outline:1px solid var(--rule);" onclick="toggleMrConfig('${c}')">닫기</button>
                 </div>
             </div>`;
 
@@ -285,7 +287,7 @@ async function loadDashboard() {
                 <div class="cohort-header" style="display:block;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div style="display:flex; align-items:center; flex-wrap:wrap; gap:5px;">
-                            <span style="font-weight:bold; font-size:1.1rem; color:var(--navy);">Cohort ${c}</span>
+                            <span style="font-weight:800; font-size:1.05rem; color:var(--ink);">Cohort ${c}</span>
                             ${memoHtml}
                         </div>
                         ${podTag}
@@ -303,18 +305,18 @@ async function loadDashboard() {
                 
                 // 그룹 메모장 생성
                 const gMemoHtml = `<div class="co-memo-box" style="margin-left:10px; display:inline-flex; align-items:center;">
-                    <i class="material-icons edit-icon" onclick="toggleGrpMemo('${c}','${g}')" style="font-size:0.9rem; color:#9E9E9E;">edit</i>
-                    <span id="memo-txt-${c}-${g}" class="memo-text" style="font-size:0.85rem; color:#795548; font-weight:normal;">${gMemo || '그룹 메모'}</span>
+                    <i class="material-icons edit-icon" onclick="toggleGrpMemo('${c}','${g}')" style="font-size:0.9rem; color:var(--ink-soft);">edit</i>
+                    <span id="memo-txt-${c}-${g}" class="memo-text" style="font-size:0.85rem; color:var(--ink-soft); font-weight:normal;">${chEsc(gMemo || '그룹 메모')}</span>
                     <div id="memo-edit-area-${c}-${g}" style="display:none; align-items:center;">
-                        <input type="text" id="memo-inp-${c}-${g}" class="co-memo-input" value="${gMemo}" style="font-size:0.8rem; padding:2px; height:20px;">
+                        <input type="text" id="memo-inp-${c}-${g}" class="co-memo-input" aria-label="${g} 그룹 메모" value="${chEsc(gMemo)}" style="font-size:0.8rem; padding:2px; height:20px;">
                         <button class="btn-small btn-blue" style="padding:2px 6px; margin-left:5px; font-size:0.75rem; height:24px;" onclick="saveGrpMemo('${c}','${g}')">OK</button>
                     </div>
                 </div>`;
 
                 html += `
-                <div style="border:1px solid #e0e0e0; border-radius:6px; padding:10px; background:#fafafa; box-shadow:inset 0 1px 3px rgba(0,0,0,0.02);">
-                    <div style="font-weight:900; color:#1565C0; margin-bottom:8px; display:flex; align-items:center; border-bottom:1px dashed #ccc; padding-bottom:5px;">
-                        ${g} ${gMemoHtml}
+                <div style="border:1px solid var(--rule); border-radius:2px; padding:10px; background:var(--paper);">
+                    <div style="font-weight:800; color:var(--ink); margin-bottom:8px; display:flex; align-items:center; border-bottom:1px dashed var(--rule); padding-bottom:5px;">
+                        <span class="mono">${g}</span> ${gMemoHtml}
                     </div>
                     <div class="rat-grid">`;
                 
@@ -331,11 +333,15 @@ async function loadDashboard() {
                     let sampleMark = '';
                     
                     if (r.status === '사망') {
-                        // 죽은 애들은 기존처럼 H나 C 샘플 마크 표시
+                        // 죽은 애들은 기존처럼 H나 C 샘플 마크 표시.
+                        // 샘플이 없으면 Surgical Failure 여부를 대신 표시한다 (분석 제외 대상 표식)
                         if (r.sampleType === 'Cast') {
                             sampleMark = '<div class="sample-indicator sample-c">C</div>';
                         } else if (r.sampleType === 'Histology') {
                             sampleMark = '<div class="sample-indicator sample-h">H</div>';
+                        } else {
+                            const myCod = r.cod || (typeof extractLegacyCod === 'function' && r.codFull ? extractLegacyCod(r.codFull) : '');
+                            if (myCod === 'Surgical Failure') sampleMark = '<div class="sample-indicator sample-sf">S.F</div>';
                         }
                     } else {
                         // 산 애들은 이전 체중과 비교해서 10g 이상 빠졌는지 체크
@@ -356,7 +362,8 @@ async function loadDashboard() {
 
                     html += `<div class="rat-wrapper">
                                 ${sampleMark}
-                                <div class="${statusClass}" onclick="goToDetail('${r.ratId}')">${r.num}</div>
+                                <button class="${statusClass}" data-go-detail="${chEsc(r.ratId)}"
+                                        aria-label="${chEsc(r.ratId)} 상세보기">${r.num}</button>
                             </div>`;
                     // 👆 여기까지 덮어씌우면 됩니다!
                 });
@@ -428,7 +435,7 @@ async function loadDetailData(forceId = null) {
     }
 
     if(!id || !view) return; 
-    view.innerHTML = '<div style="text-align:center; padding:50px; color:#666;"><div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...</div>';
+    view.innerHTML = '<div style="text-align:center; padding:50px; color:var(--ink-soft);"><div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...</div>';
     
     try {
         const rSnap = await db.collection("rats").where("ratId", "==", id).get();
@@ -487,13 +494,13 @@ async function loadDetailData(forceId = null) {
 
             let tpBadge = '';
             if (tpBadgeText) {
-                tpBadge = `<div style="position:absolute; top:5px; left:5px; background:rgba(26,35,126,0.9); color:white; padding:2px 6px; border-radius:4px; font-size:0.75rem; font-weight:bold; box-shadow:0 1px 3px rgba(0,0,0,0.3); pointer-events:none; z-index:5;">${tpBadgeText}</div>`;
+                tpBadge = `<div class="mono" style="position:absolute; top:5px; left:5px; background:rgba(35,40,46,0.92); color:var(--paper); padding:2px 6px; border-radius:2px; font-size:0.75rem; font-weight:bold; pointer-events:none; z-index:5;">${tpBadgeText}</div>`;
             }
 
             const fName = p.originalName ? p.originalName : '';
 
             return `
-            <div style="position:relative; width:130px; height:130px; border:1px solid #ddd; border-radius:8px; overflow:hidden; background:#000; box-shadow:0 2px 5px rgba(0,0,0,0.1);">
+            <div style="position:relative; width:130px; height:130px; border:1px solid var(--rule); border-radius:2px; overflow:hidden; background:#000;">
                 <img src="${p.url}" alt="${chEsc(fName || tpBadgeText || '개체 사진')}" draggable="false" style="width:100%; height:100%; object-fit:cover; cursor:pointer; user-select:none; -webkit-user-drag:none;" onclick="openPhotoViewer(${index})">
                 ${tpBadge}
                 ${rMarkHtml}
@@ -503,7 +510,7 @@ async function loadDetailData(forceId = null) {
                     <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${chEsc(p.memo||'메모없음')}</div>
                 </div>
             </div>`;
-        }).join('') : '<div style="color:#666; font-size:0.85rem; padding:10px;">등록된 사진이 없습니다.</div>';
+        }).join('') : '<div style="color:var(--ink-soft); font-size:0.85rem; padding:10px;">등록된 사진이 없습니다.</div>';
 
         // --- 화면 UI 조합 ---
         // --- 화면 UI 조합 ---
@@ -511,8 +518,8 @@ async function loadDetailData(forceId = null) {
         const currentGroupNum = rat.group ? rat.group.replace('G', '') : '1';
         // 1. 정보 박스 구성 (3등분 로직)
         const infoBoxes = [];
-        infoBoxes.push(`<div class="info-row-item"><b>D+${dPlus}</b><br><span style="font-size:0.85rem; color:#666;">반입 후</span><br><span style="font-size:0.8rem; color:#666;">${rat.arrivalDate||'-'}</span></div>`);
-        infoBoxes.push(`<div class="info-row-item"><b>POD ${pod}</b><br><span style="font-size:0.85rem; color:#666;">수술 후</span><br><span style="font-size:0.8rem; color:#666;">약 ${ageAtSurgStr}주령</span></div>`);
+        infoBoxes.push(`<div class="info-row-item"><b>D+${dPlus}</b><br><span style="font-size:0.85rem; color:var(--ink-soft);">반입 후</span><br><span style="font-size:0.8rem; color:var(--ink-soft);">${rat.arrivalDate||'-'}</span></div>`);
+        infoBoxes.push(`<div class="info-row-item"><b>POD ${pod}</b><br><span style="font-size:0.85rem; color:var(--ink-soft);">수술 후</span><br><span style="font-size:0.8rem; color:var(--ink-soft);">약 ${ageAtSurgStr}주령</span></div>`);
         
         if (rat.status === '사망') {
             const deathPod = rat.surgeryDate && rat.deathDate ? Math.floor((new Date(rat.deathDate) - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
@@ -522,63 +529,63 @@ async function loadDetailData(forceId = null) {
             let codText = `${displayCod}`;
             if (displayCodSec) codText += ` (+${displayCodSec})`;
 
-            infoBoxes.push(`<div class="info-row-item" style="background:#fff5f5; border-color:#fed7d7;">
-                <b style="color:var(--red);">사망 (POD ${deathPod})</b><br>
-                <span style="font-size:0.85rem; color:#666;">${rat.deathDate || '-'}</span><br>
-                <div style="font-size:0.75rem; color:#c62828; margin-top:5px; font-weight:bold; line-height:1.3; word-break:keep-all;">
-                    COD: ${codText}<br>ARE: ${displayAre}
+            infoBoxes.push(`<div class="info-row-item" style="background:var(--stock-pink-soft); border-color:var(--stock-pink);">
+                <b style="color:var(--stamp);">사망 (POD ${deathPod})</b><br>
+                <span class="mono" style="font-size:0.85rem; color:#7C2A30;">${rat.deathDate || '-'}</span><br>
+                <div style="font-size:0.75rem; color:#7C2A30; margin-top:5px; font-weight:bold; line-height:1.3; word-break:keep-all;">
+                    COD: ${chEsc(codText)}<br>ARE: ${chEsc(displayAre)}
                 </div>
             </div>`);
         } else if (rat.doseStartDate) {
-            infoBoxes.push(`<div class="info-row-item" style="background:#f0fff4; border-color:#c6f6d5;"><b style="color:var(--green);">투약 중</b><br><span style="font-size:0.85rem; color:#666;">시작: ${rat.doseStartDate}</span></div>`);
+            infoBoxes.push(`<div class="info-row-item" style="background:var(--stock-green-soft); border-color:var(--approve);"><b style="color:var(--approve);">투약 중</b><br><span class="mono" style="font-size:0.85rem; color:var(--ink-soft);">시작: ${rat.doseStartDate}</span></div>`);
         }
 
         view.innerHTML = `
             <div class="card" style="padding:20px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                     <div style="display:flex; align-items:center; gap:10px;">
-                        <h3 style="margin:0; font-size:1.5rem; color:var(--navy);">${id}</h3>
+                        <h3 class="mono" style="margin:0; font-size:1.5rem; color:var(--ink); letter-spacing:-0.02em; white-space:nowrap;">${chEsc(id)}</h3>
                         ${typeof batchChipHtml === 'function' ? batchChipHtml(rat, null, { size: '0.8rem' }) : ''}
                         <select data-grp-change data-doc="${docId}" data-rat="${chEsc(id)}"
                                 title="그룹 변경 (선택 시 모든 연동 데이터가 새 ID로 자동 이동)" aria-label="그룹 변경"
-                                style="background:#e3f2fd; color:#1565c0; border:1px solid #bbdefb; border-radius:6px; padding:2px 8px; font-weight:bold; font-size:0.85rem; cursor:pointer; outline:none; appearance:none; -webkit-appearance:none; -moz-appearance:none; padding-right:22px; background-image:url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'10\\' viewBox=\\'0 0 24 24\\' fill=\\'%231565c0\\'><path d=\\'M7 10l5 5 5-5z\\'/></svg>'); background-repeat:no-repeat; background-position:right 6px center;">
+                                style="background:var(--sheet); color:var(--ink); border:1px solid var(--ink); border-radius:2px; padding:2px 8px; font-weight:bold; font-size:0.85rem; font-family:var(--font-mono); cursor:pointer; outline:none; appearance:none; -webkit-appearance:none; -moz-appearance:none; padding-right:22px; background-image:url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'10\\' viewBox=\\'0 0 24 24\\' fill=\\'%2323282E\\'><path d=\\'M7 10l5 5 5-5z\\'/></svg>'); background-repeat:no-repeat; background-position:right 6px center;">
                             ${[0,1,2,3,4,5].map(n => `<option value="${n}" ${currentGroupNum == n ? 'selected' : ''}>G${n}</option>`).join('')}
                         </select>
                     </div>
                     <button class="btn-small" data-simple-cod data-doc="${docId}" data-cod="${chEsc(rat.cod || '')}" data-are="${chEsc(rat.are || '')}" data-death="${rat.deathDate || getTodayStr()}"
-                            style="background:${rat.status==='생존'?'var(--green)':'var(--red)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:8px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.1);" title="클릭하여 사망 정보 수정">
+                            style="background:${rat.status==='생존'?'var(--approve)':'var(--stamp)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:2px; cursor:pointer;" title="클릭하여 사망 정보 수정">
                         <i class="material-icons" aria-hidden="true" style="font-size:18px;">${rat.status==='생존'?'check_circle':'edit'}</i> ${rat.status === '생존' ? '생존' : '사망 (수정)'}
                     </button>
                 </div>
                 
                 <div class="info-row-container">${infoBoxes.join('')}</div>
 
-                <div style="background:#f8f9fa; padding:12px 15px; border-radius:12px; border:1px solid #eee; margin-bottom:15px;">
+                <div style="background:var(--paper); padding:12px 15px; border-radius:2px; border:1px solid var(--rule); margin-bottom:15px;">
                     <h4 style="margin:0 0 8px 0; font-size:0.9rem; color:var(--navy);">
                         <i class="material-icons" style="font-size:18px; vertical-align:middle;">grid_view</i> 케이지 · 섭취량
                     </h4>
-                    <div id="rd-cage-info"><span style="font-size:0.85rem; color:#666;">불러오는 중...</span></div>
+                    <div id="rd-cage-info"><span style="font-size:0.85rem; color:var(--ink-soft);">불러오는 중...</span></div>
                 </div>
 
                 <div style="display:flex; gap:20px; align-items: stretch; flex-wrap:wrap;">
                     
                     <div style="flex:6; min-width:300px; display:flex; flex-direction:column; gap:15px;">
                         
-                        <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee; display:flex; flex-wrap:wrap; gap:10px;">
-                            <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
+                        <div style="background:var(--paper); padding:15px; border-radius:2px; border:1px solid var(--rule); display:flex; flex-wrap:wrap; gap:10px;">
+                            <div style="background:var(--sheet); padding:8px 12px; border-radius:2px; border:1px solid var(--rule); display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">반입주령</span>
                                 <select id="arr-age" aria-label="반입주령" onchange="rdSet('arrivalAge', this.value)" style="border:none; background:none; font-weight:bold; outline:none;">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}</select>
                             </div>
-                            <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
+                            <div style="background:var(--sheet); padding:8px 12px; border-radius:2px; border:1px solid var(--rule); display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">OVX일자</span>
                                 <input type="date" id="ovx-d" value="${rat.ovxDate||''}" aria-label="OVX 일자" onchange="rdSet('ovxDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
                             </div>
-                            <div style="background:white; padding:8px 12px; border-radius:8px; border:1px solid #ddd; display:flex; align-items:center; gap:8px;">
+                            <div style="background:var(--sheet); padding:8px 12px; border-radius:2px; border:1px solid var(--rule); display:flex; align-items:center; gap:8px;">
                                 <span style="font-size:0.85rem; font-weight:bold;">투약시작</span>
                                 <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" aria-label="투약 시작일" onchange="rdSet('doseStartDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
                             </div>
                             
-                            <div style="width:100%; display:flex; align-items:center; gap:15px; background:#fff3e0; padding:10px 12px; border-radius:8px; border:1px solid #ffcc80; flex-wrap:wrap;">
+                            <div style="width:100%; display:flex; align-items:center; gap:15px; background:var(--stock-canary-soft); padding:10px 12px; border-radius:2px; border:1px solid #E3C55C; flex-wrap:wrap;">
                                 <label style="cursor:pointer; font-size:0.85rem; color:var(--red); font-weight:bold; display:flex; align-items:center;">
                                     <input type="checkbox" id="chk-sham" ${rat.isNonInduction ? 'checked' : ''} 
                                         onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none'; rdSet('isNonInduction', this.checked);" style="transform:scale(1.2); margin-right:6px;">
@@ -586,36 +593,36 @@ async function loadDetailData(forceId = null) {
                                 </label>
                                 <div id="surg-date-wrapper" style="display:${rat.isNonInduction ? 'none' : 'flex'}; align-items:center; gap:6px;">
                                     <span style="font-size:0.85rem; font-weight:bold;">수술일자</span>
-                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" aria-label="수술 일자" onchange="rdSet('surgeryDate', this.value)" style="border:1px solid #ccc; border-radius:4px; padding:4px;">
+                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" aria-label="수술 일자" onchange="rdSet('surgeryDate', this.value)" style="border:1px solid #C9C5B8; border-radius:2px; padding:4px;">
                                 </div>
                                 <div id="sham-ref-wrapper" style="display:${rat.isNonInduction ? 'flex' : 'none'}; align-items:center; gap:6px;">
                                     <span style="font-size:0.85rem; font-weight:bold; color:var(--red);">비교 기준 주령</span>
-                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" aria-label="비교 기준 주령" onchange="rdSet('refAge', this.value)" style="width:60px; padding:4px; border:1px solid #ccc; border-radius:4px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
+                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" aria-label="비교 기준 주령" onchange="rdSet('refAge', this.value)" style="width:60px; padding:4px; border:1px solid #C9C5B8; border-radius:2px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
                                 </div>
                                 
                             </div>
 
-                            <div style="width:100%; display:flex; align-items:center; gap:6px; background:#e3f2fd; padding:10px 12px; border-radius:8px; border:1px solid #bbdefb; flex-wrap:wrap;">
+                            <div style="width:100%; display:flex; align-items:center; gap:6px; background:var(--stock-blue-soft); padding:10px 12px; border-radius:2px; border:1px solid var(--ink-blue); flex-wrap:wrap;">
                                 <span style="font-size:0.85rem; font-weight:bold; color:var(--navy);">얻은 샘플</span>
-                                <select id="sample-tp" aria-label="샘플 종류" onchange="rdSet('sampleType', this.value)" style="padding:4px; border-radius:4px; border:1px solid #ccc;">
+                                <select id="sample-tp" aria-label="샘플 종류" onchange="rdSet('sampleType', this.value)" style="padding:4px; border-radius:2px; border:1px solid #C9C5B8;">
                                     <option value="">-</option>
                                     <option value="Histology" ${rat.sampleType==='Histology'?'selected':''}>Histology</option>
                                     <option value="Cast" ${rat.sampleType==='Cast'?'selected':''}>Cast</option>
                                     <option value="Fail" ${rat.sampleType==='Fail'?'selected':''}>못함</option>
                                 </select>
-                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" aria-label="샘플 채취일" onchange="rdSet('sampleDate', this.value)" style="padding:4px; border:1px solid #ccc; border-radius:4px;">
-                                <input type="text" id="sample-memo" value="${chEsc(rat.sampleMemo||'')}" placeholder="메모" aria-label="샘플 메모" oninput="rdSet('sampleMemo', this.value)" style="flex:1; min-width:120px; padding:4px; border:1px solid #ccc; border-radius:4px;">
+                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" aria-label="샘플 채취일" onchange="rdSet('sampleDate', this.value)" style="padding:4px; border:1px solid #C9C5B8; border-radius:2px;">
+                                <input type="text" id="sample-memo" value="${chEsc(rat.sampleMemo||'')}" placeholder="메모" aria-label="샘플 메모" oninput="rdSet('sampleMemo', this.value)" style="flex:1; min-width:120px; padding:4px; border:1px solid #C9C5B8; border-radius:2px;">
                                 
                             </div>
                         </div>
 
-                        <div style="background:#f8f9fa; padding:15px; border-radius:12px; border:1px solid #eee;">
+                        <div style="background:var(--paper); padding:15px; border-radius:2px; border:1px solid var(--rule);">
                             <h4 style="margin:0 0 10px 0; font-size:0.9rem; color:var(--navy);"><i class="material-icons" style="font-size:18px; vertical-align:middle;">biotech</i> MR 촬영 이력 (Infarction 관찰)</h4>
                             
                             <div id="mr-list-area" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
                                 ${(() => {
                                     const mrArr = rat.mrDates || [];
-                                    if(mrArr.length === 0) return '<span style="font-size:0.85rem; color:#666;">기록된 MR이 없습니다.</span>';
+                                    if(mrArr.length === 0) return '<span style="font-size:0.85rem; color:var(--ink-soft);">기록된 MR이 없습니다.</span>';
                                     
                                     const tpWeightMap = { 'D00':-1, 'D0':0, 'D2':2, 'W1':7, 'W2':14, 'W3':21, 'W4':28, 'W5':35, 'W6':42, 'W7':49, 'W8':56, 'W12':84, 'Death':9999 };
                                     
@@ -631,11 +638,11 @@ async function loadDetailData(forceId = null) {
                                             if(mr.infarctSize && mr.infarctSize !== 'None') {
                                                 infStr = `<button class="db-btn" data-infarct data-doc="${docId}" data-idx="${mr.originalIdx}" data-size="${mr.infarctSize}" data-loc="${mr.infarctLoc||'-'}" title="수정하기" aria-label="${mr.timepoint} Infarction 기록 수정" style="color:#b45309; font-weight:bold; margin-left:4px; padding:2px 4px;">[${mr.infarctSize}(${mr.infarctLoc||'-'})]</button>`;
                                             } else {
-                                                infStr = `<button class="db-btn" data-infarct data-doc="${docId}" data-idx="${mr.originalIdx}" data-size="None" data-loc="-" title="Infarct 기록 추가" aria-label="${mr.timepoint} Infarction 기록 추가" style="color:#1565c0; font-weight:bold; font-size:1.1rem; margin-left:4px; padding:2px 6px;">[+]</button>`;
+                                                infStr = `<button class="db-btn" data-infarct data-doc="${docId}" data-idx="${mr.originalIdx}" data-size="None" data-loc="-" title="Infarct 기록 추가" aria-label="${mr.timepoint} Infarction 기록 추가" style="color:var(--ink-blue); font-weight:bold; font-size:1.1rem; margin-left:4px; padding:2px 6px;">[+]</button>`;
                                             }
                                             return `
-                                            <span style="background:#fff; border:1px solid #ccc; padding:4px 8px; border-radius:6px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">
-                                                <b>${mr.timepoint}</b>: ${mr.date} ${infStr}
+                                            <span style="background:var(--sheet); border:1px solid var(--ink); padding:4px 8px; border-radius:2px; font-size:0.85rem; display:inline-flex; align-items:center; gap:5px;">
+                                                <b class="mono">${mr.timepoint}</b>: <span class="mono">${mr.date}</span> ${infStr}
                                                 <button class="db-btn" data-mr-del="${mr.originalIdx}" data-doc="${docId}" aria-label="${mr.timepoint} MR 기록 삭제" style="display:inline-flex; padding:4px;"><i class="material-icons" aria-hidden="true" style="font-size:1.2rem; color:var(--red);">cancel</i></button>
                                             </span>
                                             `;
@@ -643,34 +650,34 @@ async function loadDetailData(forceId = null) {
                                 })()}
                             </div>
                             
-                            <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed #ddd; padding-top:10px;">
-                                ${rat.isNonInduction ? 
+                            <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed var(--rule); padding-top:10px;">
+                                ${rat.isNonInduction ?
                                     `<input type="hidden" id="new-mr-tp" value="-">
-                                     <div style="font-size:0.85rem; font-weight:bold; color:var(--red); background:#ffebee; padding:6px 10px; border-radius:6px; text-align:center;">시점 무관</div>` 
-                                : 
-                                    `<select id="new-mr-tp" style="width:90px; padding:6px; font-size:0.85rem; border-radius:6px; border:1px solid #ccc;">
+                                     <div style="font-size:0.85rem; font-weight:bold; color:#7C2A30; background:var(--stock-pink-soft); border:1px solid var(--stock-pink); padding:6px 10px; border-radius:2px; text-align:center;">시점 무관</div>`
+                                :
+                                    `<select id="new-mr-tp" class="mono" aria-label="새 MR 시점" style="width:90px; padding:6px; font-size:0.85rem; border-radius:2px; border:1px solid #C9C5B8;">
                                         ${['D00','D0','D2','W1','W2','W3','W4','W5','W6','W7','W8','W12','Death'].map(opt => `<option value="${opt}">${opt}</option>`).join('')}
                                     </select>`
                                 }
-                                <input type="date" id="new-mr-d" value="${getTodayStr()}" aria-label="새 MR 촬영일" style="width:130px; padding:6px; font-size:0.85rem; border-radius:6px; border:1px solid #ccc;">
+                                <input type="date" id="new-mr-d" value="${getTodayStr()}" aria-label="새 MR 촬영일" style="width:130px; padding:6px; font-size:0.85rem; border-radius:2px; border:1px solid #C9C5B8;">
                                 <button class="btn-small btn-green" onclick="addMrDate('${docId}')" style="padding:6px 12px; font-size:0.85rem;">+ 새 MR 추가</button>
                             </div>
                         </div>
                     </div>
 
-                    <div style="flex:4; min-width:250px; display:flex; flex-direction:column; background:#fffde7; border:1px solid #fff59d; border-radius:12px; padding:15px;">
+                    <div style="flex:4; min-width:250px; display:flex; flex-direction:column; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; padding:15px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                            <span style="font-weight:bold; color:#f57f17; display:flex; align-items:center; gap:5px;"><i class="material-icons" style="font-size:18px;">note</i> 개체 자유 메모</span>
+                            <span style="font-weight:bold; color:#7A5C00; display:flex; align-items:center; gap:5px;"><i class="material-icons" aria-hidden="true" style="font-size:18px;">note</i> 개체 자유 메모</span>
                             
                         </div>
-                        <textarea id="general-memo-area" aria-label="개체 자유 메모" oninput="rdSet('generalMemo', this.value)" style="flex:1; width:100%; border:1px solid #ffe082; border-radius:8px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${chEsc(rat.generalMemo || '')}</textarea>
+                        <textarea id="general-memo-area" aria-label="개체 자유 메모" oninput="rdSet('generalMemo', this.value)" style="flex:1; width:100%; border:1px solid #E3C55C; border-radius:2px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${chEsc(rat.generalMemo || '')}</textarea>
                     </div>
                 </div>
             </div>
         
-            <div class="card" style="border-top: 4px solid #fbc02d;">
-                <h4 style="margin-top:0; color:var(--navy);">⏳ 개체 라이프사이클 타임라인 (주령 기준)</h4>
-                <div style="font-size:0.8rem; color:#666; margin-bottom:10px; display:flex; gap:12px; flex-wrap:wrap; background:#f8f9fa; padding:8px; border-radius:6px;">
+            <div class="card">
+                <h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">개체 라이프사이클 타임라인 (주령 기준)</h4>
+                <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px; display:flex; gap:12px; flex-wrap:wrap; background:var(--paper); border:1px solid var(--rule); padding:8px; border-radius:2px;">
                     <span>🟩 <b>반입</b></span> 
                     <span>🔺 <b style="color:#9C27B0;">OVX</b></span> 
                     <span>♦️ <b style="color:#E91E63;">수술(Ligation)</b></span> 
@@ -683,13 +690,13 @@ async function loadDetailData(forceId = null) {
             </div>
 
             <div id="infarct-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
-                <div style="background:white; padding:20px; border-radius:8px; width:300px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
-                    <h4 style="margin-top:0; color:var(--navy); border-bottom:2px solid var(--navy); padding-bottom:8px;">🧠 Infarction 기록 추가</h4>
+                <div style="background:var(--sheet); padding:20px; border-radius:2px; width:300px; border:1px solid var(--ink);">
+                    <h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:8px;">Infarction 기록 추가</h4>
                     <input type="hidden" id="infarct-doc-id">
                     <input type="hidden" id="infarct-mr-idx">
                     <div style="margin-bottom:10px;">
                         <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:4px;">크기 (Size)</label>
-                        <select id="infarct-size-sel" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                        <select id="infarct-size-sel" style="width:100%; padding:8px; border-radius:2px; border:1px solid #C9C5B8;">
                             <option value="None">None (없음)</option>
                             <option value="Small">Small</option>
                             <option value="Large">Large</option>
@@ -697,7 +704,7 @@ async function loadDetailData(forceId = null) {
                     </div>
                     <div style="margin-bottom:20px;">
                         <label style="display:block; font-size:0.85rem; font-weight:bold; margin-bottom:4px;">위치 (Location)</label>
-                        <select id="infarct-loc-sel" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;">
+                        <select id="infarct-loc-sel" style="width:100%; padding:8px; border-radius:2px; border:1px solid #C9C5B8;">
                             <option value="-">-</option>
                             <option value="R">R (우측)</option>
                             <option value="L">L (좌측)</option>
@@ -712,21 +719,21 @@ async function loadDetailData(forceId = null) {
             </div>
 
             <div class="card">
-                <h4 style="color:var(--navy); margin-top:0;">🖼️ 사진 및 결과 기록</h4>
+                <h4 style="color:var(--ink); margin-top:0; border-bottom:3px double var(--ink); padding-bottom:6px;">사진 및 결과 기록</h4>
                 
-                <div id="photo-dropzone-${docId}" 
-                        style="border: 2px dashed #1a237e; border-radius: 8px; padding: 20px; text-align: center; background: #f8f9fa; cursor: pointer; margin-bottom:15px; transition: 0.2s;" 
-                        ondragover="event.preventDefault(); this.style.background='#e3f2fd'; this.style.borderColor='#00c853';" 
-                        ondragleave="this.style.background='#f8f9fa'; this.style.borderColor='#1a237e';" 
+                <div id="photo-dropzone-${docId}"
+                        style="border: 2px dashed var(--ink); border-radius: 2px; padding: 20px; text-align: center; background: var(--paper); cursor: pointer; margin-bottom:15px; transition: 0.2s;"
+                        ondragover="event.preventDefault(); this.style.background='var(--stock-green-soft)'; this.style.borderColor='var(--approve)';"
+                        ondragleave="this.style.background='var(--paper)'; this.style.borderColor='var(--ink)';"
                         ondrop="handlePhotoDrop(event, '${docId}')" 
                         onclick="document.getElementById('photo-upload-input-${docId}').click()">
-                    <div style="font-size:2rem; margin-bottom:10px;">📸</div>
+                    <i class="material-icons" aria-hidden="true" style="font-size:2rem; margin-bottom:10px; color:var(--ink);">photo_camera</i>
                     <div style="font-weight:bold; color:#333;">여기로 사진을 드래그하거나 클릭하여 선택하세요</div>
-                    <div style="font-size:0.85rem; color:#666; margin-top:5px;">(Ctrl+V 복사/붙여넣기도 지원합니다. <b>여러 장 선택 가능</b>)</div>
+                    <div style="font-size:0.85rem; color:var(--ink-soft); margin-top:5px;">(Ctrl+V 복사/붙여넣기도 지원합니다. <b>여러 장 선택 가능</b>)</div>
                     <input type="file" id="photo-upload-input-${docId}" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect(event, '${docId}')">
                 </div>
                 
-                <div id="photo-staging-area-${docId}" style="display:none; margin-bottom:15px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                <div id="photo-staging-area-${docId}" style="display:none; margin-bottom:15px; background:var(--sheet); border:1px solid var(--rule); border-radius:2px; padding:15px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:8px; margin-bottom:10px;">
                         <h5 style="margin:0; color:var(--navy);">📤 업로드 대기 목록 (개별 설정 후 업로드)</h5>
                     </div>
@@ -739,13 +746,13 @@ async function loadDetailData(forceId = null) {
                 </div>
             </div>
 
-            <div class="card"><h4>데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div>
+            <div class="card"><h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div>
             <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleDailyLog()">Detail ▼</button></div>
             <div id="daily-detail-table" style="display:none; margin-top:10px;"></div></div>
             
             <div class="card">
-                <h4>혈압/체중</h4>
-                <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:10px; background:#f8f9fa; padding:8px; border-radius:8px;">
+                <h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">혈압/체중</h4>
+                <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:10px; background:var(--paper); border:1px solid var(--rule); padding:8px; border-radius:2px;">
                     <label style="cursor:pointer; display:flex; align-items:center; font-weight:bold; color:var(--red);"><input type="checkbox" id="chk-sbp" checked onchange="renderBpChart()" style="margin-right:5px; width:auto; transform:scale(1.2);"> SBP</label>
                     <label style="cursor:pointer; display:flex; align-items:center; font-weight:bold; color:var(--green);"><input type="checkbox" id="chk-wt" checked onchange="renderBpChart()" style="margin-right:5px; width:auto; transform:scale(1.2);"> Weight</label>
                 </div>
@@ -754,8 +761,8 @@ async function loadDetailData(forceId = null) {
                 <div id="bp-detail-table" style="display:none; margin-top:10px;"></div>
             </div>
 
-            <div class="card"><h4>투약 이력</h4><div id="dose-logs"></div></div>
-            <div class="card"><h4>기록 로그</h4><div id="rec-logs"></div></div>`
+            <div class="card"><h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">투약 이력</h4><div id="dose-logs"></div></div>
+            <div class="card"><h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">기록 로그</h4><div id="rec-logs"></div></div>`
             + rdSaveBarHtml();
 
         // 항목별 저장 버튼 대신, 고친 것을 모아뒀다가 한 번에 저장한다
@@ -1041,6 +1048,9 @@ if (!window.__chDelegationBound) {
         if (mrDel) { removeMrDate(mrDel.dataset.doc, Number(mrDel.dataset.mrDel)); return; }
         const inf = e.target.closest('[data-infarct]');
         if (inf) { openInfarctModal(inf.dataset.doc, Number(inf.dataset.idx), inf.dataset.size, inf.dataset.loc); return; }
+        // 랫드 명부: 개체 배지 → 상세보기 (인라인 onclick 대신 위임, 키보드 접근 가능)
+        const gd = e.target.closest('[data-go-detail]');
+        if (gd) { goToDetail(gd.dataset.goDetail); return; }
         // 랫드 상세: 사진 삭제 — 메모의 아포스트로피가 인라인 onclick 을 깨뜨리던 것을 위임으로 해결
         const del = e.target.closest('[data-del-photo]');
         if (del && window.currentRatPhotos) {
@@ -1338,7 +1348,7 @@ async function loadGroupComparison() {
 async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', fixedOptions = null, customTitle = null) {
     const resDiv = document.getElementById(targetDivId);
     let headerHtml = '';
-    if (customTitle) { headerHtml = `<div style="position:sticky; top:60px; z-index:80; background:#fff; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);"><span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span></div>`; }
+    if (customTitle) { headerHtml = `<div style="position:sticky; top:60px; z-index:80; background:var(--sheet); padding:10px; border-bottom:2px solid var(--ink); margin-bottom:15px; text-align:center;"><span style="font-weight:bold; color:var(--ink); font-size:1rem;">${customTitle}</span></div>`; }
     resDiv.innerHTML = headerHtml + `<div class="loader"></div> 데이터 분석 중...`;
 
     try {
@@ -1458,11 +1468,11 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 
         const avgSurgAge = surgAgeCnt > 0 ? (surgAgeSum/surgAgeCnt).toFixed(1) : '-';
         const mrKeys = Object.keys(mrStats).sort((a,b) => podDaysMap[a] - podDaysMap[b]);
-        const mrHtml = mrKeys.length === 0 ? '<span style="color:#666;">데이터 없음</span>' : mrKeys.map(k => {
+        const mrHtml = mrKeys.length === 0 ? '<span style="color:var(--ink-soft);">데이터 없음</span>' : mrKeys.map(k => {
             const stat = mrStats[k]; let devStr = '-'; if(stat.cnt > 0) { const avgDev = (stat.sum / stat.cnt).toFixed(1); devStr = avgDev > 0 ? `+${avgDev}` : avgDev; }
             let ageStr = '-'; let printCnt = stat.cnt > 0 ? stat.cnt : stat.ageCnt; if(stat.ageCnt > 0) ageStr = (stat.sumAge / stat.ageCnt).toFixed(1);
-            if (k === 'D00' || k === 'D0') return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
-            else return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 / 편차 ${devStr}일 (n=${printCnt})</span>`;
+            if (k === 'D00' || k === 'D0') return `<span class="mono" style="background:var(--sheet); border:1px solid var(--ink); padding:3px 8px; border-radius:2px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
+            else return `<span class="mono" style="background:var(--sheet); border:1px solid var(--ink); padding:3px 8px; border-radius:2px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 / 편차 ${devStr}일 (n=${printCnt})</span>`;
         }).join('');
 
         const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
@@ -1496,12 +1506,12 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const totalN = rats.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`; 
 
         let finalHtml = headerHtml;
-        finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:white; padding:20px; border-radius:12px; width:95%; max-width:700px; max-height:85vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,0.3);"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--navy);">🔬 샘플 획득 상세 내역 (총 ${rats.length}마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="background:#f5f5f5; text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
-        finalHtml += `<div class="card" style="border-left:5px solid #00c853;"><h4 style="margin-top:0; color:var(--navy);">📋 기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span style="color:var(--navy); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:#fff3e0; border:1px solid #ffcc80;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:#f8f9fa; padding:10px; border-radius:6px; border:1px solid #eee;"><b style="font-size:0.9rem; color:var(--navy);">📷 MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
-        finalHtml += `<div class="card" style="border-left:5px solid #9c27b0;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4><div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;"><b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateValid}%; background:#F57C00; height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#666;">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:var(--sheet); padding:20px; border-radius:2px; border:1px solid var(--ink); width:95%; max-width:700px; max-height:85vh; overflow-y:auto;"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px double var(--ink); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--ink);">샘플 획득 상세 내역 (총 <span class="mono">${rats.length}</span>마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div class="card"><h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span class="mono" style="color:var(--ink); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:var(--stock-canary-soft); border:1px solid #E3C55C;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);"><b style="font-size:0.9rem; color:var(--ink);">MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
+        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">ARE 발생률 (마리 수 기준)</h4><div style="background:var(--stock-blue-soft); padding:10px; border-radius:2px; margin-bottom:15px; border:1px solid var(--ink-blue);"><b style="color:var(--ink); font-size:1.05rem;">총 발견된 ARE: <span class="mono">${totalAreCount}</span>개</b> <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateTotal}%; background:var(--ink-blue); height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateValid}%; background:var(--stock-canary); height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed var(--rule); padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:var(--ink); margin-bottom:10px;">ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:var(--ink-soft);">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
 
         const infSizeChartId = `infSizeChart${uniqueSuffix}`; const infLocChartId = `infLocChart${uniqueSuffix}`;
-        finalHtml += `<div class="card" style="border-left:5px solid #ff9800;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">⚡ 시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:#666; margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
+        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
 
         const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
         const codChartId = `codChart${uniqueSuffix}`, areChartId = `areChart${uniqueSuffix}`;
@@ -1512,13 +1522,13 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         if (deadRats.length > 0) {
             deadRats.sort((a, b) => { const cA = Number(a.cohort) || 0; const cB = Number(b.cohort) || 0; if (cA !== cB) return cA - cB; return a.ratId.localeCompare(b.ratId); });
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
-            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:#666">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
+            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:var(--ink-soft)">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
             survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
             
             // 🔥 체크박스 UI 삽입
             const survHeaderHtml = `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                    <h4 style="margin:0;">⚰️ 사망 분석 (${deadRats.length}) - 생존율 <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;" id="surv-avg-txt${uniqueSuffix}">[평균 생존: POD ${avgPodStr}]</span></h4>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:6px;">
+                    <h4 style="margin:0;">사망 분석 (${deadRats.length}) · 생존율 <span class="mono" style="font-size:0.85rem; color:var(--stamp); margin-left:10px; font-weight:normal;" id="surv-avg-txt${uniqueSuffix}">[평균 생존: POD ${avgPodStr}]</span></h4>
                     <div style="display:flex; gap:15px; font-size:0.85rem;">
                         <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-surgfail${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Surgical Failure 제외</label>
                         <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-sac${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Sacrifice 제외</label>
@@ -1526,26 +1536,26 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                 </div>
             `;
             
-            finalHtml += `<div class="card" style="border-left:5px solid var(--red)">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
+            finalHtml += `<div class="card">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
-        const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:#1565c0; color:#fff; transition:0.2s; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${window.isAgeMode ? '📈 주령(Age) 연속 보기' : '🕒 시점(POD) 보기'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
+        const controlPanel = `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 9px; border:1px solid ${isCrosshairEnabled ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? 'var(--ink)' : 'var(--paper)'}; color:${isCrosshairEnabled ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">가이드선 ${isCrosshairEnabled ? 'ON' : 'OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 9px; border:1px solid ${isIndividualVisible ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? 'var(--ink)' : 'var(--paper)'}; color:${isIndividualVisible ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">개별점 ${isIndividualVisible ? 'ON' : 'OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 9px; border:none; border-radius:2px; font-size:0.75rem; cursor:pointer; background:var(--ink-blue); color:#fff; transition:0.15s; font-weight:bold;">${window.isAgeMode ? '주령(Age) 연속 보기' : '시점(POD) 보기'}</button><button style="font-size:0.75rem; color:var(--ink); background:var(--paper); border:1px solid var(--rule); padding:4px 9px; border-radius:2px; cursor:pointer; font-weight:bold;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">줌 초기화</button></div>`;
 
         const sortedTicksSbp = Array.from(existTicksSbp).sort((a, b) => a - b);
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${bpChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
-        bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
+        bpTable += `<tr style="background:var(--stock-blue-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
+        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
         const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${wtChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
-        wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
+        wtTable += `<tr style="background:var(--stock-green-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
+        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
         resDiv.innerHTML = finalHtml;
 
@@ -1554,7 +1564,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         if(areLocLabels.length > 0) {
             const areLocMicro = areLocLabels.map(l => areLocStats[l].micro); const areLocMacro = areLocLabels.map(l => areLocStats[l].macro); const areLocUnk = areLocLabels.map(l => areLocStats[l].unk);
             chMakeChart(areLocChartId, { type: 'bar', data: { labels: areLocLabels, datasets: [ { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 }, ...(areMaxY ? { max: areMaxY } : {}) } } } });
-        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#6f6f6f; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
+        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:var(--ink-soft); padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
 
         const infLabels = infTps.map(tp => { if(infStats[tp].hasData === 0) return `${tp}\n(No Data)`; return `${tp}\n(n=${infStats[tp].validN})`; });
         const sizeDataSmall = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].small / infStats[tp].validN * 100).toFixed(1) : 0);
@@ -1601,7 +1611,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                     } 
                 };
             } else {
-                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t=>t.value===dynamicArrivalPod)) scale.ticks.push({value:dynamicArrivalPod}); if(dynamicD00Pod !== null && !scale.ticks.some(t=>t.value===dynamicD00Pod)) scale.ticks.push({value:dynamicD00Pod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); if(dynamicD00Pod !== null) ticks.push(dynamicD00Pod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod || ctx.tick.value === dynamicD00Pod) ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
+                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t=>t.value===dynamicArrivalPod)) scale.ticks.push({value:dynamicArrivalPod}); if(dynamicD00Pod !== null && !scale.ticks.some(t=>t.value===dynamicD00Pod)) scale.ticks.push({value:dynamicD00Pod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); if(dynamicD00Pod !== null) ticks.push(dynamicD00Pod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod || ctx.tick.value === dynamicD00Pod) ? '#D8D4C6' : '#EFEDE6' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
             }
         };
 
@@ -1631,8 +1641,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 
 async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, customTitle, fixedOptions, groupKey) {
     const resDiv = document.getElementById(targetDivId);
-    const headerHtml = `<div style="position:sticky; top:60px; z-index:90; background:#f8f9fa; padding:10px; border-bottom:2px solid var(--navy); margin-bottom:15px; text-align:center; box-shadow:0 2px 5px rgba(0,0,0,0.1);"><span style="font-weight:bold; color:var(--navy); font-size:1rem;">${customTitle}</span></div>`;
-    if (!ratDataList || ratDataList.length === 0) { resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:#666;">해당 그룹에 포함된 개체가 없습니다.</div>`; return; }
+    const headerHtml = `<div style="position:sticky; top:60px; z-index:90; background:var(--paper); padding:10px; border-bottom:2px solid var(--ink); margin-bottom:15px; text-align:center;"><span style="font-weight:bold; color:var(--ink); font-size:1rem;">${customTitle}</span></div>`;
+    if (!ratDataList || ratDataList.length === 0) { resDiv.innerHTML = headerHtml + `<div style="padding:20px; text-align:center; color:var(--ink-soft);">해당 그룹에 포함된 개체가 없습니다.</div>`; return; }
     resDiv.innerHTML = headerHtml + `<div class="loader"></div> 로딩 중...`;
 
     try {
@@ -1741,11 +1751,11 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         const avgSurgAge = surgAgeCnt > 0 ? (surgAgeSum/surgAgeCnt).toFixed(1) : '-';
         const mrKeys = Object.keys(mrStats).sort((a,b) => podDaysMap[a] - podDaysMap[b]);
-        const mrHtml = mrKeys.length === 0 ? '<span style="color:#666;">데이터 없음</span>' : mrKeys.map(k => {
+        const mrHtml = mrKeys.length === 0 ? '<span style="color:var(--ink-soft);">데이터 없음</span>' : mrKeys.map(k => {
             const stat = mrStats[k]; let devStr = '-'; if(stat.cnt > 0) { const avgDev = (stat.sum / stat.cnt).toFixed(1); devStr = avgDev > 0 ? `+${avgDev}` : avgDev; }
             let ageStr = '-'; let printCnt = stat.cnt > 0 ? stat.cnt : stat.ageCnt; if(stat.ageCnt > 0) ageStr = (stat.sumAge / stat.ageCnt).toFixed(1);
-            if (k === 'D00' || k === 'D0') return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
-            else return `<span style="background:#e3f2fd; padding:3px 8px; border-radius:4px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 / 편차 ${devStr}일 (n=${printCnt})</span>`;
+            if (k === 'D00' || k === 'D0') return `<span class="mono" style="background:var(--sheet); border:1px solid var(--ink); padding:3px 8px; border-radius:2px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 (n=${printCnt})</span>`;
+            else return `<span class="mono" style="background:var(--sheet); border:1px solid var(--ink); padding:3px 8px; border-radius:2px; font-size:0.85rem;"><b>${k}</b>: ${ageStr}주령 / 편차 ${devStr}일 (n=${printCnt})</span>`;
         }).join('');
 
         const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
@@ -1779,12 +1789,12 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const totalN = ratDataList.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`; 
 
         let finalHtml = headerHtml;
-        finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:white; padding:20px; border-radius:12px; width:95%; max-width:700px; max-height:85vh; overflow-y:auto; box-shadow:0 10px 30px rgba(0,0,0,0.3);"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--navy);">🔬 샘플 획득 상세 내역 (총 ${ratDataList.length}마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="background:#f5f5f5; text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
-        finalHtml += `<div class="card" style="border-left:5px solid #00c853;"><h4 style="margin-top:0; color:var(--navy);">📋 기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span style="color:var(--navy); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:#fff3e0; border:1px solid #ffcc80;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:#f8f9fa; padding:10px; border-radius:6px; border:1px solid #eee;"><b style="font-size:0.9rem; color:var(--navy);">📷 MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
-        finalHtml += `<div class="card" style="border-left:5px solid #9c27b0;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">🧠 ARE 발생률 (마리 수 기준)</h4><div style="background:#f3e5f5; padding:10px; border-radius:6px; margin-bottom:15px; border:1px solid #ce93d8;"><b style="color:#6a1b9a; font-size:1.05rem;">총 발견된 ARE: ${totalAreCount}개</b> <span style="font-size:0.85rem; color:#555; margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateTotal}%; background:#1565C0; height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:#555;"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:#e0e0e0; height:14px; border-radius:7px; overflow:hidden;"><div style="width:${rateValid}%; background:#F57C00; height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed #ce93d8; padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:#6a1b9a; margin-bottom:10px;">📍 ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px; background:#f8f9fa; color:#6a1b9a; border:1px solid #ce93d8;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:#666;">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:var(--sheet); padding:20px; border-radius:2px; border:1px solid var(--ink); width:95%; max-width:700px; max-height:85vh; overflow-y:auto;"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px double var(--ink); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--ink);">샘플 획득 상세 내역 (총 <span class="mono">${ratDataList.length}</span>마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div class="card"><h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span class="mono" style="color:var(--ink); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:var(--stock-canary-soft); border:1px solid #E3C55C;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);"><b style="font-size:0.9rem; color:var(--ink);">MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
+        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">ARE 발생률 (마리 수 기준)</h4><div style="background:var(--stock-blue-soft); padding:10px; border-radius:2px; margin-bottom:15px; border:1px solid var(--ink-blue);"><b style="color:var(--ink); font-size:1.05rem;">총 발견된 ARE: <span class="mono">${totalAreCount}</span>개</b> <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateTotal}%; background:var(--ink-blue); height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateValid}%; background:var(--stock-canary); height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed var(--rule); padding-top:15px; margin-bottom:15px;"><h5 style="text-align:center; color:var(--ink); margin-bottom:10px;">ARE 발생 부위별 분포</h5><div style="height:250px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:var(--ink-soft);">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
 
         const infSizeChartId = `infSizeChart${uniqueSuffix}`; const infLocChartId = `infLocChart${uniqueSuffix}`;
-        finalHtml += `<div class="card" style="border-left:5px solid #ff9800;"><h4 style="margin-top:0; margin-bottom:10px; color:var(--navy);">⚡ 시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:#666; margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:#555; margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
+        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
 
         const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
         const codChartId = `codChart${uniqueSuffix}`, areChartId = `areChart${uniqueSuffix}`;
@@ -1795,13 +1805,13 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         if (deadRats.length > 0) {
             deadRats.sort((a, b) => { const cA = Number(a.cohort) || 0; const cB = Number(b.cohort) || 0; if (cA !== cB) return cA - cB; return a.ratId.localeCompare(b.ratId); });
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
-            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:#666">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
+            deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:var(--ink-soft)">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
             survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
             
             // 🔥 체크박스 UI 삽입
             const survHeaderHtml = `
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                    <h4 style="margin:0;">⚰️ 사망 분석 (${deadRats.length}) - 생존율 <span style="font-size:0.85rem; color:#d32f2f; margin-left:10px; font-weight:normal;" id="surv-avg-txt${uniqueSuffix}">[평균 생존: POD ${avgPodStr}]</span></h4>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:6px;">
+                    <h4 style="margin:0;">사망 분석 (${deadRats.length}) · 생존율 <span class="mono" style="font-size:0.85rem; color:var(--stamp); margin-left:10px; font-weight:normal;" id="surv-avg-txt${uniqueSuffix}">[평균 생존: POD ${avgPodStr}]</span></h4>
                     <div style="display:flex; gap:15px; font-size:0.85rem;">
                         <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-surgfail${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Surgical Failure 제외</label>
                         <label style="cursor:pointer; display:flex; align-items:center;"><input type="checkbox" id="chk-exc-sac${uniqueSuffix}" onchange="updateSurvivalChart('${uniqueSuffix}', '${sChartId}')" style="margin-right:5px;">Sacrifice 제외</label>
@@ -1809,26 +1819,26 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 </div>
             `;
             
-            finalHtml += `<div class="card" style="border-left:5px solid var(--red)">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
+            finalHtml += `<div class="card">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
-        const controlPanel = `<div style="display:flex; align-items:center; gap:10px;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? '#FFD600' : '#ddd'}; color:${isCrosshairEnabled ? '#000' : '#777'}; transition:0.2s; font-weight:bold;">${isCrosshairEnabled ? '🎯 가이드선 ON' : '🎯 가이드선 OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? '#00c853' : '#ddd'}; color:${isIndividualVisible ? '#fff' : '#777'}; transition:0.2s; font-weight:bold;">${isIndividualVisible ? '👥 개별점 ON' : '👥 개별점 OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 8px; border:none; border-radius:4px; font-size:0.75rem; cursor:pointer; background:#1565c0; color:#fff; transition:0.2s; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.2);">${window.isAgeMode ? '📈 주령(Age) 연속 보기' : '🕒 시점(POD) 보기'}</button><span style="font-size:0.75rem; color:#fff; background:#555; padding:4px 8px; border-radius:4px; cursor:pointer;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">🖱️ 줌 초기화</span></div>`;
+        const controlPanel = `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 9px; border:1px solid ${isCrosshairEnabled ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? 'var(--ink)' : 'var(--paper)'}; color:${isCrosshairEnabled ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">가이드선 ${isCrosshairEnabled ? 'ON' : 'OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 9px; border:1px solid ${isIndividualVisible ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? 'var(--ink)' : 'var(--paper)'}; color:${isIndividualVisible ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">개별점 ${isIndividualVisible ? 'ON' : 'OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 9px; border:none; border-radius:2px; font-size:0.75rem; cursor:pointer; background:var(--ink-blue); color:#fff; transition:0.15s; font-weight:bold;">${window.isAgeMode ? '주령(Age) 연속 보기' : '시점(POD) 보기'}</button><button style="font-size:0.75rem; color:var(--ink); background:var(--paper); border:1px solid var(--rule); padding:4px 9px; border-radius:2px; cursor:pointer; font-weight:bold;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">줌 초기화</button></div>`;
 
         const sortedTicksSbp = Array.from(existTicksSbp).sort((a, b) => a - b);
         let bpTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksSbp.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${bpChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let bpTable = `<div style="overflow-x:auto;"><table><tr>${bpTableHeaders}</tr>`;
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${bpChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
-        bpTable += `<tr style="background:#e3f2fd; font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>🩸 혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
+        bpTable += `<tr style="background:var(--stock-blue-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
+        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
         const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
         let wtTable = `<div style="overflow-x:auto;"><table><tr>${wtTableHeaders}</tr>`;
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${wtChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
-        wtTable += `<tr style="background:#e8f5e9; font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center;"><h4>⚖️ 체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
+        wtTable += `<tr style="background:var(--stock-green-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
+        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
         resDiv.innerHTML = finalHtml;
 
@@ -1837,7 +1847,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         if(areLocLabels.length > 0) {
             const areLocMicro = areLocLabels.map(l => areLocStats[l].micro); const areLocMacro = areLocLabels.map(l => areLocStats[l].macro); const areLocUnk = areLocLabels.map(l => areLocStats[l].unk);
             chMakeChart(areLocChartId, { type: 'bar', data: { labels: areLocLabels, datasets: [ { label: 'Macro', data: areLocMacro, backgroundColor: '#8e24aa' }, { label: 'Micro', data: areLocMicro, backgroundColor: '#00897b' }, { label: '미확인', data: areLocUnk, backgroundColor: '#9e9e9e' } ] }, options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, title: { display: true, text: '발생 갯수' }, ticks: { stepSize: 1 }, ...(areMaxY ? { max: areMaxY } : {}) } } } });
-        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:#6f6f6f; padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
+        } else { const canvasBox = document.getElementById(areLocChartId); if(canvasBox) canvasBox.parentElement.innerHTML = '<div style="text-align:center; color:var(--ink-soft); padding-top:40px;">저장된 상세 위치 데이터가 없습니다.</div>'; }
 
         const infLabels = infTps.map(tp => { if(infStats[tp].hasData === 0) return `${tp}\n(No Data)`; return `${tp}\n(n=${infStats[tp].validN})`; });
         const sizeDataSmall = infTps.map(tp => infStats[tp].validN > 0 ? (infStats[tp].small / infStats[tp].validN * 100).toFixed(1) : 0);
@@ -1884,7 +1894,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                     } 
                 };
             } else {
-                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t=>t.value===dynamicArrivalPod)) scale.ticks.push({value:dynamicArrivalPod}); if(dynamicD00Pod !== null && !scale.ticks.some(t=>t.value===dynamicD00Pod)) scale.ticks.push({value:dynamicD00Pod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); if(dynamicD00Pod !== null) ticks.push(dynamicD00Pod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod || ctx.tick.value === dynamicD00Pod) ? '#ddd' : '#f5f5f5' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
+                return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t=>t.value===dynamicArrivalPod)) scale.ticks.push({value:dynamicArrivalPod}); if(dynamicD00Pod !== null && !scale.ticks.some(t=>t.value===dynamicD00Pod)) scale.ticks.push({value:dynamicD00Pod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); if(dynamicD00Pod !== null) ticks.push(dynamicD00Pod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod || ctx.tick.value === dynamicD00Pod) ? '#D8D4C6' : '#EFEDE6' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
             }
         };
 
@@ -2356,7 +2366,7 @@ async function renderGroupSelectors() {
             grpBox.style.cssText = "display:flex; flex-wrap:wrap; gap:4px;";
             sortedGroups.forEach(g => {
                 const lbl = document.createElement('label');
-                lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
+                lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:var(--ink-soft); display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
                 lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 4px 0 0; transform:scale(1.1);" onchange="
                 const wrap = this.closest('.cohort-wrapper');
                 const mainCb = wrap.querySelector('.co-main-cb');
@@ -2390,7 +2400,7 @@ async function renderCohortCheckboxes(containerId) {
     container.innerHTML = '';
     
     if(sortedCohorts.length === 0) {
-        container.innerHTML = '<div style="padding:10px; font-size:0.85rem; color:#666;">데이터가 없습니다.</div>';
+        container.innerHTML = '<div style="padding:10px; font-size:0.85rem; color:var(--ink-soft);">데이터가 없습니다.</div>';
         return;
     }
     
@@ -2403,7 +2413,7 @@ async function renderCohortCheckboxes(containerId) {
         const sortedGroups = Array.from(cohortMap[c]).sort();
         const wrapper = document.createElement('div');
         wrapper.className = 'cohort-wrapper';
-        wrapper.style.cssText = "border:1px solid #ddd; padding:4px 6px; border-radius:6px; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,0.05); display:flex; flex-direction:column; align-items:flex-start;";
+        wrapper.style.cssText = "border:1px solid var(--rule); padding:4px 6px; border-radius:2px; background:var(--sheet); display:flex; flex-direction:column; align-items:flex-start;";
 
         // 상위 코호트 체크박스
         const header = document.createElement('label');
@@ -2421,7 +2431,7 @@ async function renderCohortCheckboxes(containerId) {
 
         sortedGroups.forEach(g => {
             const lbl = document.createElement('label');
-            lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:#555; display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
+            lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:var(--ink-soft); display:flex; align-items:center; background:#f4f6f8; padding:6px 9px; border-radius:4px; border:1px solid #eee; white-space:nowrap; min-height:24px;";
             
             // 👇 문제의 원인이었던 자동 체크 로직 제거 및 독립 작동으로 변경
             lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 4px 0 0; transform:scale(1.1);" onchange="
@@ -2602,17 +2612,17 @@ window.switchTrendTab = function(grp) {
         document.getElementById('trend-panel-a').style.display = 'block';
         document.getElementById('trend-panel-b').style.display = 'none';
         
-        btnA.style.cssText = `flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #1565C0; background:#e3f2fd; color:#1565C0; border-radius:8px; ${mode === 'single' ? 'cursor:default;' : 'cursor:pointer;'}`;
-        
+        btnA.style.cssText = `flex:1; padding:12px; font-size:1.05rem; font-weight:bold; border:2px solid var(--ink); background:var(--stock-blue-soft); color:var(--ink); border-radius:2px; ${mode === 'single' ? 'cursor:default;' : 'cursor:pointer;'}`;
+
         if(mode !== 'single') {
-            btnB.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#666; border-radius:8px; cursor:pointer;";
+            btnB.style.cssText = "flex:1; padding:12px; font-size:1.05rem; font-weight:bold; border:1px dashed var(--rule); background:var(--paper); color:var(--ink-soft); border-radius:2px; cursor:pointer;";
         }
     } else {
         document.getElementById('trend-panel-a').style.display = 'none';
         document.getElementById('trend-panel-b').style.display = 'block';
-        
-        btnB.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #2e7d32; background:#e8f5e9; color:#2e7d32; border-radius:8px; cursor:pointer;";
-        btnA.style.cssText = "flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#666; border-radius:8px; cursor:pointer;";
+
+        btnB.style.cssText = "flex:1; padding:12px; font-size:1.05rem; font-weight:bold; border:2px solid var(--ink); background:var(--stock-green-soft); color:var(--approve); border-radius:2px; cursor:pointer;";
+        btnA.style.cssText = "flex:1; padding:12px; font-size:1.05rem; font-weight:bold; border:1px dashed var(--rule); background:var(--paper); color:var(--ink-soft); border-radius:2px; cursor:pointer;";
     }
 };
 
@@ -2665,7 +2675,7 @@ async function loadTrendCodList() {
 
         const createList = (set, targetContainer, isExc, grp) => {
             if(!targetContainer) return;
-            if(set.size === 0) { targetContainer.innerHTML = '<span style="color:#6f6f6f; font-size:0.85rem;">기록된 원인 없음</span>'; return; }
+            if(set.size === 0) { targetContainer.innerHTML = '<span style="color:var(--ink-soft); font-size:0.85rem;">기록된 원인 없음</span>'; return; }
             targetContainer.innerHTML = '';
             const box = document.createElement('div');
             box.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px;';
@@ -2709,7 +2719,7 @@ function renderUnifiedTimeline(groupsData, container) {
     
     wrapper.innerHTML = `
         <h4 style="margin:0 0 5px 0; color:var(--navy); text-align:center;">⏳ 비교군 통합 이벤트 타임라인</h4>
-        <div style="text-align:center; font-size:0.85rem; color:#666; margin-bottom:10px; background:#f8f9fa; padding:5px; border-radius:4px;">
+        <div style="text-align:center; font-size:0.85rem; color:var(--ink-soft); margin-bottom:10px; background:#f8f9fa; padding:5px; border-radius:4px;">
             <b>도형 의미:</b> 🔵 MR 촬영 &nbsp;|&nbsp; <b>H</b> Histology 샘플 &nbsp;|&nbsp; <b>C</b> Cast 샘플 <br>
             <span style="font-size:0.75rem;">(노란 점선: 각 비교군에서 진행된 <b>'동일한 시점(이벤트)'의 가장 앞선 기준점</b>을 연결한 선입니다)</span>
         </div>
@@ -2976,7 +2986,7 @@ function openRatModal(ratId) {
                     <button onclick="document.getElementById('rat-detail-modal-overlay').style.display='none'" style="background:none; border:none; color:white; font-size:1.8rem; cursor:pointer; line-height:1;">&times;</button>
                 </div>
                 <div id="rdm-content" style="flex:1; padding:20px; overflow-y:auto; position:relative; background:#f4f6f8;">
-                    <div style="text-align:center; padding:50px; color:#666;">
+                    <div style="text-align:center; padding:50px; color:var(--ink-soft);">
                         <div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...
                     </div>
                 </div>
@@ -2988,7 +2998,7 @@ function openRatModal(ratId) {
     // 2. 모달 열기 및 제목 설정
     document.getElementById('rdm-title').innerText = ratId;
     modal.style.display = 'flex';
-    document.getElementById('rdm-content').innerHTML = '<div style="text-align:center; padding:50px; color:#666;"><div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...</div>';
+    document.getElementById('rdm-content').innerHTML = '<div style="text-align:center; padding:50px; color:var(--ink-soft);"><div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...</div>';
 
     // 3. 실제 데이터 로드 및 렌더링 호출
     loadDetailData(ratId);

@@ -18,14 +18,14 @@ let iaWeights = {};   // ratId -> [{date, weight}]
 async function renderIntakeView(main) {
     main.innerHTML = `
     <div class="card">
-        <h3>💧 섭취량 · 투여량</h3>
-        <div style="font-size:0.85rem; color:#666; margin-bottom:12px;">
+        <h3 style="margin:0 0 12px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">섭취량 · 투여량</h3>
+        <div style="font-size:0.85rem; color:var(--ink-soft); margin-bottom:12px;">
             물통을 여러 마리가 나눠 쓰므로 <b>케이지가 측정 단위</b>입니다.
             개체별 값은 추정치이고, 통계는 케이지 수를 n으로 씁니다.
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
             <label style="font-weight:bold; color:var(--navy);">코호트</label>
-            <select id="ia-cohort-sel" style="width:auto; min-width:130px; padding:8px; border-radius:6px; border:1px solid #ccc;">
+            <select id="ia-cohort-sel" style="width:auto; min-width:130px; padding:8px; border-radius:2px; border:1px solid #C9C5B8;">
                 <option>로딩 중...</option>
             </select>
             <button class="btn-small btn-blue" onclick="iaLoad()">분석</button>
@@ -161,7 +161,7 @@ function iaCageBW(row) {
 function iaRender() {
     const body = document.getElementById('ia-body');
     if (!iaRows.length) {
-        body.innerHTML = `<div class="card" style="color:#666;">
+        body.innerHTML = `<div class="card" style="color:var(--ink-soft);">
             이 코호트의 급여 기록이 없습니다. <b>케이지별 입력</b>에서 먼저 기록해주세요.</div>`;
         return;
     }
@@ -224,10 +224,10 @@ function iaRender() {
         const w = cageMean(cages, 'water'), f = cageMean(cages, 'food');
         const m = cageMean(cages, 'met'), b = cageMean(cages, 'bapn'), s = cageMean(cages, 'nacl');
         return `<tr>
-            <td style="padding:8px; font-weight:bold;">${iaGroupName(g)}<br><span style="font-size:0.75rem; color:#888;">${g} · 케이지 ${nCages}개</span></td>
+            <td style="padding:8px; font-weight:bold;">${iaGroupName(g)}<br><span style="font-size:0.75rem; color:var(--ink-soft);">${g} · 케이지 ${nCages}개</span></td>
             <td style="padding:8px; text-align:center;">${iaFmt(w, 0)}</td>
             <td style="padding:8px; text-align:center;">${iaFmt(f, 1)}</td>
-            <td style="padding:8px; text-align:center; color:#0d47a1; font-weight:bold;">${m ? iaFmt(m, 0) : '-'}</td>
+            <td style="padding:8px; text-align:center; color:var(--ink-blue); font-weight:bold;">${m ? iaFmt(m, 0) : '-'}</td>
             <td style="padding:8px; text-align:center;">${b ? iaFmt(b, 1) : '-'}</td>
             <td style="padding:8px; text-align:center;">${s ? iaFmt(s, 0) : '-'}</td>
         </tr>`;
@@ -248,15 +248,15 @@ function iaRender() {
             const off = Math.abs(pct - 100) > 15;
             return `<div style="display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #eee;">
                 <span>${iaGroupName(g)}</span>
-                <span><b style="color:${off ? 'var(--red)' : '#2e7d32'};">${m.mean.toFixed(0)}</b>
-                <span style="color:#888;"> / 목표 ${rule.value} mg/kg/day (${pct.toFixed(0)}%)</span></span>
+                <span><b style="color:${off ? 'var(--red)' : 'var(--approve)'};">${m.mean.toFixed(0)}</b>
+                <span style="color:var(--ink-soft);"> / 목표 ${rule.value} mg/kg/day (${pct.toFixed(0)}%)</span></span>
             </div>`;
         }).filter(Boolean).join('');
         if (parts) achievedHtml = `
         <div class="card">
-            <h4 style="margin-top:0; color:var(--navy);">🎯 ${waterRules[0].substance} 목표 대비 실제 도달</h4>
+            <h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">${waterRules[0].substance} 목표 대비 실제 도달</h4>
             ${parts}
-            <div style="font-size:0.78rem; color:#888; margin-top:8px;">
+            <div style="font-size:0.78rem; color:var(--ink-soft); margin-top:8px;">
                 실제 마신 물의 양으로 역산한 값입니다. 목표에서 15% 이상 벗어나면 빨갛게 표시됩니다.
             </div>
         </div>`;
@@ -264,10 +264,10 @@ function iaRender() {
 
     body.innerHTML = `
     <div class="card">
-        <h4 style="margin-top:0; color:var(--navy);">군별 요약</h4>
+        <h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">군별 요약</h4>
         <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.88rem;">
-            <thead><tr style="background:#f5f5f5;">
+            <thead><tr style="">
                 <th style="padding:8px; text-align:left;">군</th>
                 <th style="padding:8px;">물<br><span style="font-weight:normal; font-size:0.75rem;">mL/day/마리</span></th>
                 <th style="padding:8px;">사료<br><span style="font-weight:normal; font-size:0.75rem;">g/day/마리</span></th>
@@ -278,7 +278,7 @@ function iaRender() {
             <tbody>${rowsHtml}</tbody>
         </table>
         </div>
-        <div style="font-size:0.78rem; color:#888; margin-top:10px;">
+        <div style="font-size:0.78rem; color:var(--ink-soft); margin-top:10px;">
             평균 ± 표준편차 · <b>n = 케이지 수</b> (케이지별 평균을 낸 뒤 군 통계)
         </div>
     </div>
@@ -286,12 +286,12 @@ function iaRender() {
     ${achievedHtml}
 
     <div class="card">
-        <h4 style="margin-top:0; color:var(--navy);">구간 사용 현황</h4>
+        <h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">구간 사용 현황</h4>
         <div style="font-size:0.88rem;">
-            전체 ${iaRows.length}구간 중 <b style="color:#2e7d32;">${usable.length}구간 사용</b>,
+            전체 ${iaRows.length}구간 중 <b style="color:var(--approve);">${usable.length}구간 사용</b>,
             <b style="color:var(--red);">${excluded}구간 제외</b>
         </div>
-        ${excluded ? `<div style="margin-top:8px; font-size:0.82rem; color:#666;">
+        ${excluded ? `<div style="margin-top:8px; font-size:0.82rem; color:var(--ink-soft);">
             제외 사유: ${iaExcludeReasons()}
         </div>` : ''}
     </div>
@@ -344,25 +344,25 @@ function iaCageTable(usable) {
         // 지금 잘 맞고 있는지는 최근 구간이 말해준다.
         const rule = ((iaConfig && iaConfig.dosing) || [])
             .find(d => d.medium === 'water' && (d.groups || []).includes(g) && Number(d.value) > 0);
-        return `<tr onclick="iaToggleChart('${c}')" style="cursor:pointer; border-bottom:1px solid #f0f0f0;">
+        return `<tr onclick="iaToggleChart('${c}')" style="cursor:pointer; border-bottom:1px solid var(--rule);">
             <td style="padding:7px; font-weight:bold;">${c}번</td>
-            <td style="padding:7px; font-size:0.8rem; color:#666;">${iaGroupName(g)}</td>
+            <td style="padding:7px; font-size:0.8rem; color:var(--ink-soft);">${iaGroupName(g)}</td>
             <td style="padding:7px; text-align:center;">${list.length}</td>
             <td style="padding:7px; text-align:center;">${iaFmt(w, 0)}</td>
             <td style="padding:7px; text-align:center;">${f ? iaFmt(f, 1) : '-'}</td>
             <td style="padding:7px; text-align:center;">
                 ${latest !== null ? `
-                    <b style="color:#0d47a1;">최근 ${latest.toFixed(0)}</b>
-                    ${rule ? `<b style="color:${Math.abs(latest / Number(rule.value) - 1) <= 0.15 ? '#2e7d32' : 'var(--red)'};">
+                    <b style="color:var(--ink-blue);">최근 ${latest.toFixed(0)}</b>
+                    ${rule ? `<b style="color:${Math.abs(latest / Number(rule.value) - 1) <= 0.15 ? 'var(--approve)' : 'var(--red)'};">
                         (${(latest / Number(rule.value) * 100).toFixed(0)}%)</b>` : ''}
-                    <br><span style="font-size:0.72rem; color:#888;">평균 ${iaFmt(m, 0)} · ${doses.length}구간</span>` : '-'}</td>
-            <td style="padding:7px; text-align:center; color:#bbb; font-size:0.75rem;"
+                    <br><span style="font-size:0.72rem; color:var(--ink-soft);">평균 ${iaFmt(m, 0)} · ${doses.length}구간</span>` : '-'}</td>
+            <td style="padding:7px; text-align:center; color:var(--ink-soft); font-size:0.75rem;"
                 id="ia-caret-${c}">▾</td>
         </tr>
         <tr id="ia-chartrow-${c}" style="display:none;">
-            <td colspan="7" style="padding:10px 7px 16px; background:#fafbfc;">
+            <td colspan="7" style="padding:10px 7px 16px; background:var(--paper);">
                 <div style="height:230px;"><canvas id="ia-chart-${c}"></canvas></div>
-                <div style="font-size:0.76rem; color:#888; margin-top:6px;">
+                <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
                     계산에 쓴 구간만 표시합니다. 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
                     점선은 고염식·BAPN·메트포민이 들어간 날입니다.
                 </div>
@@ -373,12 +373,12 @@ function iaCageTable(usable) {
     return `
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <h4 style="margin:0; color:var(--navy);">케이지별</h4>
-            <span style="font-size:0.8rem; color:#888;">줄을 누르면 추이 그래프가 열립니다</span>
+            <h4 style="margin:0; color:var(--ink);">케이지별</h4>
+            <span style="font-size:0.8rem; color:var(--ink-soft);">줄을 누르면 추이 그래프가 열립니다</span>
         </div>
         <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
-            <thead><tr style="background:#f5f5f5;">
+            <thead><tr style="">
                 <th style="padding:7px; text-align:left;">케이지</th><th style="padding:7px; text-align:left;">군</th>
                 <th style="padding:7px;">구간</th><th style="padding:7px;">물 mL/day/마리</th>
                 <th style="padding:7px;">사료 g/day/마리</th>
@@ -425,7 +425,7 @@ function iaCageEvents(cageId) {
             if (!start || d < start) start = d;
         });
         if (start) out.push({ date: start, label: rule.substance,
-                              color: COLOR[rule.substance] || '#888' });
+                              color: COLOR[rule.substance] || '#5B5F66' });
     });
     return out.sort((a, b) => a.date.localeCompare(b.date));
 }

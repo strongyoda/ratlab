@@ -72,19 +72,19 @@ async function renderCageInputView(main) {
 
     main.innerHTML = `
     <div class="card">
-        <h3>📝 케이지별 입력</h3>
+        <h3 style="margin:0 0 14px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">케이지별 입력</h3>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <label for="ci-cohort-sel" style="font-weight:bold; color:var(--navy);">코호트</label>
-            <select id="ci-cohort-sel" style="width:auto; min-width:130px; padding:8px; border-radius:6px; border:1px solid #ccc;">
+            <label for="ci-cohort-sel" style="font-weight:bold; color:var(--ink);">코호트</label>
+            <select id="ci-cohort-sel" style="width:auto; min-width:130px; padding:8px; border-radius:2px; border:1px solid #C9C5B8;">
                 <option>로딩 중...</option>
             </select>
-            <label for="ci-date-sel" style="font-weight:bold; color:var(--navy); margin-left:6px;">작업일</label>
+            <label for="ci-date-sel" style="font-weight:bold; color:var(--ink); margin-left:6px;">작업일</label>
             <input type="date" id="ci-date-sel" value="${ciDate}" max="${getTodayStr()}"
                    onchange="ciSetDate(this.value)"
-                   style="width:auto; padding:7px; border-radius:6px; border:1px solid #ccc;">
+                   style="width:auto; padding:7px; border-radius:2px; border:1px solid #C9C5B8;">
             <button class="btn-small btn-blue" onclick="ciLoad(${myToken})">시작</button>
         </div>
-        <div id="ci-date-note" style="font-size:0.8rem; color:#666; margin-top:7px;">
+        <div id="ci-date-note" style="font-size:0.8rem; color:var(--ink-soft); margin-top:7px;">
             오늘 기록하면 그대로 두세요. 어제 것을 지금 넣어야 하면 날짜를 바꾸면 됩니다.
         </div>
     </div>
@@ -281,7 +281,7 @@ async function ciLoadHistory() {
 function ciRenderList() {
     const body = document.getElementById('ci-body');
     if (!ciCages.length) {
-        body.innerHTML = `<div class="card" style="color:#666;">
+        body.innerHTML = `<div class="card" style="color:var(--ink-soft);">
             이 코호트의 쥐가 배정된 케이지가 없습니다. <b>케이지 현황</b>에서 먼저 배정해주세요.</div>`;
         return;
     }
@@ -295,11 +295,11 @@ function ciRenderList() {
     ${ciPrepPreviewCard()}
     ${ciDoseAlertBanner(states)}
     <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <h4 style="margin:0; color:var(--navy);">오늘 진행</h4>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:6px;">
+            <h4 style="margin:0; color:var(--ink);">오늘 진행</h4>
             <div style="display:flex; align-items:center; gap:10px;">
                 ${done ? `<button class="btn-small btn-blue" onclick="ciShowPrepSheet()">조제 지시 (${done})</button>` : ''}
-                <b style="color:${done === ciCages.length ? '#2e7d32' : 'var(--navy)'};">${done} / ${ciCages.length}</b>
+                <b class="mono" style="color:${done === ciCages.length ? 'var(--approve)' : 'var(--ink)'};">${done} / ${ciCages.length}</b>
             </div>
         </div>
         <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); gap:8px;">
@@ -310,21 +310,21 @@ function ciRenderList() {
                 // 오늘 시작이거나 날짜가 비어 있으면 테두리로 눈에 띄게 한다
                 const urgent = st && (st.key === 'nodate' || st.today);
                 return `<button data-ci-open="${ciEsc(c.id)}" class="db-tap"
-                    style="padding:10px 6px; border-radius:8px; cursor:pointer; font-size:0.95rem; line-height:1.35;
-                           border:${urgent ? '2px' : '1px'} solid ${urgent ? st.color : (isDone ? '#a5d6a7' : '#ccc')};
-                           background:${isDone ? '#e8f5e9' : '#fff'}; color:${isDone ? '#2e7d32' : '#333'};">
-                    <b>${ciEsc(c.number)}번</b><br>
+                    style="padding:10px 6px; border-radius:2px; cursor:pointer; font-size:0.95rem; line-height:1.35;
+                           border:${urgent ? '2px' : '1px'} solid ${urgent ? st.color : (isDone ? 'var(--approve)' : 'var(--rule)')};
+                           background:${isDone ? 'var(--stock-green-soft)' : 'var(--sheet)'}; color:${isDone ? 'var(--approve)' : 'var(--ink)'};">
+                    <b class="mono">${ciEsc(c.number)}번</b><br>
                     <span style="font-size:0.75rem;">${isDone ? '입력 완료' : n + '마리'}</span>
-                    ${st ? `<br><span style="display:inline-block; margin-top:3px; padding:1px 6px; border-radius:9px;
-                                 font-size:0.68rem; font-weight:bold; background:${st.bg}; color:${st.color};">
+                    ${st ? `<br><span style="display:inline-block; margin-top:3px;
+                                 font-size:0.68rem; font-weight:bold; color:${st.color};">
                         ${st.label}${st.partial ? ' ⚠' : ''}</span>` : ''}
                 </button>`;
             }).join('')}
         </div>
     </div>
     ${done === ciCages.length ? `
-    <div class="card" style="background:#e8f5e9; border:1px solid #a5d6a7;">
-        <b style="color:#2e7d32;">오늘 입력이 모두 끝났습니다.</b>
+    <div class="card" style="background:var(--stock-green-soft); border:1px solid var(--approve);">
+        <b class="stamp-in" style="display:inline-block; color:var(--approve); border:2px solid var(--approve); padding:2px 9px; border-radius:2px;">오늘 입력이 모두 끝났습니다.</b>
     </div>` : ''}`;
 }
 
@@ -379,21 +379,21 @@ function ciPrepPreviewCard() {
     const list = opts.length ? opts : [700];
 
     return `
-    <div class="card" style="background:#0d47a1; color:#fff; padding:14px 16px;">
-        <div style="font-size:0.78rem; opacity:0.85;">사육실 가기 전 · 오늘 만들 원액</div>
+    <div class="card" style="background:var(--ink); color:var(--paper); border-color:var(--ink); padding:14px 16px;">
+        <div style="font-size:0.72rem; letter-spacing:0.14em; font-weight:700; opacity:0.8;">조제 지시 · 사육실 가기 전 · 오늘 만들 원액</div>
         ${list.map(f => {
             const n = need(f);
-            return `<div style="display:flex; align-items:baseline; gap:10px; margin:7px 0;">
-                <span style="font-size:0.9rem; opacity:0.85; min-width:96px;">물 ${f} mL 채우면</span>
-                <b style="font-size:1.25rem;">가루 ${(n.make * stock / 1000).toFixed(1)} g</b>
-                <span style="font-size:0.85rem; opacity:0.9;">· 총 ${n.make} mL 눈금까지</span>
+            return `<div style="display:flex; align-items:baseline; gap:10px; margin:8px 0; border-bottom:1px solid rgba(250,249,245,0.18); padding-bottom:8px;">
+                <span style="font-size:0.9rem; opacity:0.85; min-width:110px;">물 <span class="mono">${f}</span> mL 채우면</span>
+                <b class="mono" style="font-size:1.3rem; color:var(--stock-canary); white-space:nowrap;">가루 ${(n.make * stock / 1000).toFixed(1)} g</b>
+                <span style="font-size:0.85rem; opacity:0.9;">· 총 <span class="mono">${n.make}</span> mL 눈금까지</span>
             </div>`;
         }).join('')}
         <div style="font-size:0.78rem; opacity:0.9; margin-top:6px;">
-            투약 케이지 ${rows.length}개 · 원액 ${stock} mg/mL · 30% 여유 포함
+            투약 케이지 <span class="mono">${rows.length}</span>개 · 원액 <span class="mono">${stock}</span> mg/mL · 30% 여유 포함
             ${unknown.length ? ` · ${unknown.length}개(${unknown.map(u => ciEsc(u.number) + '번').join(', ')})는 기록이 없거나 최근 섭취가 비정상이라 평균으로 추정` : ''}
         </div>
-        <div style="font-size:0.73rem; opacity:0.75; margin-top:5px;">
+        <div style="font-size:0.73rem; opacity:0.72; margin-top:5px;">
             오늘 물을 얼마나 채울지에 따라 골라서 만드세요. 주말·연휴 앞이면 많이 채웁니다.
             물에 녹이는 게 아니라 가루를 넣고 눈금까지 채웁니다.
         </div>
@@ -411,20 +411,20 @@ function ciDoseAlertBanner(states) {
 
     if (!noDate.length && !today.length && !soon.length) return '';
 
-    const row = (color, bg, title, list, desc) => !list.length ? '' : `
-        <div style="padding:9px 11px; border-radius:6px; background:${bg}; margin-bottom:6px;">
-            <b style="color:${color}; font-size:0.88rem;">${title} · ${list.join(', ')}</b>
-            <div style="font-size:0.76rem; color:${color}; opacity:0.85; margin-top:2px;">${desc}</div>
+    const row = (color, bg, bd, title, list, desc) => !list.length ? '' : `
+        <div style="padding:9px 11px; border-radius:2px; background:${bg}; border:1px solid ${bd}; margin-bottom:6px;">
+            <b style="color:${color}; font-size:0.88rem;">${title} · <span class="mono">${list.join(', ')}</span></b>
+            <div style="font-size:0.76rem; color:${color}; opacity:0.88; margin-top:2px;">${desc}</div>
         </div>`;
 
     return `
     <div class="card" style="padding:12px 13px;">
-        <div style="font-size:0.78rem; color:#666; margin-bottom:7px;">투약 알림</div>
-        ${row('#c62828', '#ffebee', '기준 날짜 없음', noDate,
+        <div style="font-size:0.72rem; letter-spacing:0.14em; font-weight:700; color:var(--ink-soft); margin-bottom:7px;">투약 알림</div>
+        ${row('#7C2A30', 'var(--stock-pink-soft)', 'var(--stock-pink)', '기준 날짜 없음', noDate,
               '수술일이 비어 있어 투약이 시작되지 않습니다. 날짜를 먼저 넣으세요.')}
-        ${row('#0d47a1', '#e3f2fd', '오늘 투약 시작', today,
+        ${row('var(--ink)', 'var(--stock-blue-soft)', 'var(--ink-blue)', '오늘 투약 시작', today,
               '오늘부터 물에 원액을 넣습니다.')}
-        ${row('#b45309', '#fff3e0', '곧 시작', soon,
+        ${row('#6B571C', 'var(--stock-canary-soft)', '#E3C55C', '곧 시작', soon,
               '3일 이내에 시작합니다. 원액을 미리 준비하세요.')}
     </div>`;
 }
@@ -435,13 +435,13 @@ function ciLastSavedBanner() {
     if (!ciLastSaved) return '';
     const s = ciLastSaved;
     return `
-    <div class="card" style="background:#0d47a1; color:#fff; padding:14px 16px;">
-        <div style="font-size:0.78rem; opacity:0.85;">방금 완료</div>
-        <div style="font-size:1.3rem; font-weight:bold; margin:5px 0;">
-            ${ciEsc(s.number)}번 · 물 ${s.water} mL${s.cc ? ` + 원액 ${s.cc.toFixed(1)} cc` : ''}
+    <div class="card" style="background:var(--ink); color:var(--paper); border-color:var(--ink); padding:14px 16px;">
+        <div style="font-size:0.72rem; letter-spacing:0.14em; font-weight:700; opacity:0.8;">방금 완료</div>
+        <div class="mono stamp-in" style="font-size:1.3rem; font-weight:bold; margin:5px 0;">
+            ${ciEsc(s.number)}번 · 물 ${s.water} mL${s.cc ? ` + 원액 <span style="color:var(--stock-canary);">${s.cc.toFixed(1)} cc</span>` : ''}
         </div>
         <div style="font-size:0.8rem; opacity:0.85;">
-            사료 ${s.food} g${s.cc ? ` · 원액 ${s.stock} mg/mL` : ' · 원액 없음'}
+            사료 <span class="mono">${s.food}</span> g${s.cc ? ` · 원액 <span class="mono">${s.stock}</span> mg/mL` : ' · 원액 없음'}
         </div>
         <button class="btn-small" onclick="ciLastSaved=null; ciCurrent ? ciRenderForm() : ciRenderList();"
                 style="background:rgba(255,255,255,0.2); color:#fff; margin-top:8px; padding:3px 10px; font-size:0.75rem;">닫기</button>
@@ -586,17 +586,18 @@ function ciRenderForm() {
 
     body.innerHTML = `
     ${ciLastSavedBanner()}
+    <div class="db-sheet">
     <div class="card" style="padding-bottom:6px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <button class="btn-small db-tap" onclick="ciBackToList()" style="background:#eee;">← 목록</button>
-            <b style="font-size:1.15rem; color:var(--navy);">${ciEsc(cage.number)}번 케이지</b>
-            <span style="font-size:0.8rem; color:#666;">${idx + 1} / ${ciCages.length}</span>
+            <button class="btn-small db-tap" onclick="ciBackToList()" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">← 목록</button>
+            <b style="font-size:1.15rem; color:var(--ink);"><span class="mono">${ciEsc(cage.number)}번</span> 케이지</b>
+            <span class="mono" style="font-size:0.8rem; color:var(--ink-soft);">${idx + 1} / ${ciCages.length}</span>
         </div>
-        <div style="font-size:0.8rem; color:#666; margin-top:6px;">
-            ${occ.length}마리 · 지난 급여 ${lastStr}
-            ${last ? `· 물 ${last.waterGiven}mL / 사료 ${last.foodGiven}g 채움` : ''}
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-top:6px;">
+            ${occ.length}마리 · 지난 급여 <span class="mono">${lastStr}</span>
+            ${last ? `· 물 <span class="mono">${last.waterGiven}</span>mL / 사료 <span class="mono">${last.foodGiven}</span>g 채움` : ''}
         </div>
-        ${redo ? `<div style="margin-top:6px; padding:6px 9px; background:#fff8e1; border-radius:5px; font-size:0.78rem; color:#7a5c00;">
+        ${redo ? `<div style="margin-top:6px; padding:6px 9px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; font-size:0.78rem; color:#7a5c00;">
             <b>오늘 저장한 값을 그대로 불러왔습니다.</b> 확인하거나 고칠 수 있습니다.
             다시 저장하면 오늘 기록을 <b>교체</b>하며, 섭취량·투약량은
             ${ciPrevFeed[ciCurrent] ? ciPrevFeed[ciCurrent].dateStr + ' 기록' : '직전 기록'}과 비교해 다시 계산됩니다.
@@ -604,39 +605,39 @@ function ciRenderForm() {
     </div>
 
     <div class="card">
-        <div style="font-size:0.78rem; color:#666; font-weight:bold; margin-bottom:8px;">1 · 꺼내서 무게 재기</div>
+        <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">1 · 꺼내서 무게 재기</div>
 
-        <div style="margin-bottom:10px; padding:9px 11px; border-radius:6px;
-                    background:${(proc || surg || bpDay) ? '#fff3e0' : '#fafafa'};
-                    border:1px solid ${(proc || surg || bpDay) ? '#ffb74d' : '#e0e0e0'};">
-            <div style="font-size:0.78rem; color:#666; margin-bottom:6px;">
+        <div style="margin-bottom:10px; padding:9px 11px; border-radius:2px;
+                    background:${(proc || surg || bpDay) ? 'var(--stock-canary-soft)' : 'var(--paper)'};
+                    border:1px solid ${(proc || surg || bpDay) ? '#E3C55C' : 'var(--rule)'};">
+            <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:6px;">
                 ${last ? `${lastStr} 이후` : '지난 기록 이후'}에 있었던 일
             </div>
             <label style="display:block; font-size:0.88rem; cursor:pointer;">
                 <input type="checkbox" ${surg ? 'checked' : ''}
                        onchange="ciToggleSurgery(this.checked)" style="width:auto;">
                 <b>수술 (OVX · Ligation)</b>
-                <div style="font-size:0.77rem; color:#666; margin:3px 0 0 22px;">
+                <div style="font-size:0.77rem; color:var(--ink-soft); margin:3px 0 0 22px;">
                     물통을 우리가 다뤘으므로 <b>잔량은 평소대로 재서 기록</b>합니다.
                     마취로 덜 마신 값이라 <b>약물 지시량 계산에서만</b> 빠집니다.
                 </div>
             </label>
             <label style="display:block; font-size:0.88rem; cursor:pointer; margin-top:7px;
-                          padding-top:7px; border-top:1px dashed #e0d0b0;">
+                          padding-top:7px; border-top:1px dashed #E3C55C;">
                 <input type="checkbox" ${ciForm.flags.includes('BP일') ? 'checked' : ''}
                        onchange="ciToggleBP(this.checked)" style="width:auto;">
                 <b>혈압 측정 (BP)</b>
-                <div style="font-size:0.77rem; color:#666; margin:3px 0 0 22px;">
+                <div style="font-size:0.77rem; color:var(--ink-soft); margin:3px 0 0 22px;">
                     물통은 우리가 다루므로 <b>잔량은 평소대로 재서 기록</b>합니다.
                     재는 동안 몇 시간 물을 못 마셔 낮게 나온 값이라 <b>약물 지시량 계산에서만</b> 빠집니다.
                 </div>
             </label>
             <label style="display:block; font-size:0.88rem; cursor:pointer; margin-top:7px;
-                          padding-top:7px; border-top:1px dashed #e0d0b0;">
+                          padding-top:7px; border-top:1px dashed #E3C55C;">
                 <input type="checkbox" ${proc ? 'checked' : ''}
                        onchange="ciToggleProcedure(this.checked)" style="width:auto;">
                 <b>MR 촬영</b>
-                <div style="font-size:0.77rem; color:#666; margin:3px 0 0 22px;">
+                <div style="font-size:0.77rem; color:var(--ink-soft); margin:3px 0 0 22px;">
                     물통을 우리 방식대로 다루지 않아 로스를 알 수 없습니다.
                     <b>잔량은 재지 않고</b> 채울 양만 넣으면 됩니다.
                 </div>
@@ -644,40 +645,40 @@ function ciRenderForm() {
         </div>
 
         ${first ? `
-        <div style="padding:9px 11px; background:#e8f5e9; border-radius:6px; font-size:0.82rem; color:#2e7d32;">
+        <div style="padding:9px 11px; background:var(--stock-green-soft); border:1px solid var(--approve); border-radius:2px; font-size:0.82rem; color:var(--approve);">
             이 케이지의 <b>첫 기록</b>입니다. 뺄 지난 채움이 없어 잔량은 재지 않습니다.
             아래 <b>2단계에서 채울 양</b>과 <b>3단계 체중</b>만 넣으세요.
             <br>새 통에 물을 채워 저울에 올린 값은 <b>2단계</b>에 넣습니다.
         </div>` : proc ? `
-        <div style="padding:9px 11px; background:#f5f5f5; border-radius:6px; font-size:0.82rem; color:#666;">
+        <div style="padding:9px 11px; background:var(--paper); border:1px dashed var(--rule); border-radius:2px; font-size:0.82rem; color:var(--ink-soft);">
             이 구간은 계산에서 제외되므로 잔량을 재지 않습니다. 아래 <b>2단계에서 채울 양</b>과
             <b>3단계 체중</b>만 입력하세요. 체중은 투약량 계산에 필요하니 빠짐없이 넣습니다.
         </div>` : `
         ${tare > 0 ? `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
-            <span style="width:52px; font-size:0.9rem; color:#555;">물</span>
+            <span style="width:52px; font-size:0.9rem; color:var(--ink-soft);">물</span>
             <input type="number" inputmode="decimal" id="ci-ws" value="${ciEsc(ciForm.waterScale)}"
                    oninput="ciSetScale(this.value)" placeholder="물통째 무게" aria-label="물통째 무게 (그램)"
                    style="flex:1; height:44px; font-size:1.05rem;">
-            <span style="font-size:0.85rem; color:#666; width:52px;">g 통째</span>
+            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g 통째</span>
         </div>
-        <div style="font-size:0.8rem; color:${tareIsOwn ? '#666' : '#c62828'}; margin:0 0 10px 62px;">
-            빈 통 ${tare} g 제외 → 물 <b id="ci-ws-out">${ciForm.waterRemaining === '' ? '-' : ciForm.waterRemaining} g</b>
+        <div style="font-size:0.8rem; color:${tareIsOwn ? 'var(--ink-soft)' : 'var(--stamp)'}; margin:0 0 10px 62px;">
+            빈 통 <span class="mono">${tare}</span> g 제외 → 물 <b id="ci-ws-out" class="mono">${ciForm.waterRemaining === '' ? '-' : ciForm.waterRemaining} g</b>
             ${tareIsOwn ? '' : '<br>이 자리의 물통 무게가 등록되지 않아 <b>코호트 기본값</b>을 씁니다. 케이지 현황에서 실측값을 넣어주세요.'}
         </div>` : `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-            <span style="width:52px; font-size:0.9rem; color:#555;">물</span>
+            <span style="width:52px; font-size:0.9rem; color:var(--ink-soft);">물</span>
             <input type="number" inputmode="decimal" id="ci-wr" value="${ciEsc(ciForm.waterRemaining)}"
                    oninput="ciSet('waterRemaining', this.value)" placeholder="잔량" aria-label="물 잔량 (그램)"
                    style="flex:1; height:44px; font-size:1.05rem;">
-            <span style="font-size:0.85rem; color:#666; width:52px;">g 잔량</span>
+            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g 잔량</span>
         </div>`}
         <div style="display:flex; align-items:center; gap:10px;">
-            <span style="width:52px; font-size:0.9rem; color:#555;">사료</span>
+            <span style="width:52px; font-size:0.9rem; color:var(--ink-soft);">사료</span>
             <input type="number" inputmode="decimal" id="ci-fr" value="${ciEsc(ciForm.foodRemaining)}"
                    oninput="ciSet('foodRemaining', this.value)" placeholder="잔량" aria-label="사료 잔량 (그램)"
                    style="flex:1; height:44px; font-size:1.05rem;">
-            <span style="font-size:0.85rem; color:#666; width:52px;">g 잔량</span>
+            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g 잔량</span>
         </div>
 
         ${tare > 0 ? `
@@ -689,28 +690,28 @@ function ciRenderForm() {
             </label>
             ${ciForm.bottleSwap ? `
             <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
-                <span style="width:52px; font-size:0.85rem; color:#555;">새 통</span>
+                <span style="width:52px; font-size:0.85rem; color:var(--ink-soft);">새 통</span>
                 <input type="number" step="any" inputmode="decimal" value="${ciEsc(ciForm.newTare)}"
                        oninput="ciSet('newTare', this.value)" placeholder="빈 통 무게" aria-label="새 물통 빈 무게 (그램)"
                        style="flex:1; height:38px; font-size:0.95rem;">
-                <span style="font-size:0.85rem; color:#666; width:52px;">g</span>
+                <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g</span>
             </div>
-            <div style="font-size:0.75rem; color:#7a5c00; margin:5px 0 0 62px; background:#fff8e1;
-                        padding:6px 9px; border-radius:5px;">
-                방금 잰 건 <b>떼어낸 옛 통(${tare} g)</b>이라 그 값으로 계산합니다.
+            <div style="font-size:0.75rem; color:#7a5c00; margin:5px 0 0 62px; background:var(--stock-canary-soft);
+                        border:1px solid #E3C55C; padding:6px 9px; border-radius:2px;">
+                방금 잰 건 <b>떼어낸 옛 통(<span class="mono">${tare}</span> g)</b>이라 그 값으로 계산합니다.
                 새 통 무게는 <b>저장할 때</b> 이 자리에 등록되어 다음 회차부터 쓰입니다.
             </div>` : ''}
         </div>` : ''}
 
         ${(Number(h.lossPerHandling) > 0 && last) ? `
         <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
-            <span style="width:52px; font-size:0.9rem; color:#555;">탈착</span>
+            <span style="width:52px; font-size:0.9rem; color:var(--ink-soft);">탈착</span>
             <input type="number" inputmode="numeric" min="1" value="${ciEsc(ciForm.handlings)}"
                    oninput="ciSet('handlings', this.value)" placeholder="${autoHandlings} (자동)" aria-label="물통 탈착 횟수"
                    style="flex:1; height:38px; font-size:0.95rem;">
-            <span style="font-size:0.85rem; color:#666; width:52px;">회</span>
+            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">회</span>
         </div>
-        <div style="font-size:0.75rem; color:#666; margin:4px 0 0 62px;">
+        <div style="font-size:0.75rem; color:var(--ink-soft); margin:4px 0 0 62px;">
             지난 기록 이후 물통을 뗐다 낀 횟수. 비워두면 <b>체중을 잰 날</b> 기준으로 ${autoHandlings}회로 잡습니다.
             (주말처럼 아무도 안 간 날은 세지 않습니다)
         </div>` : ''}
@@ -720,7 +721,7 @@ function ciRenderForm() {
     </div>
 
     <div class="card">
-        <div style="font-size:0.78rem; color:#666; font-weight:bold; margin-bottom:8px;">2 · 다시 채울 양</div>
+        <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">2 · 다시 채울 양</div>
         <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:0.88rem;">
             <label style="cursor:pointer;">
                 <input type="checkbox" ${ciForm.noWater ? 'checked' : ''}
@@ -732,12 +733,12 @@ function ciRenderForm() {
                        onchange="ciToggleNoFood(this.checked)" style="width:auto;">
                 사료 그대로 둠
             </label>
-            <label style="cursor:pointer; padding-left:10px; border-left:1px solid #ddd;">
+            <label style="cursor:pointer; padding-left:10px; border-left:1px solid var(--rule);">
                 <input type="checkbox" ${(ciForm.noWater && ciForm.noFood) ? 'checked' : ''}
                        onchange="ciToggleNoBoth(this.checked)" style="width:auto;">
-                <b>둘 다 그대로 둠</b> <span style="color:#666; font-size:0.8rem;">(체중만 재는 날)</span>
+                <b>둘 다 그대로 둠</b> <span style="color:var(--ink-soft); font-size:0.8rem;">(체중만 재는 날)</span>
             </label>
-            <span style="color:#666; font-size:0.8rem; flex-basis:100%;">
+            <span style="color:var(--ink-soft); font-size:0.8rem; flex-basis:100%;">
                 잰 것을 그대로 다시 넣습니다. 사료만 갈 날은 <b>물 그대로 둠</b>만 켜세요.
             </span>
         </div>
@@ -745,68 +746,69 @@ function ciRenderForm() {
             <div style="flex:1; min-width:170px; ${ciForm.noWater ? 'opacity:0.4; pointer-events:none;' : ''}">
             ${tare > 0 ? `
             <div style="flex:1; min-width:170px;">
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">물 채운 통 무게 (g)</div>
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물 채운 통 무게 (g)</div>
                 <input type="number" step="any" inputmode="decimal" id="ci-fs" value="${ciEsc(ciForm.fillScale)}"
                        oninput="ciSetFillScale(this.value)" placeholder="원액 넣기 전" aria-label="물 채운 통 무게 (그램)"
                        style="width:100%; height:42px;">
-                <div style="font-size:0.75rem; color:#666; margin-top:4px;">
-                    빈 통 <b>${fillTare} g</b>${swapped ? ' <b style="color:#b45309;">(새 통)</b>' : ''} 제외 → 물
-                    <b id="ci-fs-out" style="color:var(--navy);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
-                    <span style="color:#6f6f6f;">· 700 mL면 ${(fillTare + 700).toFixed(0)} g 근처</span>
+                <div style="font-size:0.75rem; color:var(--ink-soft); margin-top:4px;">
+                    빈 통 <b class="mono">${fillTare} g</b>${swapped ? ' <b style="color:#b45309;">(새 통)</b>' : ''} 제외 → 물
+                    <b id="ci-fs-out" class="mono" style="color:var(--ink);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
+                    <span style="color:var(--ink-soft);">· 700 mL면 <span class="mono">${(fillTare + 700).toFixed(0)}</span> g 근처</span>
                     ${swapped ? `<br><span style="color:#b45309;">채워서 다는 건 새 통이라 새 무게로 뺍니다.
                         1단계에서 잰 잔량은 떼어낸 옛 통(${tare} g) 기준입니다.</span>` : ''}
                 </div>
             </div>` : `
             <div>
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">물 (mL)</div>
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물 (mL)</div>
                 <input type="number" inputmode="decimal" value="${ciEsc(ciForm.waterGiven)}"
                        oninput="ciSet('waterGiven', this.value)" aria-label="채울 물 (밀리리터)" style="width:100%; height:42px;">
             </div>`}
             </div>
             ${showBottle ? `
             <div style="width:100px;">
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">물통 개수</div>
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물통 개수</div>
                 <input type="number" value="${ciEsc(ciForm.bottleCount)}" oninput="ciSet('bottleCount', this.value)"
                        aria-label="물통 개수" style="width:100%; height:42px;">
             </div>` : ''}
             <div style="flex:1; min-width:120px; ${ciForm.noFood ? 'opacity:0.4; pointer-events:none;' : ''}">
-                <div style="font-size:0.78rem; color:#666; margin-bottom:3px;">사료 (g)</div>
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">사료 (g)</div>
                 <input type="number" inputmode="decimal" value="${ciEsc(ciForm.foodGiven)}"
                        oninput="ciSet('foodGiven', this.value)" aria-label="채울 사료 (그램)" style="width:100%; height:42px;">
             </div>
         </div>
         ${(ciForm.noWater || ciForm.noFood) ? `
-        <div style="margin-top:8px; padding:8px 10px; background:#f5f5f5; border-radius:6px; font-size:0.8rem; color:#666;">
-            ${ciForm.noWater ? `물은 잰 통(<b id="ci-nr-wr">${ciForm.waterRemaining || '-'} g</b>)을 그대로 다시 답니다. 약도 넣지 않습니다.<br>` : ''}
-            ${ciForm.noFood ? `사료는 잰 것(<b id="ci-nr-fr">${ciForm.foodRemaining || '-'} g</b>)을 그대로 다시 넣습니다.<br>` : ''}
+        <div style="margin-top:8px; padding:8px 10px; background:var(--paper); border:1px dashed var(--rule); border-radius:2px; font-size:0.8rem; color:var(--ink-soft);">
+            ${ciForm.noWater ? `물은 잰 통(<b id="ci-nr-wr" class="mono">${ciForm.waterRemaining || '-'} g</b>)을 그대로 다시 답니다. 약도 넣지 않습니다.<br>` : ''}
+            ${ciForm.noFood ? `사료는 잰 것(<b id="ci-nr-fr" class="mono">${ciForm.foodRemaining || '-'} g</b>)을 그대로 다시 넣습니다.<br>` : ''}
             그대로 둔 쪽은 <b>오늘 잔량</b>이 다음 구간의 기준이 되므로 섭취량은 끊기지 않습니다.
         </div>` : ''}
     </div>
 
     <div class="card">
-        <div style="font-size:0.78rem; color:#666; font-weight:bold; margin-bottom:8px;">3 · 쥐 체중과 상태</div>
+        <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">3 · 쥐 체중과 상태</div>
         ${occ.map(r => ciRatBlock(r)).join('')}
     </div>
 
     <div id="ci-dose"></div>
 
     <div class="card">
-        <div style="font-size:0.78rem; color:#666; margin-bottom:5px;">케이지 메모 (선택)</div>
+        <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:5px;">케이지 메모 (선택)</div>
         <input type="text" value="${ciEsc(ciForm.note)}" oninput="ciSet('note', this.value)"
                placeholder="예: 물통에서 물 샘" aria-label="케이지 메모" style="width:100%; height:40px;">
         <label style="display:block; margin-top:8px; font-size:0.85rem; color:var(--red);">
             <input type="checkbox" ${ciForm.flags.includes('이상') ? 'checked' : ''}
                    onchange="ciToggleFlag('이상', this.checked)" style="width:auto;">
             누수·엎어짐 등 이상 있었음 (이 구간은 계산에서 제외)
-            <div style="font-size:0.75rem; color:#666; margin:3px 0 0 22px;">
+            <div style="font-size:0.75rem; color:var(--ink-soft); margin:3px 0 0 22px;">
                 잰 값은 그대로 기록에 남기고 계산에서만 뺍니다.
                 MR·BP 때문이라면 위쪽 체크를 쓰세요 — 사유를 나눠 집계합니다.
             </div>
         </label>
     </div>
+    </div>
 
     <button class="btn btn-green" onclick="ciSave()"
-            style="width:100%; height:52px; font-size:1.05rem; margin-bottom:30px;">
+            style="width:100%; height:52px; font-size:1.05rem; margin:14px 0 30px;">
         저장하고 ${next ? next.number + '번으로 →' : '목록으로'}
     </button>`;
 
@@ -826,34 +828,34 @@ function ciRatBlock(rat) {
     const rid = ciEsc(rat.ratId);
     const scoreRow = (key, label) => `
         <div style="display:flex; gap:6px; align-items:center; margin-top:5px;">
-            <span style="font-size:0.72rem; color:#666; width:28px;">${label}</span>
+            <span style="font-size:0.72rem; color:var(--ink-soft); width:28px;">${label}</span>
             ${[1, 2, 3, 4, 5].map(n => `
-                <button class="ci-score-btn" data-ci-score data-rat="${rid}" data-key="${key}" data-n="${n}"
+                <button class="ci-score-btn mono" data-ci-score data-rat="${rid}" data-key="${key}" data-n="${n}"
                         aria-label="${rid} ${label} ${n}점" aria-pressed="${f[key] === n}"
-                        style="border:1px solid ${f[key] === n ? '#1565c0' : '#ccc'};
-                               background:${f[key] === n ? '#1565c0' : '#fff'};
-                               color:${f[key] === n ? '#fff' : '#555'};">${n}</button>`).join('')}
+                        style="border:1px solid ${f[key] === n ? 'var(--ink)' : 'var(--rule)'};
+                               background:${f[key] === n ? 'var(--ink)' : 'var(--sheet)'};
+                               color:${f[key] === n ? 'var(--paper)' : 'var(--ink-soft)'};">${n}</button>`).join('')}
         </div>`;
 
     const total = f.act + f.fur + f.eye;
     return `
-    <div id="ci-rat-${rid}" style="border:1px solid #e0e0e0; border-radius:8px; padding:10px; margin-bottom:8px;
-                ${f.dead ? 'background:#ffebee;' : ''}">
+    <div id="ci-rat-${rid}" style="border:1px solid ${f.dead ? 'var(--stock-pink)' : 'var(--rule)'}; border-radius:2px; padding:10px; margin-bottom:8px;
+                ${f.dead ? 'background:var(--stock-pink-soft);' : ''}">
         <div style="display:flex; align-items:center; gap:8px;">
-            <b style="flex:1; font-size:0.95rem;">${rid}
+            <b class="mono" style="flex:1; font-size:0.95rem;">${rid}
                 ${typeof batchChipHtml === 'function'
                     ? batchChipHtml(rat, ciConfig && ciConfig.housing && ciConfig.housing.batchSize) : ''}</b>
             <input type="number" inputmode="decimal" value="${ciEsc(f.weight)}"
                    data-ci-rat-input data-rat="${rid}" data-key="weight" placeholder="체중"
                    aria-label="${rid} 체중 (그램)"
                    style="width:82px; height:38px; font-size:1rem;">
-            <span style="font-size:0.8rem; color:#666;">g</span>
+            <span style="font-size:0.8rem; color:var(--ink-soft);">g</span>
         </div>
         ${scoreRow('act', 'ACT')}
         ${scoreRow('fur', 'FUR')}
         ${scoreRow('eye', 'EYE')}
         <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
-            <span style="font-size:0.75rem; color:${total ? 'var(--navy)' : '#6f6f6f'};">총점 ${total || '-'}</span>
+            <span class="mono" style="font-size:0.75rem; color:${total ? 'var(--ink)' : 'var(--ink-soft)'};">총점 ${total || '-'}</span>
             <input type="text" value="${ciEsc(f.note)}" data-ci-rat-input data-rat="${rid}" data-key="note"
                    placeholder="메모" aria-label="${rid} 메모" style="flex:1; height:32px; font-size:0.85rem;">
             <label style="font-size:0.78rem; color:var(--red); white-space:nowrap;">
@@ -1125,12 +1127,12 @@ function ciUpdateCalc() {
     const c = ciComputeIntake();
 
     if (c && c.tooShort) {
-        box.innerHTML = `<div style="padding:8px 10px; background:#fff8e1; border:1px solid #ffe082; border-radius:6px; font-size:0.82rem; color:#7a5c00;">
+        box.innerHTML = `<div style="padding:8px 10px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; font-size:0.82rem; color:#7a5c00;">
             직전 기록이 ${c.hours.toFixed(1)}시간 전이라 섭취량을 계산하지 않습니다.
             오늘 이미 입력한 케이지라면 저장할 때 <b>덮어쓰기</b>됩니다.
         </div>`;
     } else if (!c) {
-        box.innerHTML = `<div style="padding:8px 10px; background:#f5f5f5; border-radius:6px; font-size:0.82rem; color:#666;">
+        box.innerHTML = `<div style="padding:8px 10px; background:var(--paper); border:1px dashed var(--rule); border-radius:2px; font-size:0.82rem; color:var(--ink-soft);">
             ${ciLastFeed[ciCurrent] ? '잔량을 입력하면 섭취량이 계산됩니다.' : '이 케이지의 첫 기록입니다. 오늘 채운 양만 저장됩니다.'}
         </div>`;
     } else {
@@ -1138,12 +1140,13 @@ function ciUpdateCalc() {
         // 「이상」을 이미 체크했으면 본인이 알고 있는 것이므로 다시 묻지 않는다
         const susp = ciForm.flags.includes('이상') ? null : ciWaterPcSuspect(c);
         box.innerHTML = `
-        <div style="padding:9px 11px; border-radius:6px; font-size:0.85rem;
-                    background:${bad ? '#ffebee' : susp ? '#fff3e0' : '#e8f5e9'};
-                    color:${bad ? '#b71c1c' : susp ? '#b45309' : '#1b5e20'};">
-            섭취 · 물 <b>${c.water.toFixed(0)} mL</b>
-            ${c.food !== null ? ` / 사료 <b>${c.food.toFixed(0)} g</b>` : ''}
-            &nbsp;·&nbsp; 마리당 <b>${c.waterPc ? c.waterPc.toFixed(0) : '-'} mL/day</b>
+        <div style="padding:9px 11px; border-radius:2px; font-size:0.85rem;
+                    background:${bad ? 'var(--stock-pink-soft)' : susp ? 'var(--stock-canary-soft)' : 'var(--stock-green-soft)'};
+                    border:1px solid ${bad ? 'var(--stock-pink)' : susp ? '#E3C55C' : 'var(--approve)'};
+                    color:${bad ? '#7C2A30' : susp ? '#6B571C' : 'var(--approve)'};">
+            섭취 · 물 <b class="mono">${c.water.toFixed(0)} mL</b>
+            ${c.food !== null ? ` / 사료 <b class="mono">${c.food.toFixed(0)} g</b>` : ''}
+            &nbsp;·&nbsp; 마리당 <b class="mono">${c.waterPc ? c.waterPc.toFixed(0) : '-'} mL/day</b>
             <div style="font-size:0.75rem; opacity:0.85; margin-top:3px;">
                 ${c.hours.toFixed(1)}시간 · ${c.animalDays.toFixed(2)} 마리·일
                 ${c.lossKnown ? `· 로스 ${c.loss.toFixed(1)}g
@@ -1154,7 +1157,7 @@ function ciUpdateCalc() {
                 ${(!c.spansWeekend && ciOffFrom24(c.hours) > CI_SPAN_TOL_H)
                     ? `<br>구간이 24시간 배수에서 ${ciOffFrom24(c.hours).toFixed(1)}시간 벗어났습니다. 밤낮 비중이 치우쳐 하루치가 ${c.hours < 24 ? '부풀' : '줄'}었을 수 있어, 투약 농도는 최근 평일 값으로 계산합니다.` : ''}
                 ${bad ? '<br><b>잔량이 채운 양보다 많습니다. 입력을 확인하세요.</b>' : ''}
-                ${susp ? `<br><b style="color:#b71c1c;">⚠ 마리당 ${susp.pc.toFixed(0)} mL/일은 비정상적으로 큽니다 — ${susp.why}.</b><br>
+                ${susp ? `<br><b style="color:var(--stamp);">⚠ 마리당 ${susp.pc.toFixed(0)} mL/일은 비정상적으로 큽니다 — ${susp.why}.</b><br>
                     지금 물통 누수·엎어짐·저울값·빈 통 무게를 확인하세요.
                     누수 등이 맞으면 아래 <b>「이상」</b>을 체크하세요 (조제 계산도 최근 값으로 바뀝니다).
                     BP 다음날 몰아 마신 것처럼 실제일 수도 있습니다 — 확인했고 맞으면 그대로 저장하면 됩니다.` : ''}
@@ -1249,22 +1252,23 @@ function ciCageDoseState(cageId, rats) {
     // (날짜 누락 자체는 위쪽 알림 배너에서 따로 짚는다)
     if (wins.includes('on')) {
         const d = Math.max(...days);
+        // 상태 표시에 잉크 블루를 쓰면 링크색과 충돌한다(DESIGN.md Don't) — 잉크·주의색 계열로
         return { key:'on', today: d === 0, rule, partial,
                  noDateMixed: wins.includes('nodate'),
                  label: d === 0 ? '오늘 투약 시작' : `투약 중 D+${d}`,
-                 color:'#0d47a1', bg:'#e3f2fd' };
+                 color: d === 0 ? '#7A5C00' : 'var(--ink)', bg: d === 0 ? 'var(--stock-canary-soft)' : 'var(--stock-blue-soft)' };
     }
 
     if (wins.includes('nodate'))
-        return { key:'nodate', label:'날짜 없음', color:'#c62828', bg:'#ffebee', rule, partial };
+        return { key:'nodate', label:'날짜 없음', color:'var(--stamp)', bg:'var(--stock-pink-soft)', rule, partial };
 
     if (wins.every(w => w === 'after'))
-        return { key:'after', label:'투약 종료', color:'#666', bg:'#f5f5f5', rule, partial:false };
+        return { key:'after', label:'투약 종료', color:'var(--ink-soft)', bg:'var(--paper)', rule, partial:false };
 
     const d = Math.max(...days);                 // 시작 전이므로 음수, 가장 임박한 개체
     const soon = d >= -3;
     return { key:'before', soon, rule, partial,
-             label:`투약 시작 D${d}`, color: soon ? '#b45309' : '#666', bg: soon ? '#fff3e0' : '#fafafa' };
+             label:`투약 시작 D${d}`, color: soon ? '#7A5C00' : 'var(--ink-soft)', bg: soon ? 'var(--stock-canary-soft)' : 'var(--paper)' };
 }
 
 // 예상 섭취량을 직접 넣어야 할 때, 아무 근거 없이 숫자를 요구하면 넣을 수가 없다.
@@ -1298,11 +1302,11 @@ function ciManualPcBox(rule, sumBW, aliveN, fill, stock) {
     })() : '값을 넣으면 원액 양이 여기에 나옵니다.';
 
     return `
-    <div style="margin-top:9px; padding-top:9px; border-top:1px dashed #ffe082;">
+    <div style="margin-top:9px; padding-top:9px; border-top:1px dashed #E3C55C;">
         <div style="font-size:0.8rem; color:#7a5c00; margin-bottom:6px;">
             예상 섭취량을 직접 넣으면 그 값으로 계산합니다. 손으로 넣었다는 것이 기록에 남습니다.
         </div>
-        <div style="font-size:0.78rem; color:#7a5c00; background:#fffdf5; border-radius:5px;
+        <div style="font-size:0.78rem; color:#7a5c00; background:var(--sheet); border:1px solid #E3C55C; border-radius:2px;
                     padding:7px 9px; margin-bottom:7px; line-height:1.6;">
             ${others.length ? `오늘 다른 케이지 · ${others.join(' &nbsp; ')}<br>` : ''}
             ${mine.length ? `이 케이지 지난 기록 · ${mine.join(' &nbsp; ')}` :
@@ -1329,8 +1333,8 @@ function ciUpdateDose() {
     // 물을 안 갈면 약도 새로 넣지 않는다
     if (ciForm.noWater) {
         ciForm._doseCc = 0;
-        box.innerHTML = `<div class="card" style="background:#f5f5f5;">
-            <b style="color:#666;">물을 그대로 두므로 ${ciEsc(rule.substance)}도 추가하지 않습니다.</b>
+        box.innerHTML = `<div class="card" style="background:var(--paper);">
+            <b style="color:var(--ink-soft);">물을 그대로 두므로 ${ciEsc(rule.substance)}도 추가하지 않습니다.</b>
         </div>`;
         return;
     }
@@ -1342,7 +1346,7 @@ function ciUpdateDose() {
         // 기준 날짜가 비어 있으면 영영 시작되지 않는다. '시작 전'과 구분해서 알린다.
         const noDate = occ.filter(r => win.get(r.ratId) === 'nodate');
         if (noDate.length) {
-            box.innerHTML = `<div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
+            box.innerHTML = `<div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C;">
                 <b style="color:#7a5c00;">${ciEsc(rule.substance)} 투약 시작일을 판정할 수 없습니다</b>
                 <div style="font-size:0.8rem; color:#7a5c00; margin-top:4px;">
                     ${noDate.map(r => ciEsc(r.ratId)).join(', ')} 의 ${ciEsc(rule.startAnchor)} 날짜가 비어 있습니다.<br>
@@ -1350,14 +1354,14 @@ function ciUpdateDose() {
                 </div>
             </div>`;
         } else if (occ.every(r => win.get(r.ratId) === 'after')) {
-            box.innerHTML = `<div class="card" style="background:#f5f5f5;">
-                <b style="color:#666;">${ciEsc(rule.substance)} 투약 종료</b>
-                <div style="font-size:0.8rem; color:#666; margin-top:4px;">물만 채우세요.</div>
+            box.innerHTML = `<div class="card" style="background:var(--paper);">
+                <b style="color:var(--ink-soft);">${ciEsc(rule.substance)} 투약 종료</b>
+                <div style="font-size:0.8rem; color:var(--ink-soft); margin-top:4px;">물만 채우세요.</div>
             </div>`;
         } else {
-            box.innerHTML = `<div class="card" style="background:#f5f5f5;">
-                <b style="color:#666;">${ciEsc(rule.substance)} 아직 시작 전</b>
-                <div style="font-size:0.8rem; color:#666; margin-top:4px;">물만 채우세요.</div>
+            box.innerHTML = `<div class="card" style="background:var(--paper);">
+                <b style="color:var(--ink-soft);">${ciEsc(rule.substance)} 아직 시작 전</b>
+                <div style="font-size:0.8rem; color:var(--ink-soft); margin-top:4px;">물만 채우세요.</div>
             </div>`;
         }
         return;
@@ -1368,8 +1372,8 @@ function ciUpdateDose() {
     const alive = occ.filter(r => !((ciForm.rats && ciForm.rats[r.ratId]) || {}).dead);
     if (!alive.length) {
         ciForm._doseCc = 0; ciForm._doseMg = 0;
-        box.innerHTML = `<div class="card" style="background:#f5f5f5;">
-            <b style="color:#666;">이 케이지에 남는 개체가 없어 ${ciEsc(rule.substance)}을 넣지 않습니다.</b>
+        box.innerHTML = `<div class="card" style="background:var(--paper);">
+            <b style="color:var(--ink-soft);">이 케이지에 남는 개체가 없어 ${ciEsc(rule.substance)}을 넣지 않습니다.</b>
         </div>`;
         return;
     }
@@ -1438,7 +1442,7 @@ function ciUpdateDose() {
         // 계산 못 하면 지시량도 0으로 — 이전 계산값이 남은 채 저장되면
         // 화면엔 지시가 없었는데 기록에는 투약한 것으로 남는다
         ciForm._doseCc = 0; ciForm._doseMg = 0;
-        box.innerHTML = `<div class="card" style="background:#fff8e1; border:1px solid #ffe082;">
+        box.innerHTML = `<div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C;">
             <b style="color:#7a5c00;">${ciEsc(rule.substance)} 지시량 계산 대기</b>
             <div style="font-size:0.8rem; color:#7a5c00; margin-top:4px;">
                 ${missing.length ? `체중 미입력: ${missing.map(ciEsc).join(', ')}<br>` : ''}
@@ -1473,19 +1477,19 @@ function ciUpdateDose() {
     const deadNow = occ.length - alive.length;
     const partial = started.filter(r => !((ciForm.rats && ciForm.rats[r.ratId]) || {}).dead).length !== alive.length;
     box.innerHTML = `
-    <div class="card" style="background:#e3f2fd; border:1px solid #90caf9;">
-        <div style="font-size:0.85rem; color:#0d47a1;">오늘 이 케이지</div>
-        <div style="font-size:1.25rem; font-weight:bold; color:#0d47a1; margin:4px 0;">
-            물 ${fill.toFixed(0)} mL + ${ciEsc(rule.substance)} 원액 ${cc.toFixed(1)} cc
+    <div class="card" style="background:var(--ink); color:var(--paper); border-color:var(--ink);">
+        <div style="font-size:0.72rem; letter-spacing:0.14em; font-weight:700; opacity:0.8;">조제 지시 · 오늘 이 케이지</div>
+        <div class="mono stamp-in" style="font-size:1.3rem; font-weight:bold; margin:5px 0;">
+            물 ${fill.toFixed(0)} mL + ${ciEsc(rule.substance)} 원액 <span style="color:var(--stock-canary);">${cc.toFixed(1)} cc</span>
         </div>
-        <div style="font-size:0.75rem; color:#1565c0;">
-            총체중 ${sumBW.toFixed(0)}g · 목표 ${rule.value} mg/kg/day · 필요 ${needMg.toFixed(0)}mg
-            · 예상섭취 ${expectedIntake.toFixed(0)}mL<span style="opacity:0.8;"> (${pcSource})</span>
-            · 채우는 물은 <b>${daysWorth.toFixed(1)}일치</b>${daysWorth > 5 ? ' ⚠' : ''}
-            · 원액 ${stock}mg/mL · 통 안 총량 ${totalVol.toFixed(0)}mL
+        <div style="font-size:0.75rem; opacity:0.88;">
+            총체중 <span class="mono">${sumBW.toFixed(0)}</span>g · 목표 <span class="mono">${rule.value}</span> mg/kg/day · 필요 <span class="mono">${needMg.toFixed(0)}</span>mg
+            · 예상섭취 <span class="mono">${expectedIntake.toFixed(0)}</span>mL<span style="opacity:0.8;"> (${pcSource})</span>
+            · 채우는 물은 <b class="mono">${daysWorth.toFixed(1)}일치</b>${daysWorth > 5 ? ' ⚠' : ''}
+            · 원액 <span class="mono">${stock}</span>mg/mL · 통 안 총량 <span class="mono">${totalVol.toFixed(0)}</span>mL
             ${deadNow ? `<br>사망 표시한 ${deadNow}마리는 빼고 ${alive.length}마리 기준으로 계산했습니다.` : ''}
         </div>
-        ${partial ? `<div style="font-size:0.78rem; color:#b71c1c; margin-top:5px;">
+        ${partial ? `<div style="font-size:0.78rem; color:var(--stock-pink); margin-top:6px;">
             ⚠️ 같은 케이지인데 투약 구간이 아닌 개체가 있습니다 (투약 중 ${started.filter(r => !((ciForm.rats && ciForm.rats[r.ratId]) || {}).dead).length}/${alive.length}).
             ${alive.filter(r => win.get(r.ratId) !== 'on').map(r => `${ciEsc(r.ratId)}(${
                 { before: '시작 전', after: '종료', nodate: '날짜 없음' }[win.get(r.ratId)]
@@ -1511,10 +1515,10 @@ function ciBusy(on, msg) {
         document.body.appendChild(el);
     }
     el.innerHTML = `
-        <div style="width:54px; height:54px; border:5px solid #e3f2fd; border-top-color:#1565c0;
+        <div style="width:54px; height:54px; border:5px solid var(--rule); border-top-color:var(--ink);
                     border-radius:50%; animation:ci-spin 0.8s linear infinite;"></div>
-        <div style="font-size:1.15rem; font-weight:bold; color:#0d47a1;">${msg || '저장 중입니다'}</div>
-        <div style="font-size:0.9rem; color:#666;">끝나면 다음 케이지로 넘어갑니다. 누르지 말고 기다려주세요.</div>`;
+        <div style="font-size:1.15rem; font-weight:bold; color:var(--ink);">${msg || '저장 중입니다'}</div>
+        <div style="font-size:0.9rem; color:var(--ink-soft);">끝나면 다음 케이지로 넘어갑니다. 누르지 말고 기다려주세요.</div>`;
 }
 
 function ciBackToList() { ciCurrent = null; ciRenderList(); }
@@ -1858,26 +1862,26 @@ async function ciShowPrepSheet() {
     const body = document.getElementById('ci-body');
     body.innerHTML = `
     <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-            <h4 style="margin:0; color:var(--navy);">🧪 오늘 조제 지시</h4>
-            <button class="btn-small" onclick="ciRenderList()" style="background:#eee;">← 목록</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px double var(--ink); padding-bottom:6px;">
+            <h4 style="margin:0; color:var(--ink);">오늘 조제 지시</h4>
+            <button class="btn-small db-tap" onclick="ciRenderList()" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">← 목록</button>
         </div>
-        <div style="font-size:0.82rem; color:#666; margin:6px 0 12px;">
-            ${todayStr}${stock ? ` · 원액 ${stock} mg/mL` : ''}
+        <div style="font-size:0.82rem; color:var(--ink-soft); margin:8px 0 12px;">
+            <span class="mono">${todayStr}</span>${stock ? ` · 원액 <span class="mono">${stock}</span> mg/mL` : ''}
         </div>
         ${dosed.map(r => `
-            <div style="display:flex; justify-content:space-between; padding:9px 4px; border-bottom:1px solid #eee;">
-                <b>${ciEsc(r.n)}번</b>
-                <span>물 ${r.water} mL &nbsp;+&nbsp; <b style="color:#0d47a1;">원액 ${r.cc.toFixed(1)} cc</b></span>
+            <div style="display:flex; justify-content:space-between; padding:9px 4px; border-bottom:1px solid var(--rule);">
+                <b class="mono">${ciEsc(r.n)}번</b>
+                <span class="mono">물 ${r.water} mL &nbsp;+&nbsp; <b style="color:var(--ink);">원액 ${r.cc.toFixed(1)} cc</b></span>
             </div>`).join('')}
         ${plain.length ? `
-        <div style="margin-top:12px; padding-top:10px; border-top:2px solid #eee;">
+        <div style="margin-top:12px; padding-top:10px; border-top:2px solid var(--ink);">
             ${plain.map(r => `
-            <div style="display:flex; justify-content:space-between; padding:7px 4px; color:#666;">
-                <b>${ciEsc(r.n)}번</b><span>물 ${r.water} mL <span style="font-size:0.8rem;">(원액 없음)</span></span>
+            <div style="display:flex; justify-content:space-between; padding:7px 4px; color:var(--ink-soft);">
+                <b class="mono">${ciEsc(r.n)}번</b><span class="mono">물 ${r.water} mL <span style="font-size:0.8rem; font-family:var(--font-ui);">(원액 없음)</span></span>
             </div>`).join('')}
         </div>` : ''}
-        <div style="margin-top:14px; padding:9px 11px; background:#f5f5f5; border-radius:6px; font-size:0.85rem;">
+        <div style="margin-top:14px; padding:9px 11px; background:var(--paper); border:1px solid var(--rule); border-radius:2px; font-size:0.85rem;">
             ${(() => {
                 // 케이지마다 실제로 넣은 무게가 다르다. 첫 케이지 값을 '전 케이지'로 단정하면
                 // 나머지가 전부 그 값인 것처럼 보인다.
@@ -1885,7 +1889,7 @@ async function ciShowPrepSheet() {
                 if (!fed.length) return '사료: 기록 없음';
                 const uniq = [...new Set(fed.map(r => r.food))];
                 if (uniq.length === 1) return `사료: 전 케이지 ${uniq[0]} g으로 리셋`;
-                return `사료 (케이지마다 실제로 넣은 무게)<div style="margin-top:5px; color:#555;">`
+                return `사료 (케이지마다 실제로 넣은 무게)<div style="margin-top:5px; color:var(--ink-soft);">`
                     + fed.map(r => `${ciEsc(r.n)}번 ${r.food} g`).join(' · ') + '</div>';
             })()}
         </div>
@@ -1905,16 +1909,16 @@ function ciStockSummary(dosed, stock) {
     const suggestG = suggestCc * stock / 1000;
 
     return `
-    <div style="margin-top:10px; padding:11px 13px; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px;">
-        <div style="font-size:0.85rem; color:#1b5e20;">
-            오늘 쓴 원액 <b>${usedCc.toFixed(1)} cc</b> (가루 ${usedG.toFixed(2)} g)
+    <div style="margin-top:10px; padding:11px 13px; background:var(--stock-green-soft); border:1px solid var(--approve); border-radius:2px;">
+        <div style="font-size:0.85rem; color:var(--approve);">
+            오늘 쓴 원액 <b class="mono">${usedCc.toFixed(1)} cc</b> (가루 <span class="mono">${usedG.toFixed(2)}</span> g)
         </div>
-        <div style="font-size:0.85rem; color:#1b5e20; margin-top:6px;">
-            다음 교체일 조제 &nbsp;·&nbsp; 가루 <b>${suggestG.toFixed(1)} g</b>
-            &nbsp;+&nbsp; 증류수로 <b>총 ${suggestCc} mL 눈금까지</b>
-            <span style="font-size:0.75rem; opacity:0.8;">(오늘보다 30% 여유)</span>
+        <div style="font-size:0.85rem; color:var(--approve); margin-top:6px;">
+            다음 교체일 조제 &nbsp;·&nbsp; 가루 <b class="mono">${suggestG.toFixed(1)} g</b>
+            &nbsp;+&nbsp; 증류수로 <b>총 <span class="mono">${suggestCc}</span> mL 눈금까지</b>
+            <span style="font-size:0.75rem; opacity:0.85;">(오늘보다 30% 여유)</span>
         </div>
-        <div style="font-size:0.75rem; color:#2e7d32; margin-top:5px; opacity:0.9;">
+        <div style="font-size:0.75rem; color:var(--approve); margin-top:5px; opacity:0.9;">
             물 ${suggestCc} mL에 녹이는 게 아니라, 가루를 넣고 눈금 ${suggestCc} mL까지 채웁니다.
         </div>
     </div>`;

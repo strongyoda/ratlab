@@ -114,8 +114,8 @@ function rdRevert() {
 function rdSaveBarHtml() {
     return `
     <div id="rd-savebar" style="display:none; position:sticky; bottom:0; z-index:60;
-         background:var(--navy); color:#fff; padding:12px 78px 12px 18px; border-radius:10px; margin-top:16px;
-         align-items:center; justify-content:space-between; box-shadow:0 -2px 12px rgba(0,0,0,0.15);">
+         background:var(--ink); color:var(--paper); padding:12px 78px 12px 18px; border-radius:2px; margin-top:16px;
+         align-items:center; justify-content:space-between; border-top:1px solid var(--rule);">
         <span id="rd-savebar-label" style="font-size:0.9rem;">변경사항</span>
         <div style="display:flex; gap:8px;">
             <button class="btn-small" onclick="rdRevert()" style="background:#fff; color:var(--navy);">되돌리기</button>
@@ -143,21 +143,21 @@ async function rdDoseStatusHtml() {
         const anchor = { ligation: '수술일', ovx: 'OVX', arrival: '반입일' }[rule.startAnchor] || rule.startAnchor;
 
         const view = {
-            nodate: { c:'#c62828', bg:'#ffebee', t:'투약 시작일을 알 수 없음',
+            nodate: { c:'#7C2A30', bg:'var(--stock-pink-soft)', bd:'var(--stock-pink)', t:'투약 시작일을 알 수 없음',
                       s:`${anchor}이 비어 있습니다. 넣기 전까지 투약이 시작되지 않습니다.` },
-            before: { c:'#b45309', bg:'#fff3e0', t:`투약 시작까지 ${d === null ? '-' : -d}일`,
+            before: { c:'#6B571C', bg:'var(--stock-canary-soft)', bd:'#E3C55C', t:`투약 시작까지 ${d === null ? '-' : -d}일`,
                       s:`${anchor} +${rule.startOffset}일부터 시작합니다.` },
-            on:     { c:'#0d47a1', bg:'#e3f2fd', t: d === 0 ? '오늘 투약 시작' : `투약 중 · ${d}일째`,
+            on:     { c:'var(--ink)', bg:'var(--stock-blue-soft)', bd:'var(--ink-blue)', t: d === 0 ? '오늘 투약 시작' : `투약 중 · ${d}일째`,
                       s:`${rule.value} ${rule.unit || 'mg/kg/day'} · 음수 투여` },
-            after:  { c:'#666',    bg:'#f5f5f5', t:'투약 종료', s:'설정된 투약 구간이 끝났습니다.' }
+            after:  { c:'var(--ink-soft)', bg:'var(--paper)', bd:'var(--rule)', t:'투약 종료', s:'설정된 투약 구간이 끝났습니다.' }
         }[win];
 
         return `
-        <div style="background:${view.bg}; border:1px solid ${view.c}33; border-radius:8px;
+        <div style="background:${view.bg}; border:1px solid ${view.bd}; border-radius:2px;
                     padding:10px 12px; margin-bottom:10px;">
-            <div style="font-size:0.72rem; color:${view.c}; opacity:0.8;">${rule.substance}</div>
+            <div style="font-size:0.72rem; letter-spacing:0.1em; font-weight:700; color:${view.c}; opacity:0.85;">${rule.substance}</div>
             <div style="font-size:1.05rem; font-weight:bold; color:${view.c}; margin:2px 0;">${view.t}</div>
-            <div style="font-size:0.76rem; color:${view.c}; opacity:0.85;">${view.s}</div>
+            <div style="font-size:0.76rem; color:${view.c}; opacity:0.88;">${view.s}</div>
         </div>`;
     } catch (e) { console.error(e); return ''; }
 }
@@ -175,7 +175,7 @@ async function rdRenderCageInfo(ratId, containerId) {
         const current = recs.find(r => !r.to);
 
         if (!current) {
-            box.innerHTML = doseHtml + `<div style="color:#666; font-size:0.85rem;">
+            box.innerHTML = doseHtml + `<div style="color:var(--ink-soft); font-size:0.85rem;">
                 배정된 케이지가 없습니다. ${recs.length ? `(지난 재실 ${recs.length}건)` : ''}</div>`;
             return;
         }
@@ -203,37 +203,37 @@ async function rdRenderCageInfo(ratId, containerId) {
 
         box.innerHTML = doseHtml + `
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:110px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center;">
-                <div style="font-size:0.75rem; color:#666;">현재 케이지</div>
-                <div style="font-size:1.4rem; font-weight:bold; color:var(--navy);">${current.cageId}번</div>
-                <div style="font-size:0.72rem; color:#6f6f6f;">${since}부터</div>
+            <div style="flex:1; min-width:110px; background:var(--sheet); border:1px solid var(--rule); border-radius:2px; padding:10px; text-align:center;">
+                <div style="font-size:0.75rem; color:var(--ink-soft);">현재 케이지</div>
+                <div class="mono" style="font-size:1.4rem; font-weight:bold; color:var(--ink);">${current.cageId}번</div>
+                <div style="font-size:0.72rem; color:var(--ink-soft);">${since}부터</div>
             </div>
-            <div style="flex:1; min-width:110px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center;">
-                <div style="font-size:0.75rem; color:#666;">물 (최근 ${recent.length}일)</div>
-                <div style="font-size:1.4rem; font-weight:bold; color:#1565c0;">${w ? w.toFixed(0) : '-'}</div>
-                <div style="font-size:0.72rem; color:#6f6f6f;">mL/일 · 케이지 평균</div>
+            <div style="flex:1; min-width:110px; background:var(--sheet); border:1px solid var(--rule); border-radius:2px; padding:10px; text-align:center;">
+                <div style="font-size:0.75rem; color:var(--ink-soft);">물 (최근 ${recent.length}일)</div>
+                <div class="mono" style="font-size:1.4rem; font-weight:bold; color:var(--ink-blue);">${w ? w.toFixed(0) : '-'}</div>
+                <div style="font-size:0.72rem; color:var(--ink-soft);">mL/일 · 케이지 평균</div>
             </div>
-            <div style="flex:1; min-width:110px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:10px; text-align:center;">
-                <div style="font-size:0.75rem; color:#666;">사료 (최근 ${recent.length}일)</div>
-                <div style="font-size:1.4rem; font-weight:bold; color:#b45309;">${f ? f.toFixed(1) : '-'}</div>
-                <div style="font-size:0.72rem; color:#6f6f6f;">g/일 · 케이지 평균</div>
+            <div style="flex:1; min-width:110px; background:var(--sheet); border:1px solid var(--rule); border-radius:2px; padding:10px; text-align:center;">
+                <div style="font-size:0.75rem; color:var(--ink-soft);">사료 (최근 ${recent.length}일)</div>
+                <div class="mono" style="font-size:1.4rem; font-weight:bold; color:#7A5C00;">${f ? f.toFixed(1) : '-'}</div>
+                <div style="font-size:0.72rem; color:var(--ink-soft);">g/일 · 케이지 평균</div>
             </div>
             ${last && last.doseCc ? `
-            <div style="flex:1; min-width:110px; background:#e3f2fd; border:1px solid #90caf9; border-radius:8px; padding:10px; text-align:center;">
-                <div style="font-size:0.75rem; color:#0d47a1;">최근 투약</div>
-                <div style="font-size:1.4rem; font-weight:bold; color:#0d47a1;">${last.doseCc} cc</div>
-                <div style="font-size:0.72rem; color:#1565c0;">${last.dateStr}</div>
+            <div style="flex:1; min-width:110px; background:var(--stock-blue-soft); border:1px solid var(--ink-blue); border-radius:2px; padding:10px; text-align:center;">
+                <div style="font-size:0.75rem; color:var(--ink-blue);">최근 투약</div>
+                <div class="mono" style="font-size:1.4rem; font-weight:bold; color:var(--ink);">${last.doseCc} cc</div>
+                <div class="mono" style="font-size:0.72rem; color:var(--ink-blue);">${last.dateStr}</div>
             </div>` : ''}
         </div>
         ${recent.length ? `
-        <div style="margin-top:8px; font-size:0.75rem; color:#666;">
+        <div style="margin-top:8px; font-size:0.75rem; color:var(--ink-soft);">
             물통을 같이 쓰므로 개체별 값이 아니라 케이지 평균입니다.
             ${recs.length > 1 ? ` · 재실 이력 ${recs.length}건` : ''}
         </div>` : `
-        <div style="margin-top:8px; font-size:0.78rem; color:#666;">아직 급여 기록이 없습니다.</div>`}`;
+        <div style="margin-top:8px; font-size:0.78rem; color:var(--ink-soft);">아직 급여 기록이 없습니다.</div>`}`;
     } catch (e) {
         console.error(e);
-        box.innerHTML = `<div style="color:#c00; font-size:0.82rem;">케이지 정보를 불러오지 못했습니다.</div>`;
+        box.innerHTML = `<div style="color:var(--stamp); font-size:0.82rem;">케이지 정보를 불러오지 못했습니다.</div>`;
     }
 }
 

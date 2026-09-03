@@ -39,9 +39,9 @@ function createNewTab(view = 'blank') {
     // 👇 빈 탭일 경우 예쁜 안내 문구 표시
     if (view === 'blank') {
         viewDiv.innerHTML = `
-            <div style="display:flex; flex-direction:column; height:80vh; align-items:center; justify-content:center; color:#999;">
-                <i class="material-icons" style="font-size:4rem; margin-bottom:15px; color:#ccc;">touch_app</i>
-                <h2 style="margin:0 0 10px 0; color:#666;">새 탭이 열렸습니다</h2>
+            <div style="display:flex; flex-direction:column; height:80vh; align-items:center; justify-content:center; color:var(--ink-soft);">
+                <i class="material-icons" style="font-size:4rem; margin-bottom:15px; color:var(--rule);">touch_app</i>
+                <h2 style="margin:0 0 10px 0; color:var(--ink);">새 탭이 열렸습니다</h2>
                 <p style="margin:0;">왼쪽(MENU) 메뉴에서 원하시는 작업을 선택해 주세요.</p>
             </div>`;
     }
@@ -316,34 +316,34 @@ async function go(view, targetId = null, specificTabId = null) {
 
         main.innerHTML = `
         <div class="card">
-            <h3 style="margin-bottom:20px;">🔬 조건 분석 (다중 복합 필터)</h3>
+            <h3 style="margin:0 0 20px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">조건 분석 (다중 복합 필터)</h3>
             <div class="trend-opt-box">
-                <div style="font-weight:bold; color:var(--navy); margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:5px;">1. 코호트 선택</div>
+                <div style="font-weight:bold; color:var(--ink); margin-bottom:10px; border-bottom:2px solid var(--ink); padding-bottom:5px;">1. 코호트 선택</div>
                 <div id="trend-cohort-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px;">로딩 중...</div>
             </div>
-            
+
             <div class="trend-opt-box" style="padding-bottom:10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:15px; margin-bottom:15px;">
-                    <div style="font-weight:bold; color:var(--navy); font-size:1.1rem;">2. 분류 기준 설정</div>
-                    
-                    <div style="display:flex; gap:20px; background:#f4f6f8; padding:8px 15px; border-radius:30px;">
-                        <label style="font-weight:bold; cursor:pointer; color:#1565C0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--ink); padding-bottom:15px; margin-bottom:15px;">
+                    <div style="font-weight:bold; color:var(--ink); font-size:1.05rem;">2. 분류 기준 설정</div>
+
+                    <div style="display:flex; gap:20px; background:var(--paper); border:1px solid var(--rule); padding:8px 15px; border-radius:2px;">
+                        <label style="font-weight:bold; cursor:pointer; color:var(--ink);">
                             <input type="radio" name="trend-mode" value="single" checked onchange="switchTrendMode()" style="transform:scale(1.2); margin-right:5px;"> 단일 조건 (A vs 나머지)
                         </label>
-                        <label style="font-weight:bold; cursor:pointer; color:#2e7d32;">
+                        <label style="font-weight:bold; cursor:pointer; color:var(--ink);">
                             <input type="radio" name="trend-mode" value="cross" onchange="switchTrendMode()" style="transform:scale(1.2); margin-right:5px;"> 교차 비교 (A vs B)
                         </label>
                     </div>
                 </div>
 
-                <div id="cross-mode-warning" style="display:none; color:#c62828; font-weight:bold; font-size:0.9rem; margin-bottom:15px; background:#ffebee; padding:10px 15px; border-radius:6px; border:1px solid #ffcdd2; align-items:center; gap:8px;">
-                    <i class="material-icons" style="font-size:1.2rem;">info</i> 
+                <div id="cross-mode-warning" style="display:none; color:#7C2A30; font-weight:bold; font-size:0.9rem; margin-bottom:15px; background:var(--stock-pink-soft); padding:10px 15px; border-radius:2px; border:1px solid var(--stock-pink); align-items:center; gap:8px;">
+                    <i class="material-icons" aria-hidden="true" style="font-size:1.2rem;">info</i>
                     <span>조건은 서로 겹치지 않게(배타적으로) 설정해 주세요. 양쪽 조건에 모두 해당되는 개체는 <b>Group A에 우선 배정</b>됩니다.</span>
                 </div>
-                
+
                 <div id="trend-tabs" style="display:flex; gap:10px; margin-bottom: 20px;">
-                    <button id="trend-tab-btn-a" onclick="switchTrendTab('a')" style="flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #1565C0; background:#e3f2fd; color:#1565C0; border-radius:8px; cursor:pointer; transition:0.2s;">🟨 Group A 조건 세팅</button>
-                    <button id="trend-tab-btn-b" onclick="switchTrendTab('b')" style="flex:1; padding:12px; font-size:1.1rem; font-weight:bold; border:2px solid #ccc; background:#f0f0f0; color:#888; border-radius:8px; cursor:pointer; transition:0.2s; display:none;">🟩 Group B 조건 세팅</button>
+                    <button id="trend-tab-btn-a" onclick="switchTrendTab('a')" style="flex:1; padding:12px; font-size:1.05rem; font-weight:bold; border:2px solid var(--ink); background:var(--stock-blue-soft); color:var(--ink); border-radius:2px; cursor:pointer; transition:0.2s;">Group A 조건 세팅</button>
+                    <button id="trend-tab-btn-b" onclick="switchTrendTab('b')" style="flex:1; padding:12px; font-size:1.05rem; font-weight:bold; border:1px dashed var(--rule); background:var(--paper); color:var(--ink-soft); border-radius:2px; cursor:pointer; transition:0.2s; display:none;">Group B 조건 세팅</button>
                 </div>
 
                 <div id="trend-panel-a">
@@ -354,7 +354,7 @@ async function go(view, targetId = null, specificTabId = null) {
                 </div>
             </div>
             
-            <button class="btn btn-blue" onclick="analyzeTrend()" style="font-size:1.2rem; padding:15px; width:100%; border-radius:8px; box-shadow:0 4px 10px rgba(0,0,0,0.1);">🚀 설정된 조건으로 분석 시작</button>
+            <button class="btn btn-blue" onclick="analyzeTrend()" style="font-size:1.1rem; padding:15px; width:100%;">설정된 조건으로 분석 시작</button>
         </div>
         <div id="trend-res-area" class="trend-container"></div>`;
         renderCohortCheckboxes('trend-cohort-list');
@@ -504,8 +504,8 @@ async function go(view, targetId = null, specificTabId = null) {
     if(view === 'cohort') {
         main.innerHTML = `
         <div class="card">
-            <h3>📊 코호트 분석 (통합 보기)</h3>
-            <div id="co-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">로딩 중...</div>
+            <h3 style="margin:0 0 14px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">코호트 분석 (통합 보기)</h3>
+            <div id="co-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:var(--paper); border-radius:2px; border:1px solid var(--rule); max-height:150px; overflow-y:auto;">로딩 중...</div>
 
             <button class="btn btn-blue" onclick="loadCohortDetail()">분석 시작</button>
         </div>
@@ -518,28 +518,28 @@ async function go(view, targetId = null, specificTabId = null) {
     if (view === 'compare') {
         main.innerHTML = `
         <div class="card">
-            <h3>🔄 코호트 비교</h3>
+            <h3 style="margin:0 0 14px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">코호트 비교</h3>
             <div class="tab-container">
                 <div id="cp-tab-ind" class="tab active" onclick="switchCompTab('ind')">개별 비교</div>
                 <div id="cp-tab-grp" class="tab" onclick="switchCompTab('grp')">그룹 비교</div>
             </div>
             <div id="cp-ui-ind">
-                <div id="comp-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:#f8f9fa; border-radius:8px; border:1px solid #eee; max-height:150px; overflow-y:auto;">로딩 중...</div>
+                <div id="comp-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:var(--paper); border-radius:2px; border:1px solid var(--rule); max-height:150px; overflow-y:auto;">로딩 중...</div>
 
                 <button class="btn btn-blue" onclick="loadCohortComparison()">개별 비교 시작</button>
             </div>
             <div id="cp-ui-grp" style="display:none;">
                 <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
-                    <div style="flex:1; min-width:200px; border:1px solid #ddd; padding:10px; border-radius:8px; background:#f8f9fa;">
-                        <div style="font-weight:bold; color:var(--navy); border-bottom:1px solid #ddd; margin-bottom:5px; padding-bottom:5px;">Group A</div>
+                    <div style="flex:1; min-width:200px; border:1px solid var(--rule); padding:10px; border-radius:2px; background:var(--paper);">
+                        <div style="font-weight:bold; color:var(--ink); border-bottom:2px solid var(--ink); margin-bottom:5px; padding-bottom:5px;">Group A</div>
                         <div id="grp-list-a" style="max-height:150px; overflow-y:auto;"></div>
                     </div>
-                    <div style="flex:1; min-width:200px; border:1px solid #ddd; padding:10px; border-radius:8px; background:#f8f9fa;">
-                        <div style="font-weight:bold; color:var(--navy); border-bottom:1px solid #ddd; margin-bottom:5px; padding-bottom:5px;">Group B</div>
+                    <div style="flex:1; min-width:200px; border:1px solid var(--rule); padding:10px; border-radius:2px; background:var(--paper);">
+                        <div style="font-weight:bold; color:var(--ink); border-bottom:2px solid var(--ink); margin-bottom:5px; padding-bottom:5px;">Group B</div>
                         <div id="grp-list-b" style="max-height:150px; overflow-y:auto;"></div>
                     </div>
-                    <div style="flex:1; min-width:200px; border:1px solid #ddd; padding:10px; border-radius:8px; background:#f8f9fa;">
-                        <div style="font-weight:bold; color:var(--navy); border-bottom:1px solid #ddd; margin-bottom:5px; padding-bottom:5px;">Group C (Optional)</div>
+                    <div style="flex:1; min-width:200px; border:1px solid var(--rule); padding:10px; border-radius:2px; background:var(--paper);">
+                        <div style="font-weight:bold; color:var(--ink); border-bottom:2px solid var(--ink); margin-bottom:5px; padding-bottom:5px;">Group C (Optional)</div>
                         <div id="grp-list-c" style="max-height:150px; overflow-y:auto;"></div>
                     </div>
                 </div>
@@ -581,24 +581,24 @@ else if(view === 'daily') {
         currentScores = { act: 0, fur: 0, eye: 0 };
         main.innerHTML = `
             <div class="card" style="padding: 15px;">
-                <h3 style="margin-bottom:20px; color:var(--navy);">상태 & 체중 통합 기록</h3>
-                
-                <div style="background:#f8f9fa; padding:15px; border-radius:10px; margin-bottom:15px; display:inline-flex; gap:12px; flex-wrap:wrap; border:1px solid #eee; align-items:center;">
+                <h3 style="margin:0 0 20px 0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">상태 & 체중 통합 기록</h3>
+
+                <div style="background:var(--paper); padding:15px; border-radius:2px; margin-bottom:15px; display:inline-flex; gap:12px; flex-wrap:wrap; border:1px solid var(--rule); align-items:center;">
                     <div style="display:flex; gap:6px; align-items:center;">
-                        <input type="number" id="dc-c" placeholder="코호트" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:6px; border:1px solid #ccc; text-align:center; outline:none;">
-                        <input type="number" id="dc-r" placeholder="번호" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:6px; border:1px solid #ccc; text-align:center; outline:none;">
-                        <select id="dc-g" onchange="mkId('dc')" style="width:65px; padding:8px 4px; border-radius:6px; border:1px solid #ccc; outline:none; cursor:pointer;">
+                        <input type="number" id="dc-c" placeholder="코호트" aria-label="코호트 번호" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:2px; border:1px solid #C9C5B8; text-align:center; outline:none;">
+                        <input type="number" id="dc-r" placeholder="번호" aria-label="개체 번호" oninput="mkId('dc')" style="width:80px; padding:8px; border-radius:2px; border:1px solid #C9C5B8; text-align:center; outline:none;">
+                        <select id="dc-g" onchange="mkId('dc')" aria-label="그룹" style="width:65px; padding:8px 4px; border-radius:2px; border:1px solid #C9C5B8; outline:none; cursor:pointer;">
                             <option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option>
                             <option value="4">G4</option><option value="5">G5</option>
                         </select>
                     </div>
-                    <input type="text" id="dc-id" readonly placeholder="ID 결과" style="width:130px; padding:8px; background:#e9ecef; border:1px solid #ddd; border-radius:6px; text-align:center; font-weight:bold; color:var(--navy);">
-                    <input type="date" id="dc-date" style="width:150px; padding:8px; border-radius:6px; border:1px solid #ccc; outline:none; cursor:pointer;">
+                    <input type="text" id="dc-id" readonly placeholder="ID 결과" aria-label="생성된 개체 ID" class="mono" style="width:130px; padding:8px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; text-align:center; font-weight:bold; color:var(--ink);">
+                    <input type="date" id="dc-date" aria-label="기록일" style="width:150px; padding:8px; border-radius:2px; border:1px solid #C9C5B8; outline:none; cursor:pointer;">
                 </div>
 
                 <div class="combined-record-container" style="display:flex; gap:15px;">
-                    <div style="flex:1; padding:15px; border:1px solid #eee; border-radius:10px; background:#fff;">
-                        <h4 style="margin-top:0;"><i class="material-icons" style="font-size:18px; vertical-align:middle;">assignment</i> 상태 (Daily)</h4>
+                    <div style="flex:1; padding:15px; border:1px solid var(--rule); border-radius:2px; background:var(--sheet);">
+                        <h4 style="margin-top:0; border-bottom:2px solid var(--ink); padding-bottom:5px;"><i class="material-icons" aria-hidden="true" style="font-size:18px; vertical-align:middle;">assignment</i> 상태 (Daily)</h4>
                         ${['act','fur','eye'].map(k => `
                         <div class="input-group">
                             <label style="font-size:0.8rem;">${k.toUpperCase()}</label>
@@ -609,11 +609,11 @@ else if(view === 'daily') {
                         <div style="margin-top:10px;"><input type="checkbox" id="is-dead" style="width:auto;"> <label style="display:inline; color:var(--red);">사망 시 체크</label></div>
                     </div>
 
-                    <div style="flex:1; padding:15px; border:1px solid #e3f2fd; border-radius:10px; background:#f1f8ff;">
-                        <h4 style="margin-top:0; color:#1565c0;"><i class="material-icons" style="font-size:18px; vertical-align:middle;">monitor_weight</i> 체중 (Weight)</h4>
+                    <div style="flex:1; padding:15px; border:1px solid var(--ink-blue); border-radius:2px; background:var(--stock-blue-soft);">
+                        <h4 style="margin-top:0; color:var(--ink); border-bottom:2px solid var(--ink); padding-bottom:5px;"><i class="material-icons" aria-hidden="true" style="font-size:18px; vertical-align:middle;">monitor_weight</i> 체중 (Weight)</h4>
                         <div class="input-group">
                             <label>시점 선택</label>
-                            <select id="dc-tp" style="width:100%; padding:10px; border-radius:6px; border:1px solid #bbdefb;">
+                            <select id="dc-tp" class="mono" style="width:100%; padding:10px; border-radius:2px; border:1px solid #C9C5B8;">
                                 <option value="Manual">Manual (수기 입력)</option>
                                 <option value="D00">D00</option><option value="D0">D0</option><option value="D2">D2</option>
                                 <option value="W1">W1</option><option value="W2">W2</option><option value="W4">W4</option>
@@ -622,7 +622,7 @@ else if(view === 'daily') {
                         </div>
                         <div class="input-group" style="margin-top:15px;">
                             <label>체중 (g)</label>
-                            <input type="number" id="dc-wt" placeholder="체중 입력" style="width:100%; padding:10px; border:1px solid #bbdefb;">
+                            <input type="number" id="dc-wt" inputmode="decimal" placeholder="체중 입력" class="mono" style="width:100%; padding:10px; border:1px solid #C9C5B8;">
                         </div>
                     </div>
                 </div>
@@ -633,7 +633,7 @@ else if(view === 'daily') {
         document.getElementById('dc-date').value = getTodayStr();
     }
     else if(view === 'add') { 
-        main.innerHTML = `<div class="card"><h3>대량 등록</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><div class="input-group" style="flex:1;"><label>코호트</label><input type="number" id="add-c"></div><div class="input-group" style="flex:1;"><label>그룹</label><select id="add-g" style="width:100%; padding:8px; border-radius:4px; border:1px solid #ccc;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div></div><div style="display:flex; gap:10px;"><input type="number" id="add-s" placeholder="시작번호"><input type="number" id="add-e" placeholder="끝번호"></div><div class="input-group" style="margin-top:10px;"><label>반입일</label><input type="date" id="add-d"></div><button class="btn btn-green" onclick="saveBulk()">등록</button></div>`; 
+        main.innerHTML = `<div class="card"><h3 style="margin:0 0 14px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">대량 등록</h3><div style="display:flex; gap:10px; margin-bottom:10px;"><div class="input-group" style="flex:1;"><label>코호트</label><input type="number" id="add-c"></div><div class="input-group" style="flex:1;"><label>그룹</label><select id="add-g" style="width:100%; padding:8px; border-radius:2px; border:1px solid #C9C5B8;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select></div></div><div style="display:flex; gap:10px;"><input type="number" id="add-s" placeholder="시작번호"><input type="number" id="add-e" placeholder="끝번호"></div><div class="input-group" style="margin-top:10px;"><label>반입일</label><input type="date" id="add-d"></div><button class="btn btn-green" onclick="saveBulk()">등록</button></div>`; 
         document.getElementById('add-d').value = getTodayStr(); 
     }
     else if(view === 'rec') { 
@@ -645,9 +645,9 @@ else if(view === 'daily') {
             <div style="display:flex; gap:10px;">
                 <input type="number" id="re-c" placeholder="C" oninput="mkId('re')">
                 <input type="number" id="re-r" placeholder="N" oninput="mkId('re')">
-                <select id="re-g" onchange="mkId('re')" style="padding:5px; border-radius:4px; border:1px solid #ccc;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select>
+                <select id="re-g" onchange="mkId('re')" style="padding:5px; border-radius:2px; border:1px solid #C9C5B8;"><option value="0">G0</option><option value="1">G1</option><option value="2">G2</option><option value="3">G3</option><option value="4">G4</option><option value="5">G5</option></select>
             </div>
-            <input type="text" id="re-id" readonly style="background:#eee; margin:10px 0;">
+            <input type="text" id="re-id" readonly class="mono" style="background:var(--stock-canary-soft); border:1px solid #E3C55C; margin:10px 0;">
             <label style="font-size:0.8rem; font-weight:bold; color:var(--navy);">시점 선택</label>
             <select id="re-tp" style="margin-bottom:10px;">${timeOpts}</select>
             <input type="date" id="re-date" style="margin-top:5px;">
@@ -662,7 +662,7 @@ else if(view === 'daily') {
         document.getElementById('re-date').value = getTodayStr(); 
     }
     else if(view === 'bp') { 
-        main.innerHTML = `<div class="card"><h3>BP Analyzer (PC Ver.)</h3><div class="bp-controls" style="background:#f8f9fa; padding:15px; border-radius:8px; border:1px solid #eee;"><label><input type="radio" name="bp-mode" value="control" checked> Control</label><label style="margin-left:20px;"><input type="radio" name="bp-mode" value="induction"> Induction</label><br><input type="file" id="bp-file-input" accept=".csv" multiple style="margin-top:15px; width:100%; border:2px dashed #cbd5e0; padding:10px; box-sizing:border-box;"></div><div id="bp-output" style="margin-top:20px;"></div></div>`; 
+        main.innerHTML = `<div class="card"><h3 style="margin:0 0 14px 0; border-bottom:3px double var(--ink); padding-bottom:6px;">BP Analyzer (PC Ver.)</h3><div class="bp-controls" style="background:var(--paper); padding:15px; border-radius:2px; border:1px solid var(--rule);"><label><input type="radio" name="bp-mode" value="control" checked> Control</label><label style="margin-left:20px;"><input type="radio" name="bp-mode" value="induction"> Induction</label><br><input type="file" id="bp-file-input" accept=".csv" multiple style="margin-top:15px; width:100%; border:2px dashed var(--ink); padding:10px; box-sizing:border-box;"></div><div id="bp-output" style="margin-top:20px;"></div></div>`; 
         document.getElementById('bp-file-input').addEventListener('change', loadBPFiles); 
     }
 }
