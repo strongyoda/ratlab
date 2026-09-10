@@ -58,7 +58,11 @@ async function deInitCageEdit() {
 async function deShowCageList(cohort) {
     const box = document.getElementById('de-cage-list');
     document.getElementById('de-cage-records').innerHTML = '';
+    const chk = document.getElementById('de-cage-check');
+    if (chk) chk.innerHTML = '';
     if (!cohort) { box.innerHTML = ''; return; }
+
+    deCheckGroupTags(cohort);   // 군 표기가 어긋난 기록이 있으면 위에 띄운다
 
     const snap = await db.collection('cageFeeding').where('cohort', '==', String(cohort)).get();
     const byCage = {};
@@ -77,6 +81,56 @@ async function deShowCageList(cohort) {
             <b>${c}번</b><br><span style="font-size:0.75rem; color:var(--ink-soft);">${byCage[c]}건</span>
         </button>`).join('')}
     </div>` : '<div style="color:var(--ink-soft); padding:10px;">이 코호트의 급여 기록이 없습니다.</div>';
+}
+
+// ---------- 급여 기록의 군 표기 점검 · 정정 ----------
+// 개체의 군을 나중에 정정하면 이미 저장된 급여 기록에는 옛 군이 남는다.
+// 섭취량 분석은 기록에 박힌 군을 우선하므로, 그대로 두면 그 구간이 엉뚱한 군으로 잡힌다.
+let deGroupFixes = [];
+
+async function deCheckGroupTags(cohort) {
+    const box = document.getElementById('de-cage-check');
+    if (!box) return;
+    try {
+        deGroupFixes = await feedingGroupFixes(cohort);
+    } catch (e) {
+        console.error('군 표기 점검 실패:', e);
+        deGroupFixes = [];
+    }
+    if (!deGroupFixes.length) { box.innerHTML = ''; return; }
+
+    const rows = deGroupFixes.slice(0, 12).map(f =>
+        `${f.cageId}번 · ${f.dateStr} · ${f.from || '미지정'} → ${f.to}`).join('<br>');
+
+    box.innerHTML = `
+    <div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C; margin-bottom:12px;">
+        <b style="color:#7a5c00;">군 표기가 재실 이력과 어긋난 급여 기록 ${deGroupFixes.length}건</b>
+        <div style="font-size:0.82rem; color:#7a5c00; margin:8px 0;">
+            개체의 군을 나중에 정정하면 이미 저장된 기록에는 옛 군이 남습니다.
+            그 시각에 그 케이지에 있던 개체의 <b>현재 군</b>으로 다시 계산한 결과입니다.
+            (섭취량·투여량 값은 건드리지 않고 군 표기만 바꿉니다)
+        </div>
+        <div style="font-size:0.8rem; font-family:var(--mono, monospace); color:#7a5c00; margin-bottom:10px;">
+            ${rows}${deGroupFixes.length > 12 ? `<br>… 외 ${deGroupFixes.length - 12}건` : ''}
+        </div>
+        <button class="btn-small btn-green" onclick="deApplyGroupTags('${cohort}')">군 표기 정정</button>
+    </div>`;
+}
+
+async function deApplyGroupTags(cohort) {
+    if (!deGroupFixes.length) return;
+    if (!confirm(`급여 기록 ${deGroupFixes.length}건의 군 표기를 정정합니다.\n` +
+                 `바꾸기 전 값은 백업 파일로 내려받습니다.\n\n계속할까요?`)) return;
+    try {
+        feedingGroupBackup(deGroupFixes);
+        const n = await applyFeedingGroupFixes(deGroupFixes);
+        deGroupFixes = [];
+        alert(`${n}건의 군 표기를 정정했습니다.`);
+        await deShowCageList(cohort);
+    } catch (e) {
+        console.error(e);
+        alert('정정 실패: ' + e.message);
+    }
 }
 
 async function deLoadCageRecords(cageId, cohort) {

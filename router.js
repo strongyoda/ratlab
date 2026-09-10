@@ -417,6 +417,7 @@ async function go(view, targetId = null, specificTabId = null) {
                             <option value="">로딩 중...</option>
                         </select>
                     </div>
+                    <div id="de-cage-check"></div>
                     <div id="de-cage-list"></div>
                     <div id="de-cage-records"></div>
                 </div>

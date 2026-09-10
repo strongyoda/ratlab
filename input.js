@@ -318,9 +318,47 @@ window.changeRatGroup = async function(docId, oldRatId, newGroupNum) {
             await Promise.all(promises);
         }
 
+        // 2-1. 재실 기록(ratHousing)도 반드시 같이 갈아끼운다.
+        // 여기를 빠뜨리면 케이지 안의 쥐가 통째로 사라진 것처럼 보이고,
+        // 케이지에 남은 옛 군 표기 때문에 재배정까지 막힌다.
+        const hSnap = await db.collection("ratHousing").where("ratId", "==", oldRatId).get();
+        const touchedCages = new Set();
+        await Promise.all(hSnap.docs.map(d => {
+            if (d.data().to === null) touchedCages.add(String(d.data().cageId));
+            return d.ref.update({ ratId: newRatId, group: newGroup });
+        }));
+
+        // 2-2. 케이지 문서에 사본으로 남아 있는 군 표기도 현재 입주 상태로 맞춘다.
+        for (const cid of touchedCages) {
+            const openSnap = await db.collection("ratHousing")
+                .where("cageId", "==", cid).where("to", "==", null).get();
+            const groups = openSnap.docs.map(d => d.data().group).filter(Boolean);
+            await db.collection("cages").doc(cid).set({ group: groups[0] || null }, { merge: true });
+        }
+
+        clearRatsCache(); // 데이터가 바뀌었으니 캐시 날리기 (아래 재계산이 새 값을 읽어야 한다)
+
+        // 2-3. 이미 저장된 급여 기록의 군 표기도 재실 이력 기준으로 다시 맞춘다.
+        // 섭취량 분석은 기록에 박힌 군을 우선하므로, 안 고치면 그 구간이 옛 군으로 집계된다.
+        try {
+            const ratSnap = await db.collection("rats").doc(docId).get();
+            const cohort = ratSnap.exists ? ratSnap.data().cohort : null;
+            if (cohort) {
+                const fixes = await feedingGroupFixes(cohort);
+                if (fixes.length && confirm(
+                        `급여 기록 ${fixes.length}건의 군 표기가 옛 군으로 남아 있습니다.` + "\n" +
+                        fixes.slice(0, 10).map(f => `${f.cageId}번 · ${f.dateStr} · ${f.from || '미지정'} → ${f.to}`).join("\n") +
+                        (fixes.length > 10 ? `\n… 외 ${fixes.length - 10}건` : '') +
+                        "\n\n지금 함께 정정할까요? (바꾸기 전 값은 백업 파일로 받습니다)")) {
+                    feedingGroupBackup(fixes);
+                    await applyFeedingGroupFixes(fixes);
+                }
+            }
+        } catch (e) {
+            console.error('급여 기록 군 표기 재계산 실패:', e);
+        }
+
         alert("✅ 그룹 이동 및 모든 데이터 연동이 성공적으로 완료되었습니다!");
-        
-        clearRatsCache(); // 데이터가 바뀌었으니 캐시 날리기
         
         // 모달창이 열려있다면 모달 타이틀 업데이트
         const modalTitle = document.getElementById('rdm-title');

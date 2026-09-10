@@ -14,6 +14,103 @@ console.log("🔥 파이어베이스 초기화 성공!"); // <- 이 줄을 추�
 firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
     .catch(e => console.error("로그인 유지 설정 실패:", e));
 
+// ============================================================
+//  군(group) 공용 헬퍼
+//  군은 '쥐'의 속성이다. 케이지는 군을 소유하지 않는다.
+//  (케이지 문서에 박아둔 group은 쥐의 군이 바뀌면 그대로 낡아버려,
+//   같은 군의 쥐인데도 '군이 다르다'며 배정이 막히는 사고가 났었다)
+// ============================================================
+
+// 'G0' / 0 / '0' 을 모두 'G0'으로 맞춘다.
+// 0을 falsy로 보고 기본값을 넣던 코드가 대조군(G0)을 G1으로 둔갑시켰다.
+function normGroupKey(v) {
+    if (v === null || v === undefined || v === '') return null;
+    const s = String(v).trim().replace(/^[Gg]/, '');
+    if (s === '') return null;
+    return 'G' + (/^\d+$/.test(s) ? String(Number(s)) : s);
+}
+
+// 케이지의 군 = 지금 그 안에 있는 쥐들의 군.
+// 아무도 없을 때만 케이지 문서에 남은 값을 참고값으로 쓴다.
+function cageGroupKey(occupants, cageDoc) {
+    for (const r of (occupants || [])) {
+        const g = normGroupKey(r && r.group);
+        if (g) return g;
+    }
+    return normGroupKey(cageDoc && cageDoc.group);
+}
+
+// ---------- 급여 기록(cageFeeding)의 군 표기 재계산 ----------
+// 급여 기록에는 그 시점의 군을 박아둔다(케이지가 비면 케이지의 군은 풀리므로).
+// 그런데 개체의 군을 나중에 정정하면 이미 박힌 표기는 옛 군 그대로 남는다.
+// 재실 이력(ratHousing)으로 '그 시각에 그 케이지에 있던 개체'를 찾아 다시 계산한다.
+async function feedingGroupFixes(cohort) {
+    const [feedSnap, houseSnap, rats] = await Promise.all([
+        db.collection('cageFeeding').where('cohort', '==', String(cohort)).get(),
+        db.collection('ratHousing').get(),
+        getRatsWithCache()
+    ]);
+
+    const groupOf = {};
+    rats.forEach(r => { groupOf[r.ratId] = normGroupKey(r.group); });
+
+    const house = [];
+    houseSnap.forEach(d => house.push(d.data()));
+
+    const ms = v => (v && v.toMillis) ? v.toMillis() : null;
+    const fixes = [];
+
+    feedSnap.forEach(d => {
+        const v = d.data();
+        // 기록 시각이 없으면 그 날의 끝으로 본다 (하루 한 번 도는 라운드라 충분)
+        const at = ms(v.at) || (v.dateStr ? new Date(v.dateStr + 'T23:59:59').getTime() : null);
+        if (at === null) return;
+
+        const groups = new Set();
+        house.forEach(h => {
+            if (String(h.cageId) !== String(v.cageId)) return;
+            const from = ms(h.from), to = ms(h.to);
+            if (from === null || from > at) return;      // 아직 들어오기 전
+            if (to !== null && to < at) return;          // 이미 나간 뒤
+            const g = groupOf[h.ratId];
+            if (g) groups.add(g);
+        });
+
+        if (groups.size !== 1) return;                   // 비었거나 섞였으면 손대지 않는다
+        const want = Array.from(groups)[0];
+        const have = normGroupKey(v.group);
+        if (have === want) return;
+        fixes.push({ id: d.id, cageId: String(v.cageId), dateStr: v.dateStr || '', from: have, to: want });
+    });
+
+    fixes.sort((a, b) => String(a.dateStr).localeCompare(String(b.dateStr))
+                      || Number(a.cageId) - Number(b.cageId));
+    return fixes;
+}
+
+// 되돌릴 수 있게 '바꾸기 전 값'을 먼저 파일로 떨어뜨린다.
+function feedingGroupBackup(fixes) {
+    try {
+        const blob = new Blob([JSON.stringify(fixes, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `backup_feedgroup_${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e) { console.error('백업 파일 저장 실패:', e); }
+}
+
+async function applyFeedingGroupFixes(fixes) {
+    for (let i = 0; i < fixes.length; i += 400) {
+        const batch = db.batch();
+        fixes.slice(i, i + 400).forEach(f => {
+            batch.set(db.collection('cageFeeding').doc(f.id), { group: f.to }, { merge: true });
+        });
+        await batch.commit();
+    }
+    return fixes.length;
+}
+
 let currentScores = { act: 0, fur: 0, eye: 0 };
 let allBPData = [];
 let bpChartInstance = null;

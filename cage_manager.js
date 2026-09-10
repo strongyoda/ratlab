@@ -87,6 +87,8 @@ async function cgLoadAll() {
         // 배정 패널에서 이미 고른 코호트가 있으면 유지
         cgRats = cgCohort ? rats.filter(r => String(r.cohort) === String(cgCohort)) : [];
 
+        await cgHealOrphanHousing();
+
         cgRenderBody();
     } catch (e) {
         console.error(e);
@@ -120,7 +122,19 @@ function cgAllOpenHousingOf(ratId) {
     return cgHousing.filter(h => h.ratId === ratId);
 }
 function cgGroupOf(rat) {
-    return rat.group ? ('G' + String(rat.group).replace(/^G/, '')) : 'G1';
+    return normGroupKey(rat && rat.group);
+}
+
+// 케이지의 군은 '지금 안에 있는 쥐'에서만 읽는다.
+// 케이지 문서의 group은 쥐의 군이 바뀌어도 따라오지 않아 낡은 값이 되고,
+// 그 낡은 값이 같은 군의 쥐마저 막아버렸다.
+function cgCageGroup(cageId) {
+    const occ = cgOccupants(cageId);
+    for (const r of occ) {
+        const g = cgGroupOf(r);
+        if (g) return g;
+    }
+    return null;
 }
 function cgGroupColor(key, cohort) {
     const cfg = cgConfigs[String(cohort)];
@@ -299,7 +313,7 @@ function cgRatChip(rat, cageId) {
     const dead = !cgIsAlive(rat);
     return `
     <div draggable="true" data-cg-rat="${cgEsc(rat.ratId)}"
-         title="${cgEsc(rat.ratId)} (${gkey})" role="button" tabindex="0"
+         title="${cgEsc(rat.ratId)} (${gkey || '군 미지정'})" role="button" tabindex="0"
          style="display:flex; align-items:center; gap:5px; padding:5px 9px; cursor:pointer;
                 background:${picked ? 'var(--stock-canary-soft)' : 'var(--sheet)'}; border:2px solid ${picked ? 'var(--ink)' : color};
                 border-radius:2px; font-size:0.85rem; white-space:nowrap;
@@ -314,7 +328,7 @@ function cgCageCard(cage) {
     const occ = cgOccupants(cage.id);
     const max = cgMaxRats(cage);
     const full = occ.length >= max;
-    const groupKey = cage.group || (occ.length ? cgGroupOf(occ[0]) : null);
+    const groupKey = occ.length ? cgCageGroup(cage.id) : null;   // 빈 케이지는 군이 없다
     const cohort = cage.cohort || (occ.length ? occ[0].cohort : null);
     const color = groupKey ? cgGroupColor(groupKey, cohort) : '#ccc';
     const cfg = cgConfigs[String(cohort)];
@@ -414,8 +428,8 @@ async function cgMoveRat(ratId, cageId) {
     // 가드레일 2: 다른 군 섞임 방지
     // 메트포민은 물에 타는데 물통은 케이지 공유라, 군이 섞이면 프로토콜 위반이 된다.
     const ratGroup = cgGroupOf(rat);
-    const cageGroup = cage.group || (occ.length ? cgGroupOf(occ[0]) : null);
-    if (cageGroup && cageGroup !== ratGroup) {
+    const cageGroup = cgCageGroup(cageId);   // 케이지 문서가 아니라 '지금 들어있는 쥐'가 기준
+    if (cageGroup && ratGroup && cageGroup !== ratGroup) {
         alert(`군이 다릅니다.\n\n${ratId} = ${ratGroup}\n${cage.number}번 케이지 = ${cageGroup}\n\n` +
               `물통을 공유하므로 서로 다른 군을 같은 케이지에 둘 수 없습니다.`);
         cgRenderBody(); return;
@@ -450,12 +464,9 @@ async function cgMoveRat(ratId, cageId) {
         });
         cgHousing.push({ id: ref.id, ratId, cageId: String(cageId), cohort: String(rat.cohort), group: ratGroup, from: now, to: null });
 
-        // 케이지가 비어 있었다면 군을 물려받음
-        if (!cage.group) {
-            await db.collection('cages').doc(String(cageId)).set(
-                { group: ratGroup, cohort: String(rat.cohort) }, { merge: true });
-            cage.group = ratGroup; cage.cohort = String(rat.cohort);
-        }
+        // 케이지 문서의 group/cohort는 화면 표시를 위한 사본일 뿐이다.
+        // 판정에는 쓰지 않지만, 낡은 채로 남지 않도록 이동할 때마다 다시 맞춘다.
+        await cgSyncCageGroup(cageId);
         cgRenderBody();
     } catch (e) {
         console.error(e);
@@ -463,13 +474,61 @@ async function cgMoveRat(ratId, cageId) {
     }
 }
 
+// ---------- 고아 재실 기록 복구 ----------
+// 군을 바꾸면 개체 ID의 끝자리(G숫자)가 바뀐다. 예전에는 재실 기록(ratHousing)의
+// ratId가 같이 안 바뀌어서, 케이지 안의 쥐가 통째로 사라진 것처럼 보였다.
+// 남아 있는 그런 기록을 같은 개체(끝의 G숫자만 다른 ID)로 다시 이어 붙인다.
+const cgBaseId = id => String(id || '').replace(/G\d+$/, '');
+
+async function cgHealOrphanHousing() {
+    const live = new Set(cgAllRats.map(r => r.ratId));
+    const byBase = new Map();
+    cgAllRats.forEach(r => {
+        const b = cgBaseId(r.ratId);
+        if (!byBase.has(b)) byBase.set(b, []);
+        byBase.get(b).push(r);
+    });
+
+    const fixes = [];
+    cgHousing.forEach(h => {
+        if (live.has(h.ratId)) return;                       // 멀쩡한 기록
+        const cand = byBase.get(cgBaseId(h.ratId)) || [];
+        if (cand.length !== 1) return;                       // 확실할 때만 손댄다
+        fixes.push({ h: h, rat: cand[0] });
+    });
+    if (!fixes.length) return;
+
+    try {
+        for (const f of fixes) {
+            const g = cgGroupOf(f.rat);
+            await db.collection('ratHousing').doc(f.h.id).update({ ratId: f.rat.ratId, group: g });
+            f.h.ratId = f.rat.ratId; f.h.group = g;
+        }
+        const cages = new Set(fixes.map(f => String(f.h.cageId)));
+        for (const cid of cages) await cgSyncCageGroup(cid);
+        console.log('재실 기록 복구:', fixes.map(f => f.h.ratId).join(', '));
+        alert(`군 변경으로 끊어져 있던 재실 기록 ${fixes.length}건을 케이지에 다시 이어 붙였습니다.\n\n` +
+              fixes.map(f => `${f.h.cageId}번 ← ${f.rat.ratId}`).join('\n'));
+    } catch (e) {
+        console.error('재실 기록 복구 실패:', e);
+    }
+}
+
+// 케이지 문서의 group/cohort를 현재 입주 상태로 다시 쓴다 (표시용 사본).
+async function cgSyncCageGroup(cageId) {
+    const occ = cgOccupants(cageId);
+    const group = occ.length ? cgCageGroup(cageId) : null;
+    const cohort = occ.length ? String(occ[0].cohort) : null;
+    const cage = cgCages.find(c => String(c.id) === String(cageId));
+    if (cage && (cage.group || null) === group && (cage.cohort || null) === cohort) return;
+    await db.collection('cages').doc(String(cageId)).set({ group: group, cohort: cohort }, { merge: true });
+    if (cage) { cage.group = group; cage.cohort = cohort; }
+}
+
 // 케이지가 비면 군 배정을 풀어 다른 군이 들어올 수 있게 한다.
 // (안 풀면 빈 케이지가 예전 군에 묶여 다음 배정이 잘못 차단됨)
 async function cgClearCageIfEmpty(cageId) {
-    if (cgOccupants(cageId).length) return;
-    await db.collection('cages').doc(String(cageId)).set({ group: null, cohort: null }, { merge: true });
-    const cage = cgCages.find(c => String(c.id) === String(cageId));
-    if (cage) { cage.group = null; cage.cohort = null; }
+    await cgSyncCageGroup(cageId);   // 남은 쥐가 있으면 그 군으로, 비었으면 해제
 }
 
 async function cgRemoveRat(ratId, reason) {

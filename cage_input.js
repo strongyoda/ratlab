@@ -1180,7 +1180,7 @@ function ciGetMetforminRule(cageId) {
     const cage = ciCages.find(c => String(c.id) === id);
     const occ = ciOccupants(id);
     if (!cage || !occ.length) return null;
-    const gkey = cage.group || ('G' + String(occ[0].group || 1).replace(/^G/, ''));
+    const gkey = cageGroupKey(occ, cage);   // 군은 케이지가 아니라 안에 있는 쥐가 정한다
 
     return ciConfig.dosing.find(d =>
         d.medium === 'water' && (d.groups || []).includes(gkey) && Number(d.value) > 0) || null;
@@ -1424,6 +1424,21 @@ function ciUpdateDose() {
         pcSource = '주말 포함 구간 (평일 기록이 아직 없음)';
     }
 
+    // 통을 다시 채우는 날인데 채운 통을 아직 저울에 안 올렸으면, 채울 물 칸에는
+    // 지난번 채운 양이 기본값으로 들어 있을 뿐이다. 그 값으로 원액을 지시하면
+    // 실제 채운 양과 농도가 어긋난다 (9/8 30번: 실제 500을 채웠는데 어제 값 311로 조제됨).
+    if (!ciForm.noWater && ciForm.fillScale === '' && ciFillTareOf() > 0 && ciBaseline(ciCurrent)) {
+        ciForm._doseCc = 0; ciForm._doseMg = 0;
+        box.innerHTML = `<div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C;">
+            <b style="color:#7a5c00;">${ciEsc(rule.substance)} 지시량 계산 대기</b>
+            <div style="font-size:0.8rem; color:#7a5c00; margin-top:4px;">
+                <b>물 채운 통 무게를 먼저 넣으세요.</b> 지금 채울 물 값(${Number(ciForm.waterGiven).toFixed(0)} mL)은
+                지난번 채운 양이 자동으로 들어온 것이라, 그대로 조제하면 농도가 틀립니다.
+            </div>
+        </div>`;
+        return;
+    }
+
     const fill = Number(ciForm.waterGiven) || 0;
     const stock = Number(rule.stockConc) || 0;
 
@@ -1619,6 +1634,21 @@ async function ciSave() {
         return alert('입력된 값이 없습니다.');
     }
 
+    // 채운 통 무게 없이 저장되면 채울 물 칸의 기본값(지난번 채운 양)이 오늘 채운 양으로 굳는다.
+    // 9/8 30번이 그렇게 이틀 연속 311.6으로 남았다 — 실제로는 500을 채웠는데.
+    // 채운 양은 다음 구간 섭취량의 기준이라 틀리면 내일 계산까지 같이 틀어진다.
+    if (!ciForm.noWater && ciForm.fillScale === '' && ciFillTareOf() > 0 && ciBaseline(savingCage)) {
+        const manual = prompt(
+            `물 채운 통 무게가 비어 있습니다.\n\n` +
+            `지금 채울 물 값 ${Number(ciForm.waterGiven).toFixed(0)} mL는 지난번 채운 양이 자동으로 들어온 것입니다. ` +
+            `이대로 저장하면 오늘 채운 양이 틀리게 남고 내일 섭취량 계산이 어긋납니다.\n\n` +
+            `채운 통을 저울에 올려 입력하는 것이 정확합니다. 저울을 쓸 수 없으면 채운 양(mL)을 여기 직접 넣으세요. ` +
+            `취소하면 저장하지 않습니다.`, '');
+        if (manual === null || !(Number(manual) > 0)) { ciSaving = false; ciBusy(false); return; }
+        ciForm.waterGiven = Number(manual);
+        ciForm.note = (ciForm.note ? ciForm.note + ' / ' : '') + `채운 양 ${Number(manual)} mL 저울 미측정, 직접 입력`;
+    }
+
     // 소급 입력인데 뒤에 이미 기록이 있으면, 그 기록은 이 구간을 모른 채 계산돼 있다.
     if (ciIsBackdated()) {
         const later = (ciLastFeed[savingCage] && ciLastFeed[savingCage].at &&
@@ -1637,7 +1667,7 @@ async function ciSave() {
             cageId: String(ciCurrent), cohort: String(ciCohort),
             // 군을 기록 자체에 박아둔다. 케이지가 비면 케이지의 군은 해제되므로
             // 분석이 '현재 케이지 상태'에 기대면 코호트가 끝난 순간 과거가 전부 미지정이 된다.
-            group: (cageDoc && cageDoc.group) || (occ.length ? ('G' + String(occ[0].group || 1).replace(/^G/, '')) : null),
+            group: cageGroupKey(occ, cageDoc),
             at: now, dateStr: dateStr,
             waterRemaining: ciForm.waterRemaining === '' ? null : Number(ciForm.waterRemaining),
             foodRemaining: ciForm.foodRemaining === '' ? null : Number(ciForm.foodRemaining),

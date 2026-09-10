@@ -170,7 +170,7 @@ function dbTodo() {
         if (!occ.length) return;
         const cfg = configs[String(occ[0].cohort)];
         if (!cfg || !cfg.dosing) return;
-        const gkey = cage.group || ('G' + String(occ[0].group || 1).replace(/^G/, ''));
+        const gkey = cageGroupKey(occ, cage);
         const rule = cfg.dosing.find(x => x.medium === 'water'
             && (x.groups || []).includes(gkey) && Number(x.value) > 0);
         if (!rule) return;
@@ -283,7 +283,7 @@ function dbPrep() {
         const cfg = configs[String(occ[0].cohort)];
         if (!cfg || !cfg.dosing) return;
 
-        const gkey = cage.group || ('G' + String(occ[0].group || 1).replace(/^G/, ''));
+        const gkey = cageGroupKey(occ, cage);
         const rule = cfg.dosing.find(x => x.medium === 'water'
             && (x.groups || []).includes(gkey) && Number(x.value) > 0);
         if (!rule) return;
@@ -619,7 +619,7 @@ function dbCageStages(cageId) {
     const cfg = dbData.configs[String(occ[0].cohort)];
     if (!cfg || !cfg.dosing) return [];
     const cage = dbData.cages.find(c => String(c.id) === String(cageId)) || {};
-    const gkey = cage.group || ('G' + String(occ[0].group || 1).replace(/^G/, ''));
+    const gkey = cageGroupKey(occ, cage);
 
     const out = [];
     cfg.dosing.forEach(rule => {
