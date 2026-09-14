@@ -31,6 +31,13 @@ function dbOnClick(e) {
         case 'toggle': dbToggleRow(el.dataset.idx); break;
         case 'ask':    dbAiAsk(el.dataset.q); break;
         case 'go':     go(el.dataset.view); break;
+        case 'labmore': {
+            const box = document.getElementById('db-lab-more');
+            const on = box.style.display === 'none';
+            box.style.display = on ? 'block' : 'none';
+            el.textContent = on ? '접기' : '보기';
+            break;
+        }
     }
 }
 
@@ -59,6 +66,14 @@ async function dbLoad() {
         db.collection('cohortConfigs').get()
     ]);
 
+    // 실험실 예약은 병원 내부망 서버가 Firestore 로 올려준다. 그 서버가 꺼져 있어도
+    // 대시보드 전체가 죽으면 안 되므로 여기만 따로 감싼다. null = 오늘 문서가 없음.
+    let labSched = null;
+    try {
+        const doc = await db.collection('labSchedule').doc(today).get();
+        if (doc.exists) labSched = doc.data();
+    } catch (e) { console.warn('실험실 예약 읽기 실패', e); }
+
     const cages = [];   cageSnap.forEach(d => cages.push(Object.assign({ id: d.id }, d.data())));
     const housing = []; houseSnap.forEach(d => housing.push(d.data()));
     const feeds = [];   feedSnap.forEach(d => feeds.push(d.data()));
@@ -76,7 +91,7 @@ async function dbLoad() {
     // 화면 전체가 쓰는 alive 는 진행 중 코호트로 한정한다
     const alive = notDead.filter(r => active.includes(String(r.cohort)));
 
-    dbData = { today, rats, alive, cages, housing, feeds, meas, configs, active };
+    dbData = { today, rats, alive, cages, housing, feeds, meas, configs, active, labSched };
 }
 
 function dbShift(dateStr, days) {
@@ -142,6 +157,7 @@ function dbRender(main) {
         </div>
     </div>
 
+    ${dbLabCard(dbData.labSched)}
     ${dbTodoCard(todo)}
     ${dbPrepCard(dbPrep())}
     ${dbAlertCard(alerts)}
@@ -151,6 +167,78 @@ function dbRender(main) {
     </div>
     ${dbCohortCard(cohorts)}
     ${dbAiCard()}
+    </div>`;
+}
+
+// ---------- ⓪ 오늘 실험실 예약 ----------
+// 이 데이터만은 기록에서 계산한 게 아니다. 병원 내부망의 예약 서버가
+// ARIS 에서 긁어 Firestore 에 올려둔 것을 그대로 읽는다 (labSchedule/날짜).
+// 그래서 '없음'과 '못 받아옴'을 반드시 구분해서 보여준다 — 빈 화면이
+// 예약이 없다는 뜻인지 서버가 죽었다는 뜻인지 모르면 쓸모가 없다.
+const DB_LAB_STALE_MIN = 180;   // 이만큼 지난 데이터면 몇 시 기준인지 밝힌다
+
+function dbLabTimeNote(s) {
+    const t = new Date(String(s.pushedAt || s.fetchedAt || ''));
+    if (isNaN(t)) return '';
+    const min = Math.round((Date.now() - t.getTime()) / 60000);
+    const hhmm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    return min > DB_LAB_STALE_MIN
+        ? `<span style="color:var(--stamp);">${hhmm} 기준 · ${Math.floor(min / 60)}시간째 갱신 없음</span>`
+        : `${hhmm} 기준`;
+}
+
+function dbLabRow(it, now) {
+    const live = it.start <= now && now < it.end;
+    const detail = [...(it.tables || []), ...(it.equip || [])].join(' · ');
+    return `
+    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:6px 8px; border-bottom:1px solid var(--rule);
+                ${it.mine ? 'background:var(--stock-canary-soft); border:1px solid var(--stock-canary); border-radius:2px; margin:2px 0;' : ''}">
+        <span class="mono" style="font-size:0.95rem; font-weight:${it.mine ? 700 : 400}; white-space:nowrap; color:var(--ink);">${dbEsc(it.start)}–${dbEsc(it.end)}</span>
+        <span style="flex:1; min-width:0;">
+            <b style="font-size:0.9rem;">${dbEsc(it.labName)}</b>
+            ${detail ? `<span style="font-size:0.8rem; color:var(--ink-soft);"> ${dbEsc(detail)}</span>` : ''}
+        </span>
+        <span style="font-size:0.82rem; color:var(--ink-soft); white-space:nowrap;">${dbEsc(it.who)}</span>
+        ${live ? `<span class="mono" style="font-size:0.7rem; color:var(--stamp); font-weight:700; white-space:nowrap;">진행 중</span>` : ''}
+    </div>`;
+}
+
+function dbLabCard(s) {
+    const head = `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;">
+        <h4 style="margin:0; color:var(--ink);">오늘 실험실 예약</h4>
+        <span style="font-size:0.75rem; color:var(--ink-soft);">${s ? dbLabTimeNote(s) : '예약 서버'}</span>
+    </div>`;
+
+    if (!s) return `
+    <div class="card" style="background:var(--paper); border:1px dashed #B9B4A5;">
+        ${head}
+        <div style="font-size:0.9rem; color:var(--ink-soft);">
+            오늘 일정이 올라오지 않았습니다. 병원 내부망의 예약 서버가 꺼져 있거나
+            아직 한 바퀴를 안 돌았을 수 있습니다.
+        </div>
+    </div>`;
+
+    const items = s.items || [];
+    const mine = items.filter(i => i.mine);
+    const others = items.filter(i => !i.mine);
+    const d = new Date();
+    const now = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+    return `
+    <div class="card">
+        ${head}
+        ${mine.length
+            ? mine.map(i => dbLabRow(i, now)).join('')
+            : `<div style="font-size:0.9rem; color:var(--ink-soft);">오늘 우리 과제로 잡은 실험실이 없습니다.</div>`}
+        ${others.length ? `
+        <div style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:0.82rem; color:var(--ink-soft);">
+            <span>같은 층 다른 예약 <span class="mono">${others.length}</span>건</span>
+            <button class="db-btn db-tap" data-db-action="labmore"
+                    style="color:var(--ink-blue); text-decoration:underline; text-underline-offset:3px; padding:2px 4px;">보기</button>
+        </div>
+        <div id="db-lab-more" style="display:none; margin-top:6px; opacity:0.82;">
+            ${others.map(i => dbLabRow(i, now)).join('')}
+        </div>` : ''}
     </div>`;
 }
 
