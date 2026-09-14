@@ -510,6 +510,25 @@ function fillOptions(housing) {
     return [...new Set(v)].sort((a, b) => a - b);
 }
 
+// 물통이 며칠 버티는지 (주말 물 예보). 케이지별 입력과 대시보드가 같은 값을 쓴다.
+// 기준은 최근 클린 평일 구간의 '중앙값' — 농도를 정하는 최댓값과 일부러 다르다.
+// 농도는 과다투여를 막으려 최대를 쓰지만, 물이 언제 마를지는 보통 마시는 양이 맞다.
+// (바닥난 주말 다음날의 반동 값 하나가 최대에 걸리면 모든 케이지가 "부족"으로 보인다)
+// 달력은 보지 않는다 — 채움량으로 며칠인지만 계산하고, 오늘이 금요일인지는 사람이 안다.
+const OUTLOOK_MIN_DAYS = 3;   // 금요일 오후 → 월요일 오전 ≈ 2.8일. 이보다 짧으면 주말을 못 넘긴다
+function weekendWaterOutlook(rows, n, housing) {
+    const clean = (rows || []).filter(r => !(r.flags || []).length
+        && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0 && !rowSpansWeekend(r))
+        .slice().sort((a, b) => String(b.dateStr).localeCompare(String(a.dateStr)));   // 최신순
+    if (clean.length < 2 || !(n > 0)) return null;
+    const v = clean.slice(0, 5).map(r => r.waterPerCapita).sort((a, b) => a - b);
+    const mid = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+    const opts = fillOptions(housing);
+    const fill = Math.max(...(opts.length ? opts : [700]));   // 제일 큰 물통 기준
+    const days = fill / (mid * n);
+    return { pc: mid, fill, days, short: days < OUTLOOK_MIN_DAYS };
+}
+
 // 조제 어림에서 케이지 하나의 예측 섭취량이 너무 낮으면 (채우는 물이 7일치를
 // 넘게 남을 값이면) 그 케이지의 계수를 버리고 다른 케이지 평균으로 메운다.
 // 계수는 섭취량의 역수라, 거부 케이지(마리당 1.3 mL) 하나가 전체 조제량을

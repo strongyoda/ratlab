@@ -297,6 +297,7 @@ function ciRenderList() {
     body.innerHTML = `
     ${ciLastSavedBanner()}
     ${ciPrepPreviewCard()}
+    ${ciWeekendOutlookLine()}
     ${ciDoseAlertBanner(states)}
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:6px;">
@@ -330,6 +331,33 @@ function ciRenderList() {
     <div class="card" style="background:var(--stock-green-soft); border:1px solid var(--approve);">
         <b class="stamp-in" style="display:inline-block; color:var(--approve); border:2px solid var(--approve); padding:2px 9px; border-radius:2px;">오늘 입력이 모두 끝났습니다.</b>
     </div>` : ''}`;
+}
+
+// ---------- 주말 물 예보 ----------
+// 제일 큰 물통으로 며칠 버티는지. 조제 카드와 같은 계산(global.js 공용).
+// 목·금에는 늘 보이고, 다른 날은 부족한 케이지가 있을 때만 — 그 외엔 자리를 차지하지 않는다.
+function ciWeekendOutlookLine() {
+    const list = [];
+    ciCages.forEach(cage => {
+        const o = weekendWaterOutlook(ciCageRows[cage.id], ciOccupants(cage.id).length, ciConfig && ciConfig.housing);
+        if (o) list.push({ number: cage.number, days: o.days, fill: o.fill, short: o.short });
+    });
+    if (!list.length) return '';
+    list.sort((a, b) => a.days - b.days);
+    const short = list.filter(x => x.short);
+    const wd = new Date((ciDate || getTodayStr()) + 'T00:00:00').getDay();
+    if (!short.length && wd !== 4 && wd !== 5) return '';
+    const fill = list[0].fill;
+    const cell = x => `<span class="mono" style="display:inline-block; padding:2px 8px; background:var(--sheet);
+        border:1px solid var(--ink); border-radius:2px; font-size:0.8rem; font-weight:600; color:#7A5C00;">${ciEsc(x.number)}번 ${x.days.toFixed(1)}일</span>`;
+    return `
+    <div style="padding:8px 2px 10px; margin-bottom:10px; border-bottom:1px solid var(--rule); font-size:0.82rem; color:var(--ink-soft);
+                display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <b style="color:var(--ink);">주말 물</b>
+        ${short.length
+            ? short.map(cell).join('') + `<span><span class="mono">${fill}</span> mL로 3일을 못 넘깁니다 · 최근 평일 섭취 중앙값 기준</span>`
+            : `<span><span class="mono">${fill}</span> mL면 전 케이지 3일 이상 (최소 <span class="mono">${list[0].days.toFixed(1)}</span>일)</span>`}
+    </div>`;
 }
 
 // ---------- 오늘 조제량 미리보기 ----------

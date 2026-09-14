@@ -294,7 +294,20 @@ function dbTodo() {
     const evMr = events.filter(e => e.kind === 'mr');
     const evBp = events.filter(e => e.kind === 'bp');
 
-    return { pending, usedCount: used.length, doneCount: doneToday.size, doseToday, doseSoon, evMr, evBp };
+    // 주말 물 — 제일 큰 물통으로 며칠 버티는지 (케이지별 입력과 같은 계산, global.js)
+    const weekend = [];
+    used.forEach(cage => {
+        const occ = dbOccupants(cage.id);
+        const cfg = configs[String(occ[0].cohort)];
+        const rows = feeds.filter(f => String(f.cageId) === String(cage.id));
+        const o = weekendWaterOutlook(rows, occ.length, cfg && cfg.housing);
+        if (o) weekend.push({ n: cage.number, days: o.days, fill: o.fill, short: o.short });
+    });
+    weekend.sort((a, b) => a.days - b.days);
+    const wd = new Date(today + 'T00:00:00').getDay();
+    const weekendDay = (wd === 4 || wd === 5);   // 목·금에는 늘 보이고, 다른 날은 부족한 케이지가 있을 때만
+
+    return { pending, usedCount: used.length, doneCount: doneToday.size, doseToday, doseSoon, evMr, evBp, weekend, weekendDay };
 }
 
 function dbTodoCard(t) {
@@ -338,6 +351,21 @@ function dbTodoCard(t) {
             ${t.evBp.length ? chip('BP ' + t.evBp.length + '마리 (' + [...new Set(t.evBp.map(e => dbEsc(e.tp)))].join(',') + ')', 'var(--stock-canary-soft)', '#7A5C00') : ''}
             <span style="color:var(--ink-soft); font-size:0.8rem;">결찰일 + 설정 시점으로 계산한 값입니다</span>
         </div>`);
+
+    if (t.weekend && t.weekend.length) {
+        const short = t.weekend.filter(w => w.short);
+        if (short.length || t.weekendDay) {
+            const fill = t.weekend[0].fill;
+            rows.push(`
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <b style="min-width:96px;">주말 물</b>
+                ${short.length
+                    ? short.map(w => chip(dbEsc(w.n) + '번 ' + w.days.toFixed(1) + '일', 'var(--stock-canary-soft)', '#7A5C00')).join('')
+                      + `<span style="color:var(--ink-soft); font-size:0.8rem;"><span class="mono">${fill}</span> mL로 3일을 못 넘깁니다 — 토요일에 볼 케이지 · 최근 평일 섭취 중앙값 기준</span>`
+                    : `<span style="color:var(--ink-soft); font-size:0.85rem;"><span class="mono">${fill}</span> mL면 전 케이지 3일 이상 (최소 <span class="mono">${t.weekend[0].days.toFixed(1)}</span>일)</span>`}
+            </div>`);
+        }
+    }
 
     if (!rows.length) rows.push(`<div style="color:var(--ink-soft);">오늘 예정된 일이 없습니다.</div>`);
 

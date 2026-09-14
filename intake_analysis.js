@@ -8,7 +8,8 @@
 let iaCohort = null;
 let iaConfig = null;
 let iaRows = [];      // cageFeeding 기록
-let iaByCage = {};    // 케이지별 구간 (그래프용)
+let iaByCage = {};    // 케이지별 구간 (통계에 쓴 것만)
+let iaAllByCage = {}; // 케이지별 구간 (제외된 것까지 — 그래프는 회색 점으로 같이 보여준다)
 let iaCharts = {};    // 열어 둔 그래프
 let iaRats = [];      // 이 코호트 개체 (처치 시작일 계산용)
 let iaYMax = null;    // 케이지끼리 비교되게 세로축을 통일한다
@@ -321,14 +322,31 @@ function iaCageTable(usable) {
 
     iaByCage = byCage;      // 그래프에서 다시 쓴다
 
+    // 그래프는 제외 구간도 회색 점으로 그린다 — 값이 있으면 가로축에는 있어야
+    // "그날 기록이 없었다"와 "있었지만 뺐다"가 구분된다. 통계에는 여전히 안 들어간다.
+    iaAllByCage = {};
+    iaRows.forEach(r => {
+        if (typeof r.waterPerCapita !== 'number') return;
+        const c = String(r.cageId);
+        (iaAllByCage[c] = iaAllByCage[c] || []).push(r);
+    });
+
     // 케이지끼리 눈으로 비교할 수 있게 세로축을 하나로 통일한다.
     // 가장 큰 케이지에 맞추고 10% 여유를 준 뒤 보기 좋은 눈금으로 올린다.
+    // 제외 구간 값도 보이게 넣되, 누수 같은 터무니없는 값 하나가 모든 케이지의
+    // 눈금을 납작하게 만들지 않도록 사용 구간 최대의 2배까지만 따라간다.
     const round = (v, step) => Math.max(step, Math.ceil(v * 1.1 / step) * step);
-    let wMax = 0, fMax = 0;
+    let wMax = 0, fMax = 0, wOut = 0, fOut = 0;
     usable.forEach(r => {
         if (typeof r.waterPerCapita === 'number') wMax = Math.max(wMax, r.waterPerCapita);
         if (typeof r.foodPerCapita === 'number') fMax = Math.max(fMax, r.foodPerCapita);
     });
+    iaRows.filter(r => !iaUsable(r)).forEach(r => {
+        if (typeof r.waterPerCapita === 'number') wOut = Math.max(wOut, r.waterPerCapita);
+        if (typeof r.foodPerCapita === 'number') fOut = Math.max(fOut, r.foodPerCapita);
+    });
+    wMax = Math.max(wMax, Math.min(wOut, wMax * 2));
+    fMax = Math.max(fMax, Math.min(fOut, fMax * 2));
     iaYMax = { water: round(wMax, 10), food: round(fMax, 5) };
 
     const rows = keys.map(c => {
@@ -339,6 +357,14 @@ function iaCageTable(usable) {
         const doses = list.map(iaMetDose).filter(v => v !== null);   // list는 시간순 → 마지막이 최근
         const m = iaStat(doses);
         const latest = doses.length ? doses[doses.length - 1] : null;
+        // '최근'은 마지막 계산 가능 구간 하나다. 며칠짜리인지 화면만 봐서는 알 수 없어
+        // (주말이면 3일 치) 구간의 끝 날짜를 같이 적는다.
+        let latestRow = null;
+        for (let i = list.length - 1; i >= 0; i--) {
+            if (iaMetDose(list[i]) !== null) { latestRow = list[i]; break; }
+        }
+        const latestLabel = latestRow && latestRow.dateStr
+            ? `~${String(latestRow.dateStr).slice(5).replace('-', '/')}` : '최근';
         // 이 케이지 군의 목표 용량 — 최근 구간이 목표의 몇 %인지 보여준다.
         // 평균 ± 표준편차는 초기 사고 구간(과다·미달)이 섞여 폭만 커 보이고,
         // 지금 잘 맞고 있는지는 최근 구간이 말해준다.
@@ -352,7 +378,7 @@ function iaCageTable(usable) {
             <td style="padding:7px; text-align:center;">${f ? iaFmt(f, 1) : '-'}</td>
             <td style="padding:7px; text-align:center;">
                 ${latest !== null ? `
-                    <b style="color:var(--ink-blue);">최근 ${latest.toFixed(0)}</b>
+                    <b style="color:var(--ink-blue);">${latestLabel} ${latest.toFixed(0)}</b>
                     ${rule ? `<b style="color:${Math.abs(latest / Number(rule.value) - 1) <= 0.15 ? 'var(--approve)' : 'var(--red)'};">
                         (${(latest / Number(rule.value) * 100).toFixed(0)}%)</b>` : ''}
                     <br><span style="font-size:0.72rem; color:var(--ink-soft);">평균 ${iaFmt(m, 0)} · ${doses.length}구간</span>` : '-'}</td>
@@ -363,8 +389,8 @@ function iaCageTable(usable) {
             <td colspan="7" style="padding:10px 7px 16px; background:var(--paper);">
                 <div style="height:230px;"><canvas id="ia-chart-${c}"></canvas></div>
                 <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
-                    계산에 쓴 구간만 표시합니다. 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
-                    점선은 고염식·BAPN·메트포민이 들어간 날입니다.
+                    회색 속빈 점은 계산에서 뺀 구간입니다(선은 그 날을 건너뜁니다). 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
+                    위 점선은 고염식·BAPN·메트포민이 들어간 날, 아래 점선은 케이지 구성이 바뀐 날입니다.
                 </div>
             </td>
         </tr>`;
@@ -456,14 +482,15 @@ const iaEventPlugin = {
             if (x === null || x < area.left || x > area.right) return;
 
             ctx.save();
-            ctx.setLineDash([4, 3]);
+            ctx.setLineDash(ev.pos === 'bottom' ? [2, 3] : [4, 3]);
             ctx.strokeStyle = ev.color; ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
             ctx.setLineDash([]);
             ctx.fillStyle = ev.color;
             ctx.font = 'bold 10px sans-serif';
             ctx.textAlign = 'left';
-            ctx.fillText(' ' + ev.label, x + 1, area.top + 10);
+            // 투약 시작은 위에, 케이지 구성 변동은 아래에 — 같은 날이어도 글자가 겹치지 않는다
+            ctx.fillText(' ' + ev.label, x + 1, ev.pos === 'bottom' ? area.bottom - 4 : area.top + 10);
             ctx.restore();
         });
     }
@@ -486,37 +513,63 @@ function iaToggleChart(cageId) {
 }
 
 function iaDrawChart(cageId) {
-    const list = (iaByCage[cageId] || []).slice()
+    // 제외 구간까지 전부 가로축에 올린다. 통계에 쓴 값은 선으로 잇고,
+    // 뺀 값은 회색 속빈 점으로만 찍는다 — 선은 그 날을 건너뛰어 이어진다.
+    const list = (iaAllByCage[cageId] || iaByCage[cageId] || []).slice()
         .sort((a, b) => String(a.dateStr).localeCompare(String(b.dateStr)));
     const cv = document.getElementById('ia-chart-' + cageId);
     if (!cv || !list.length || typeof Chart === 'undefined') return;
     if (iaCharts[cageId]) iaCharts[cageId].destroy();
 
     const labels = list.map(r => r.dateStr);
-    const water = list.map(r => r.waterPerCapita);
-    const food = list.map(r => typeof r.foodPerCapita === 'number' ? r.foodPerCapita : null);
+    const used = list.map(iaUsable);
+    const hasFood = r => typeof r.foodPerCapita === 'number';
+    const water    = list.map((r, i) =>  used[i] ? r.waterPerCapita : null);
+    const waterOut = list.map((r, i) => !used[i] ? r.waterPerCapita : null);
+    const food     = list.map((r, i) =>  used[i] && hasFood(r) ? r.foodPerCapita : null);
+    const foodOut  = list.map((r, i) => !used[i] && hasFood(r) ? r.foodPerCapita : null);
+    const anyOut = waterOut.some(v => v !== null);
 
     const events = iaCageEvents(cageId);
+    // 케이지 구성이 바뀐 날(재실변동 · 사망발생)도 세로선으로 — 그 앞뒤는 같은 케이지가 아니다
+    list.forEach(r => {
+        const fl = r.flags || [];
+        if (fl.includes('재실변동')) events.push({ date: r.dateStr, label: '재실변동', color: '#5B5F66', pos: 'bottom' });
+        else if (fl.includes('사망발생')) events.push({ date: r.dateStr, label: '사망', color: '#5B5F66', pos: 'bottom' });
+    });
+    events.sort((a, b) => a.date.localeCompare(b.date));
+
+    const OUT = { showLine: false, pointRadius: 4, pointBorderWidth: 1.5,
+                  borderColor: '#9B9689', backgroundColor: '#FAF9F5' };   // 회색 테두리 · 백지 속
 
     iaCharts[cageId] = new Chart(cv.getContext('2d'), {
         type: 'line',
         plugins: [iaEventPlugin],
         data: { labels, datasets: [
             { label: '물 mL/마리·일', data: water, borderColor: '#00697a',
-              backgroundColor: '#00697a', tension: 0.25, yAxisID: 'y', pointRadius: 4 },
+              backgroundColor: '#00697a', tension: 0.25, yAxisID: 'y', pointRadius: 4, spanGaps: true },
             { label: '사료 g/마리·일', data: food, borderColor: '#b8860b',
               backgroundColor: '#b8860b', tension: 0.25, yAxisID: 'y1', pointRadius: 4,
-              borderDash: [5, 4], spanGaps: true }
+              borderDash: [5, 4], spanGaps: true },
+            ...(anyOut ? [
+            { label: '제외 구간', data: waterOut, yAxisID: 'y',  pointStyle: 'circle', ...OUT },
+            { label: '제외(사료)', data: foodOut, yAxisID: 'y1', pointStyle: 'rect',   ...OUT }
+            ] : [])
         ]},
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
                 iaEvents: { list: events },
-                legend: { labels: { boxWidth: 12, font: { size: 11 } } },
+                legend: { labels: { boxWidth: 12, font: { size: 11 },
+                                    filter: it => it.text !== '제외(사료)' } },   // 범례엔 '제외 구간' 하나만
                 tooltip: { callbacks: { afterBody: items => {
                     const r = list[items[0].dataIndex];
                     const parts = [];
+                    if (!iaUsable(r)) {
+                        const fl = (r.flags || []).filter(f => IA_DROP.includes(f));
+                        parts.push('통계 제외' + (fl.length ? ' · ' + fl.join(', ') : ' · 섭취량 미계산'));
+                    }
                     if (r.intervalHours) parts.push(`구간 ${r.intervalHours.toFixed(1)}h`);
                     if (typeof r.waterConsumed === 'number') parts.push(`섭취 ${r.waterConsumed.toFixed(1)} mL`);
                     if (r.animalDays) parts.push(`${r.animalDays.toFixed(2)} 마리·일`);
