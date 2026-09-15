@@ -335,7 +335,8 @@ function ciRenderList() {
 
 // ---------- 주말 물 예보 ----------
 // 제일 큰 물통으로 며칠 버티는지. 조제 카드와 같은 계산(global.js 공용).
-// 목·금에는 늘 보이고, 다른 날은 부족한 케이지가 있을 때만 — 그 외엔 자리를 차지하지 않는다.
+// 목·금에만 띄운다. 평일에는 대시보드 '마를 수 있음'(실제 잔량 기준)이 같은 판정을
+// 더 정확히 하므로 중복이 된다. 목·금은 "다 채워도 주말을 넘기나"라 질문이 다르다.
 function ciWeekendOutlookLine() {
     const list = [];
     ciCages.forEach(cage => {
@@ -346,7 +347,7 @@ function ciWeekendOutlookLine() {
     list.sort((a, b) => a.days - b.days);
     const short = list.filter(x => x.short);
     const wd = new Date((ciDate || getTodayStr()) + 'T00:00:00').getDay();
-    if (!short.length && wd !== 4 && wd !== 5) return '';
+    if (wd !== 4 && wd !== 5) return '';
     const fill = list[0].fill;
     const cell = x => `<span class="mono" style="display:inline-block; padding:2px 8px; background:var(--sheet);
         border:1px solid var(--ink); border-radius:2px; font-size:0.8rem; font-weight:600; color:#7A5C00;">${ciEsc(x.number)}번 ${x.days.toFixed(1)}일</span>`;

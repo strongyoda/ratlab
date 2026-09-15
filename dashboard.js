@@ -305,7 +305,10 @@ function dbTodo() {
     });
     weekend.sort((a, b) => a.days - b.days);
     const wd = new Date(today + 'T00:00:00').getDay();
-    const weekendDay = (wd === 4 || wd === 5);   // 목·금에는 늘 보이고, 다른 날은 부족한 케이지가 있을 때만
+    // 목·금에만 띄운다. 평일에는 아래 dbIntakeIssues 의 '마를 수 있음'이 통에 실제로 남은
+    // 양으로 같은 판정을 더 정확하게 하므로, 같이 띄우면 한 케이지가 두 번 뜬다.
+    // 목·금은 질문이 다르다 — "다 채워도 주말을 넘기나"라서 둘 다 볼 값어치가 있다.
+    const weekendDay = (wd === 4 || wd === 5);
 
     return { pending, usedCount: used.length, doneCount: doneToday.size, doseToday, doseSoon, evMr, evBp, weekend, weekendDay };
 }
@@ -354,7 +357,7 @@ function dbTodoCard(t) {
 
     if (t.weekend && t.weekend.length) {
         const short = t.weekend.filter(w => w.short);
-        if (short.length || t.weekendDay) {
+        if (t.weekendDay) {
             const fill = t.weekend[0].fill;
             rows.push(`
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -717,9 +720,13 @@ function dbIntakeIssues() {
             const recent = src.reduce((a, b) => a + b.waterPerCapita, 0) / src.length;
             const need = recent * occ * gap;
             const have = Number(latest.waterGiven) || 0;
+            // 물을 안 간 날은 waterGiven 이 '채운 양'이 아니라 '통에 남아 있던 양'이다.
+            // 그 물로 다음 방문까지 버텨야 하는 건 같으므로 판정은 그대로 두고 말만 바꾼다.
+            const kept = (latest.noWater !== undefined && latest.noWater !== null)
+                ? !!latest.noWater : !!latest.noRefill;
             if (have > 0 && need > have * 0.9) out.push({ n: cage.number, kind: dow === 5 ? 'bad' : 'warn',
-                msg: `${gap}일치 예상 ${need.toFixed(0)} mL > 채운 ${have.toFixed(1)} mL — 마를 수 있음`,
-                span: `${latest.dateStr} 채움 · 마리당 ${recent.toFixed(1)} mL/day × ${occ}마리 × ${gap}일`,
+                msg: `${gap}일치 예상 ${need.toFixed(0)} mL > ${kept ? '남은' : '채운'} ${have.toFixed(1)} mL — 마를 수 있음`,
+                span: `${latest.dateStr} ${kept ? '잔량 확인(물 안 감)' : '채움'} · 마리당 ${recent.toFixed(1)} mL/day × ${occ}마리 × ${gap}일`,
                 base: `추정에 쓴 값 : ${src.map(r => r.waterPerCapita.toFixed(1)).join(' · ')}` });
         }
     });
