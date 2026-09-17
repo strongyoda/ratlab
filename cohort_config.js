@@ -412,7 +412,7 @@ function cfgDosingCard(c) {
                     <div style="display:flex; align-items:center; gap:5px;">
                         <input type="number" step="0.05" min="1" value="${d.gainCap || 1}" onchange="cfgSetDose(${i},'gainCap',this.value)"
                                style="width:72px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
-                        <span style="font-size:0.8rem; color:var(--ink-soft);">배 · 1 = 보정 없음 · 1.5면 최악 구간 ≈ 목표 1.6배</span>
+                        <span style="font-size:0.8rem; color:var(--ink-soft);">배 · 1 = 보정 없음 · 파일럿 시뮬: 1.5 → 최악 ≈243 mg, 1.7 → ≈276 mg (목표 150 기준)</span>
                     </div>
                 </div>
                 <div>

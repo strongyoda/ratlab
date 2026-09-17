@@ -432,7 +432,18 @@ function dbPrep() {
         const rampDays = Number(rule.rampDays) || 0;
         const rampActive = rampDays > 0 && occ.some(r => {
             const s = dbDateOf(r.surgeryDate); return s && dbDiffDays(s, today) < rampDays; });
-        const gi = doseGainFor(rows, rule, { windowDays: Number((cfg.housing || {}).doseWindowDays) || 14, today, rampActive });
+        // 오늘 BP/MR 이 예정된 케이지는 반동 대비로 이득 없이 조제 (케이지별 입력과 같은 판정).
+        // 도착 시 물통 바닥은 여기서 알 수 없다 — 그 경우 케이지별 입력이 이득을 빼므로
+        // 여기서 만든 원액이 남을 뿐, 모자라지는 않는다.
+        const tps = cfg.timepoints || {};
+        const handlingToday = occ.some(r => {
+            const surg = dbDateOf(r.surgeryDate); if (!surg) return false;
+            return ['mr', 'bp'].some(kind => (tps[kind] || []).some(tp => {
+                const d = dbTpDays(tp); return d !== null && dbShift(surg, d) === today; }));
+        });
+        const hold = rampActive ? '결찰 직후 램프 구간 — 보정 유예'
+                   : handlingToday ? '오늘 BP/MR 예정 — 반동 구간 대비 유예' : null;
+        const gi = doseGainFor(rows, rule, { windowDays: Number((cfg.housing || {}).doseWindowDays) || 14, today, hold });
 
         // 필요 약물량은 채우는 물의 양에 정비례한다. 물양을 정하지 않고 계수만 모아둔다.
         // 예측 섭취량이 비정상적으로 낮은 케이지(거부·질병)는 계수가 폭주하므로

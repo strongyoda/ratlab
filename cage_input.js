@@ -1519,9 +1519,16 @@ function ciUpdateDose() {
         return s ? Math.round((new Date(todayStr + 'T00:00:00') - new Date(s + 'T00:00:00')) / 864e5) : null; };
     const rampDays = Number(rule.rampDays) || 0;
     const rampActive = rampDays > 0 && alive.some(r => { const p = podOf(r); return p !== null && p < rampDays; });
+    // 이번에 채운 물이 반동 구간에 마셔질 채움이면 이득을 얹지 않는다 (global.js doseGainFor 주석).
+    // 플래그는 오늘 폼의 것, 잔량은 도착해서 잰 값 — 둘 다 이 화면만 안다. 대시보드는 예정된 BP/MR로만 판정한다.
+    const handlingToday = (ciForm.flags || []).some(f => ['BP일', '처치일', '수술일'].includes(f));
+    const ranDry = ciForm.waterRemaining !== '' && Number(ciForm.waterRemaining) < 30;
+    const hold = rampActive    ? '결찰 직후 램프 구간 — 보정 유예'
+               : handlingToday ? 'BP·처치·수술일 채움 — 반동 구간 대비 유예'
+               : ranDry        ? '도착 시 물통 바닥 — 반동 구간 대비 유예' : null;
     const gi = doseGainFor(ciCageRows[ciCurrent], rule, {
         windowDays: (ciConfig && ciConfig.housing && Number(ciConfig.housing.doseWindowDays)) || 14,
-        today: todayStr, rampActive });
+        today: todayStr, hold });
     const targetValue = Number(rule.value) * gi.gain;
 
     // 물통 안 총 부피 = 물 + 넣을 원액. 약도 그 안에 녹아 있으므로 농도는 총 부피 기준이다.

@@ -515,8 +515,11 @@ function recentWaterPc(rows, opts) {
 // 최근 구간에서 덜 들어간 만큼을 다음 농도에 얹되, 상한(rule.gainCap)으로 묶는다 —
 // 상한 × 최대 초과폭이 최악 구간을 정하므로 이 숫자가 곧 안전 천장이다
 // (파일럿 시뮬: 10일 창 + 상한 1.5 → 안정기 142 mg, 최악 243 mg, 250 초과 0건).
-// 결찰 직후 램프(rule.rampDays 안)는 보정하지 않는다 — 그 구간은 섭취가 몇 배로 뛰어
-// 보정 없이도 150%까지 가므로, 여기에 이득까지 얹으면 3배 사건이 재현된다.
+// 이득을 얹으면 안 되는 채움이 있다(opts.hold 에 사유를 넘기면 이득 1로 간다):
+//  · 결찰 직후 램프(rule.rampDays 안) — 섭취가 몇 배로 뛰어 보정 없이도 150%까지 간다
+//  · BP·처치·수술일 채움 — 다음 구간에 몰아 마신다(파일럿 BP 다음 1.9배). 여기에 1.7을 곱하면 485 mg
+//  · 도착 시 물통이 바닥나 있던 채움 — 갈증 반동이 온다(파일럿 1.4배)
+// 셋 다 '이번에 채운 물이 반동 구간에 마셔진다'는 뜻이라, 이득 없이 최댓값 규칙만으로 간다.
 // 달성률은 케이지 기준: 구간 시작 시점의 물통 농도 × 마신 양 ÷ 케이지 총체중 ÷ 마리·일.
 // 물 안 간 날은 직전 농도가 그대로 남아 있다 (intake_analysis 와 같은 추적).
 function doseGainFor(rows, rule, opts) {
@@ -524,7 +527,7 @@ function doseGainFor(rows, rule, opts) {
     const cap = Number(rule && rule.gainCap) || 1;
     const none = why => ({ gain: 1, cap, deficitDays: 0, n: 0, why });
     if (!(cap > 1)) return none('보정 없음');
-    if (o.rampActive) return none('결찰 직후 램프 구간 — 보정 유예');
+    if (o.hold) return none(o.hold);
     const target = Number(rule.value) || 0;
     if (!(target > 0) || !rows || !rows.length) return none('기록 없음');
 
