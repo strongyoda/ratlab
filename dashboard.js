@@ -424,8 +424,15 @@ function dbPrep() {
         // 주말 구간을 한쪽만 넣으면 두 화면의 '오늘 만들 원액'이 갈린다.
         const rows = feeds.filter(f => String(f.cageId) === String(cage.id))
             .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
-        const pc = recentWaterPc(rows) ?? recentWaterPc(rows, { includeWeekend: true });
+        const winOpt = { windowDays: Number((cfg.housing || {}).doseWindowDays) || 0, today };
+        const pc = recentWaterPc(rows, winOpt) ?? recentWaterPc(rows, Object.assign({ includeWeekend: true }, winOpt));
         const bw = (lastFeed[String(cage.id)] || {}).sumBW;
+
+        // 부족분 이득 보정 — 케이지별 입력과 같은 함수·같은 입력이어야 두 화면의 원액이 같다
+        const rampDays = Number(rule.rampDays) || 0;
+        const rampActive = rampDays > 0 && occ.some(r => {
+            const s = dbDateOf(r.surgeryDate); return s && dbDiffDays(s, today) < rampDays; });
+        const gi = doseGainFor(rows, rule, { windowDays: Number((cfg.housing || {}).doseWindowDays) || 14, today, rampActive });
 
         // 필요 약물량은 채우는 물의 양에 정비례한다. 물양을 정하지 않고 계수만 모아둔다.
         // 예측 섭취량이 비정상적으로 낮은 케이지(거부·질병)는 계수가 폭주하므로
@@ -433,7 +440,7 @@ function dbPrep() {
         const maxFill = Math.max(...(fillOptions(housing).length ? fillOptions(housing) : [700]));
         const item = { number: cage.number, n: occ.length, pc, bw };
         if (pc && bw && pcUsableForPrep(pc, occ.length, maxFill)) {
-            item.k = Number(rule.value) * (bw / 1000) / (pc * occ.length);
+            item.k = Number(rule.value) * gi.gain * (bw / 1000) / (pc * occ.length);
             known.push(item);
         } else unknown.push(item);
     });

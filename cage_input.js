@@ -274,8 +274,10 @@ async function ciLoadHistory() {
 
         // 예상 섭취량은 '마리당'으로 기억 → 합치거나 죽어도 어긋나지 않음.
         // 대시보드와 같은 값을 써야 '오늘 만들 원액'이 두 곳에서 갈리지 않는다.
-        const weekday = recentWaterPc(rows);
-        const any = recentWaterPc(rows, { includeWeekend: true });
+        const winOpt = { windowDays: (ciConfig && ciConfig.housing && Number(ciConfig.housing.doseWindowDays)) || 0,
+                         today: todayStr };
+        const weekday = recentWaterPc(rows, winOpt);
+        const any = recentWaterPc(rows, Object.assign({ includeWeekend: true }, winOpt));
         if (weekday !== null) ciRecentPc[cage.id] = weekday;
         if (any !== null) ciRecentPcAny[cage.id] = any;
     });
@@ -1511,16 +1513,28 @@ function ciUpdateDose() {
     // 예상 섭취량은 '마리당 × 앞으로 남는 마리수' → 합치거나 죽어도 자동으로 맞음
     const expectedIntake = expectedPc * alive.length;
 
+    // 부족분 이득 보정 (global.js doseGainFor). 결찰 후 rule.rampDays 안이면 유예.
+    const todayStr = ciDate || getTodayStr();
+    const podOf = r => { const s = ciDateStr(r.surgeryDate);
+        return s ? Math.round((new Date(todayStr + 'T00:00:00') - new Date(s + 'T00:00:00')) / 864e5) : null; };
+    const rampDays = Number(rule.rampDays) || 0;
+    const rampActive = rampDays > 0 && alive.some(r => { const p = podOf(r); return p !== null && p < rampDays; });
+    const gi = doseGainFor(ciCageRows[ciCurrent], rule, {
+        windowDays: (ciConfig && ciConfig.housing && Number(ciConfig.housing.doseWindowDays)) || 14,
+        today: todayStr, rampActive });
+    const targetValue = Number(rule.value) * gi.gain;
+
     // 물통 안 총 부피 = 물 + 넣을 원액. 약도 그 안에 녹아 있으므로 농도는 총 부피 기준이다.
     // needMg = k × (물 + needMg/원액농도)  →  풀면 아래.  (원액 부피를 빼먹으면 약 1% 적게 들어간다)
-    const k = Number(rule.value) * (sumBW / 1000) / expectedIntake;
+    const k = targetValue * (sumBW / 1000) / expectedIntake;
     const needMg = (k < stock) ? (k * fill) / (1 - k / stock)
-                               : Number(rule.value) * (sumBW / 1000) * (fill / expectedIntake);
+                               : targetValue * (sumBW / 1000) * (fill / expectedIntake);
     const cc = needMg / stock;
     const totalVol = fill + cc;
     ciForm._doseCc = Number(cc.toFixed(1));
     ciForm._doseMg = Number(needMg.toFixed(1));
     ciForm._stockConc = stock;
+    ciForm._doseGain = gi.gain;
 
     const deadNow = occ.length - alive.length;
     const partial = started.filter(r => !((ciForm.rats && ciForm.rats[r.ratId]) || {}).dead).length !== alive.length;
@@ -1531,7 +1545,9 @@ function ciUpdateDose() {
             물 ${fill.toFixed(0)} mL + ${ciEsc(rule.substance)} 원액 <span style="color:var(--stock-canary);">${cc.toFixed(1)} cc</span>
         </div>
         <div style="font-size:0.75rem; opacity:0.88;">
-            총체중 <span class="mono">${sumBW.toFixed(0)}</span>g · 목표 <span class="mono">${rule.value}</span> mg/kg/day · 필요 <span class="mono">${needMg.toFixed(0)}</span>mg
+            총체중 <span class="mono">${sumBW.toFixed(0)}</span>g · 목표 <span class="mono">${rule.value}</span> mg/kg/day${gi.gain > 1
+                ? ` × 이득 <span class="mono" style="color:var(--stock-canary);">${gi.gain.toFixed(2)}</span> = <span class="mono">${targetValue.toFixed(0)}</span><span style="opacity:0.8;"> (${ciEsc(gi.why)}, 상한 ${gi.cap})</span>`
+                : (gi.cap > 1 ? `<span style="opacity:0.8;"> · 이득 1.00 (${ciEsc(gi.why)})</span>` : '')} · 필요 <span class="mono">${needMg.toFixed(0)}</span>mg
             · 예상섭취 <span class="mono">${expectedIntake.toFixed(0)}</span>mL<span style="opacity:0.8;"> (${pcSource})</span>
             · 채우는 물은 <b class="mono">${daysWorth.toFixed(1)}일치</b>${daysWorth > 5 ? ' ⚠' : ''}
             · 원액 <span class="mono">${stock}</span>mg/mL · 통 안 총량 <span class="mono">${totalVol.toFixed(0)}</span>mL
@@ -1746,6 +1762,7 @@ async function ciSave() {
         // 투약량도 항상 이번 화면이 계산한 값으로 쓴다 (0이면 0으로 — 낡은 값 잔존 방지)
         feed.doseCc = Number(ciForm._doseCc) || 0;
         feed.doseMg = Number(ciForm._doseMg) || 0;
+        feed.doseGain = feed.doseCc > 0 ? (Number(ciForm._doseGain) || 1) : null;   // 부족분 보정 배수 (1 = 없음)
         feed.stockConc = feed.doseCc > 0 ? (ciForm._stockConc || null) : null;
         // 예상 섭취량을 손으로 넣었으면 남긴다 — 나중에 이상값을 만났을 때 판단 근거가 된다
         feed.manualPerCapita = Number(ciForm.manualPc) > 0 ? Number(ciForm.manualPc) : null;

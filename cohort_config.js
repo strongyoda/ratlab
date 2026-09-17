@@ -31,7 +31,7 @@ function cfgDefaultConfig(cohort) {
         // (가장 최근 코호트 설정이 있으면 cfgCreateNew에서 그 값을 물려받는다)
         housing: { ratsPerCage: 3, cageCount: 24, waterFill: 500, waterFillLong: 700,
                    foodFill: 250, bottleCount: 1,
-                   bottleTare: 0, evapPerHour: 0.0625, lossPerHandling: 1.36 },
+                   bottleTare: 0, evapPerHour: 0.0625, lossPerHandling: 1.36, doseWindowDays: 14 },
         dosing: [
             { substance: 'NaCl',      medium: 'food',  mode: 'percent',    value: 8,
               groups: ['G0', 'G1', 'G2'], startAnchor: 'ovx',      startOffset: 0,
@@ -135,7 +135,7 @@ async function cfgCreateNew() {
         if (prev) {
             const h = prev.data().housing;
             // 케이지 수·마리수는 실험 규모라 코호트마다 다르므로 물려받지 않는다
-            ['waterFill', 'waterFillLong', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling']
+            ['waterFill', 'waterFillLong', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling', 'doseWindowDays']
                 .forEach(k => { if (h[k] !== undefined && h[k] !== null) cfgDraft.housing[k] = h[k]; });
             inherited = prev.id;
         }
@@ -328,6 +328,7 @@ function cfgHousingCard(c) {
         <div style="display:flex; gap:15px; flex-wrap:wrap;">
             ${num('evapPerHour',     '증발량',      'g/시간', '안 건드리고 뒀을 때 시간당')}
             ${num('lossPerHandling', '탈착 로스',   'g/회',   '물통 뺐다 끼우기 1회당')}
+            ${num('doseWindowDays',  '농도 기준 창', '일',     '최근 며칠의 최대 섭취로 농도를 정할지. 기본 14, 8 미만 금지')}
         </div>
         ${(!Number(h.evapPerHour) && !Number(h.lossPerHandling)) ? `
         <div style="margin-top:10px; padding:8px 10px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; font-size:0.82rem; color:#7a5c00;">
@@ -403,6 +404,27 @@ function cfgDosingCard(c) {
             </div>
 
             ${concBlock}
+
+            ${isWater ? `
+            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--rule); display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
+                <div>
+                    <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">부족분 보정 상한</div>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <input type="number" step="0.05" min="1" value="${d.gainCap || 1}" onchange="cfgSetDose(${i},'gainCap',this.value)"
+                               style="width:72px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                        <span style="font-size:0.8rem; color:var(--ink-soft);">배 · 1 = 보정 없음 · 1.5면 최악 구간 ≈ 목표 1.6배</span>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">램프 유예</div>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <span style="font-size:0.85rem; color:var(--ink-soft);">결찰 후</span>
+                        <input type="number" value="${d.rampDays || 0}" onchange="cfgSetDose(${i},'rampDays',this.value)"
+                               style="width:64px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                        <span style="font-size:0.8rem; color:var(--ink-soft);">일 동안은 보정 안 함 (급성기 과다투여 방지)</span>
+                    </div>
+                </div>
+            </div>` : ''}
 
             <div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--rule);">
                 <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">적용 군</div>
@@ -505,7 +527,7 @@ function cfgToggleTimepoint(kind, tp, on) {
 function cfgSetHousing(key, val) { cfgDraft.housing[key] = Number(val); cfgMarkDirty(); }
 
 function cfgSetDose(i, key, val) {
-    const numeric = ['value', 'stockConc', 'startOffset', 'endOffset'];
+    const numeric = ['value', 'stockConc', 'startOffset', 'endOffset', 'gainCap', 'rampDays'];
     cfgDraft.dosing[i][key] = numeric.includes(key) ? Number(val) : val;
     cfgMarkDirty();
     if (key === 'value' || key === 'endAnchor') cfgRenderBody();

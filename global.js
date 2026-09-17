@@ -494,11 +494,70 @@ function rowSpansWeekend(row) {
 //
 //  · 이상 플래그가 붙은 구간은 뺀다
 //  · 주말이 낀 구간은 밤낮 비중이 달라 마리당 값이 왜곡되므로 기본에서 뺀다
+//  · opts.windowDays 를 주면 오늘로부터 그 일수 안의 구간만 본다 (코호트 설정 housing.doseWindowDays).
+//    최댓값이 한 번 걸리면 창 길이만큼 안 풀린다 — 파일럿에서 14일 창은 급성기 피크(329)를
+//    2주 내내 기억해 그 케이지가 30%만 받았다. 10일이면 같은 안전성(램프 최악 232 mg 동일)에
+//    회복이 2~5일 빠르다. 7일은 결찰일 스파이크를 놓쳐 램프에서 993 mg — 절벽이 있으니 8일 미만 금지.
 function recentWaterPc(rows, opts) {
-    const clean = (rows || []).filter(r => !(r.flags || []).length
+    const o = opts || {};
+    let clean = (rows || []).filter(r => !(r.flags || []).length
         && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0);
-    const list = (opts && opts.includeWeekend) ? clean : clean.filter(r => !rowSpansWeekend(r));
+    const win = Number(o.windowDays);
+    if (win > 0 && o.today) {
+        const t = new Date(o.today + 'T00:00:00').getTime();
+        clean = clean.filter(r => r.dateStr && (t - new Date(r.dateStr + 'T00:00:00').getTime()) / 864e5 <= win);
+    }
+    const list = o.includeWeekend ? clean : clean.filter(r => !rowSpansWeekend(r));
     return list.length ? Math.max(...list.map(r => r.waterPerCapita)) : null;
+}
+
+// 부족분 이득 보정. 최댓값 기준은 구조적으로 목표의 70~80%만 전달한다(실제/최대 < 1).
+// 최근 구간에서 덜 들어간 만큼을 다음 농도에 얹되, 상한(rule.gainCap)으로 묶는다 —
+// 상한 × 최대 초과폭이 최악 구간을 정하므로 이 숫자가 곧 안전 천장이다
+// (파일럿 시뮬: 10일 창 + 상한 1.5 → 안정기 142 mg, 최악 243 mg, 250 초과 0건).
+// 결찰 직후 램프(rule.rampDays 안)는 보정하지 않는다 — 그 구간은 섭취가 몇 배로 뛰어
+// 보정 없이도 150%까지 가므로, 여기에 이득까지 얹으면 3배 사건이 재현된다.
+// 달성률은 케이지 기준: 구간 시작 시점의 물통 농도 × 마신 양 ÷ 케이지 총체중 ÷ 마리·일.
+// 물 안 간 날은 직전 농도가 그대로 남아 있다 (intake_analysis 와 같은 추적).
+function doseGainFor(rows, rule, opts) {
+    const o = opts || {};
+    const cap = Number(rule && rule.gainCap) || 1;
+    const none = why => ({ gain: 1, cap, deficitDays: 0, n: 0, why });
+    if (!(cap > 1)) return none('보정 없음');
+    if (o.rampActive) return none('결찰 직후 램프 구간 — 보정 유예');
+    const target = Number(rule.value) || 0;
+    if (!(target > 0) || !rows || !rows.length) return none('기록 없음');
+
+    const asc = rows.slice().sort((a, b) => String(a.dateStr).localeCompare(String(b.dateStr))
+        || ((a.at?.toMillis?.() || 0) - (b.at?.toMillis?.() || 0)));
+    const win = Number(o.windowDays) || 14;
+    const t0 = o.today ? new Date(o.today + 'T00:00:00').getTime() : Date.now();
+
+    let conc = 0, deficit = 0, n = 0;
+    asc.forEach(r => {
+        // 이 구간에 마신 물의 농도 = 직전 방문이 끝났을 때의 통 농도
+        const cAtStart = conc;
+        const kept = (r.noWater !== undefined && r.noWater !== null) ? !!r.noWater : !!r.noRefill;
+        if (!kept && Number(r.waterGiven) > 0) {
+            const totalVol = (typeof r.fillWater === 'number') ? Number(r.waterGiven)
+                                                               : Number(r.waterGiven) + (Number(r.doseCc) || 0);
+            conc = (Number(r.doseMg) || 0) / totalVol;
+        }
+        const age = (t0 - new Date(String(r.dateStr) + 'T00:00:00').getTime()) / 864e5;
+        if (age > win || age < 0) return;
+        if ((r.flags || []).length || rowSpansWeekend(r)) return;
+        if (!(cAtStart > 0) || !(r.waterConsumed > 0) || !(r.sumBW > 0) || !(r.animalDays > 0)) return;
+        const days = r.animalDays / (r.ratCount || 1);
+        const achieved = cAtStart * r.waterConsumed / (r.sumBW / 1000) / days / target;   // 1 = 목표
+        deficit += days * (1 - achieved);      // 넘친 구간은 부족분을 깎는다 (순부족)
+        n++;
+    });
+    if (!n) return none('달성률을 낼 구간이 없음');
+    deficit = Math.max(0, deficit);
+    // 부족분을 다음 하루에 얹는다. 상한이 최악 구간을 묶으므로 빨리 갚아도 안전 범위는 같다.
+    const gain = Math.min(cap, 1 + deficit);
+    return { gain: Number(gain.toFixed(2)), cap, deficitDays: Number(deficit.toFixed(2)), n,
+             why: gain > 1 ? `최근 ${n}구간 부족분 ${deficit.toFixed(1)}일치` : `최근 ${n}구간 부족분 없음` };
 }
 
 // 채울 수 있는 물의 양 후보. 평일 구간과 긴 구간(주말·연휴 앞)의 두 가지다.
@@ -511,9 +570,9 @@ function fillOptions(housing) {
 }
 
 // 물통이 며칠 버티는지 (주말 물 예보). 케이지별 입력과 대시보드가 같은 값을 쓴다.
-// 기준은 최근 클린 평일 구간의 '중앙값' — 농도를 정하는 최댓값과 일부러 다르다.
-// 농도는 과다투여를 막으려 최대를 쓰지만, 물이 언제 마를지는 보통 마시는 양이 맞다.
-// (바닥난 주말 다음날의 반동 값 하나가 최대에 걸리면 모든 케이지가 "부족"으로 보인다)
+// 기준은 최근 클린 평일 3구간의 '평균' — 대시보드 「마를 수 있음」과 같은 통계다.
+// 중앙값을 쓰던 때 28번이 월→수 실측 2.3일을 2.8일로 예보했다: 바닥나서 잘린 181.8을
+// 중앙값이 걸러버린 탓. 바닥난 구간의 값은 반동이 아니라 하한이라 걸러내면 안 된다.
 // 달력은 보지 않는다 — 채움량으로 며칠인지만 계산하고, 오늘이 금요일인지는 사람이 안다.
 const OUTLOOK_MIN_DAYS = 3;   // 금요일 오후 → 월요일 오전 ≈ 2.8일. 이보다 짧으면 주말을 못 넘긴다
 function weekendWaterOutlook(rows, n, housing) {
@@ -521,12 +580,12 @@ function weekendWaterOutlook(rows, n, housing) {
         && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0 && !rowSpansWeekend(r))
         .slice().sort((a, b) => String(b.dateStr).localeCompare(String(a.dateStr)));   // 최신순
     if (clean.length < 2 || !(n > 0)) return null;
-    const v = clean.slice(0, 5).map(r => r.waterPerCapita).sort((a, b) => a - b);
-    const mid = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+    const v = clean.slice(0, 3).map(r => r.waterPerCapita);
+    const pc = v.reduce((a, b) => a + b, 0) / v.length;
     const opts = fillOptions(housing);
     const fill = Math.max(...(opts.length ? opts : [700]));   // 제일 큰 물통 기준
-    const days = fill / (mid * n);
-    return { pc: mid, fill, days, short: days < OUTLOOK_MIN_DAYS };
+    const days = fill / (pc * n);
+    return { pc, fill, days, short: days < OUTLOOK_MIN_DAYS };
 }
 
 // 조제 어림에서 케이지 하나의 예측 섭취량이 너무 낮으면 (채우는 물이 7일치를
