@@ -548,7 +548,12 @@ function doseGainFor(rows, rule, opts) {
         }
         const age = (t0 - new Date(String(r.dateStr) + 'T00:00:00').getTime()) / 864e5;
         if (age > win || age < 0) return;
-        if ((r.flags || []).length || rowSpansWeekend(r)) return;
+        // 주말이 낀 구간도 장부에는 넣는다. 마리당 섭취량은 밤낮 비중이 달라 왜곡되지만
+        // (그래서 recentWaterPc 의 기준값에서는 여전히 뺀다), 여기서 쓰는 도달량은
+        // '농도 × 실제 마신 양 ÷ 체중 ÷ 마리·일'이라 구간이 길어도 정확하다.
+        // 빼두면 주 2회꼴(금→월)로 부족분이 통째로 사라져 이득이 실제보다 빨리 풀린다.
+        // (2026-09-21 사용자 결정)
+        if ((r.flags || []).length) return;
         if (!(cAtStart > 0) || !(r.waterConsumed > 0) || !(r.sumBW > 0) || !(r.animalDays > 0)) return;
         const days = r.animalDays / (r.ratCount || 1);
         const achieved = cAtStart * r.waterConsumed / (r.sumBW / 1000) / days / target;   // 1 = 목표
