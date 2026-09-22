@@ -260,6 +260,11 @@ function iaRender() {
             <div style="font-size:0.78rem; color:var(--ink-soft); margin-top:8px;">
                 실제 마신 물의 양으로 역산한 값입니다. 목표에서 15% 이상 벗어나면 빨갛게 표시됩니다.
             </div>
+            <div style="height:230px; margin-top:14px;"><canvas id="ia-met-chart"></canvas></div>
+            <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
+                선은 군의 케이지 평균, 옅은 띠는 그날 케이지들의 최소~최대입니다.
+                띠가 넓으면 같은 군 안에서도 케이지마다 들어간 양이 달랐다는 뜻입니다.
+            </div>
         </div>`;
     }
 
@@ -298,6 +303,93 @@ function iaRender() {
     </div>
 
     ${iaCageTable(usable)}`;
+
+    // 표를 그린 뒤에 캔버스가 생기므로 그래프는 여기서 그린다
+    iaDrawMetGroupChart(usable);
+}
+
+// ---------- 메트포민(물 투약) 그래프 ----------
+// 물·사료와 같은 그림에 겹치면 세로축이 셋이 되어 못 읽는다.
+// 그래서 군 단위는 이 카드에, 케이지 단위는 케이지 그래프 아래에 따로 그린다.
+const IA_MET_COLORS = ['#00697a', '#b8860b', '#7b5aa6', '#c0504d', '#4a7c59'];
+let iaMetChart = null;
+
+// 이 군에 적용되는 물 투약 규칙
+function iaWaterRuleOf(gkey) {
+    return ((iaConfig && iaConfig.dosing) || [])
+        .find(d => d.medium === 'water' && (d.groups || []).includes(gkey) && Number(d.value) > 0) || null;
+}
+
+function iaDrawMetGroupChart(usable) {
+    const cv = document.getElementById('ia-met-chart');
+    if (!cv || typeof Chart === 'undefined') return;
+    if (iaMetChart) { iaMetChart.destroy(); iaMetChart = null; }
+
+    // 군 → 날짜 → 그날 케이지들의 도달 용량
+    const byGroup = {};
+    usable.forEach(r => {
+        const md = iaMetDose(r);
+        if (md === null) return;
+        const g = iaGroupOf(r);
+        byGroup[g] = byGroup[g] || {};
+        (byGroup[g][r.dateStr] = byGroup[g][r.dateStr] || []).push(md);
+    });
+    const groups = Object.keys(byGroup).sort();
+    if (!groups.length) { cv.parentElement.style.display = 'none'; return; }
+
+    const labels = [...new Set(usable.map(r => r.dateStr))].sort()
+        .filter(d => groups.some(g => byGroup[g][d]));
+    if (labels.length < 2) { cv.parentElement.style.display = 'none'; return; }
+
+    const datasets = [];
+    let target = null;
+    groups.forEach((g, i) => {
+        const col = IA_MET_COLORS[i % IA_MET_COLORS.length];
+        const at = d => byGroup[g][d] || null;
+        const mean = labels.map(d => { const v = at(d); return v ? v.reduce((a, b) => a + b, 0) / v.length : null; });
+        const hi = labels.map(d => { const v = at(d); return v && v.length > 1 ? Math.max(...v) : null; });
+        const lo = labels.map(d => { const v = at(d); return v && v.length > 1 ? Math.min(...v) : null; });
+        const rule = iaWaterRuleOf(g);
+        if (rule && target === null) target = Number(rule.value);
+        // 케이지가 둘 이상인 군만 최소~최대 띠를 깐다 (한 케이지면 선과 겹쳐 의미가 없다)
+        if (hi.some(v => v !== null)) {
+            datasets.push({ label: '_hi' + g, data: hi, borderColor: 'transparent',
+                backgroundColor: col + '26', pointRadius: 0, fill: '+1', tension: 0.2, spanGaps: true });
+            datasets.push({ label: '_lo' + g, data: lo, borderColor: 'transparent',
+                backgroundColor: 'transparent', pointRadius: 0, fill: false, tension: 0.2, spanGaps: true });
+        }
+        datasets.push({ label: iaGroupName(g), data: mean, borderColor: col, backgroundColor: col,
+            borderWidth: 2, pointRadius: 3, tension: 0.2, spanGaps: true });
+    });
+    if (target) datasets.push({ label: `목표 ${target}`, data: labels.map(() => target),
+        borderColor: '#5B5F66', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false });
+
+    cv.parentElement.style.display = '';
+    iaMetChart = new Chart(cv.getContext('2d'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { labels: { boxWidth: 12, font: { size: 11 },
+                                    filter: it => !String(it.text).startsWith('_') } },
+                tooltip: { filter: it => !String(it.dataset.label).startsWith('_'),
+                           callbacks: { afterBody: items => {
+                               const d = labels[items[0].dataIndex];
+                               return groups.map(g => {
+                                   const v = byGroup[g][d];
+                                   return v ? `${iaGroupName(g)} 케이지 ${v.length}개` : null;
+                               }).filter(Boolean).join(' · ');
+                           } } }
+            },
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: 'mg/kg·일' },
+                     grid: { color: '#f0f0f0' } },
+                x: { grid: { display: false }, ticks: { font: { size: 10 } } }
+            }
+        }
+    });
 }
 
 function iaExcludeReasons() {
@@ -336,18 +428,21 @@ function iaCageTable(usable) {
     // 제외 구간 값도 보이게 넣되, 누수 같은 터무니없는 값 하나가 모든 케이지의
     // 눈금을 납작하게 만들지 않도록 사용 구간 최대의 2배까지만 따라간다.
     const round = (v, step) => Math.max(step, Math.ceil(v * 1.1 / step) * step);
-    let wMax = 0, fMax = 0, wOut = 0, fOut = 0;
+    let wMax = 0, fMax = 0, mMax = 0, wOut = 0, fOut = 0, mOut = 0;
     usable.forEach(r => {
         if (typeof r.waterPerCapita === 'number') wMax = Math.max(wMax, r.waterPerCapita);
         if (typeof r.foodPerCapita === 'number') fMax = Math.max(fMax, r.foodPerCapita);
+        const md = iaMetDose(r); if (md !== null) mMax = Math.max(mMax, md);
     });
     iaRows.filter(r => !iaUsable(r)).forEach(r => {
         if (typeof r.waterPerCapita === 'number') wOut = Math.max(wOut, r.waterPerCapita);
         if (typeof r.foodPerCapita === 'number') fOut = Math.max(fOut, r.foodPerCapita);
+        const md = iaMetDose(r); if (md !== null) mOut = Math.max(mOut, md);
     });
     wMax = Math.max(wMax, Math.min(wOut, wMax * 2));
     fMax = Math.max(fMax, Math.min(fOut, fMax * 2));
-    iaYMax = { water: round(wMax, 10), food: round(fMax, 5) };
+    mMax = Math.max(mMax, Math.min(mOut, mMax * 2));
+    iaYMax = { water: round(wMax, 10), food: round(fMax, 5), met: round(mMax, 50) };
 
     const rows = keys.map(c => {
         const list = byCage[c];
@@ -388,9 +483,11 @@ function iaCageTable(usable) {
         <tr id="ia-chartrow-${c}" style="display:none;">
             <td colspan="7" style="padding:10px 7px 16px; background:var(--paper);">
                 <div style="height:230px;"><canvas id="ia-chart-${c}"></canvas></div>
+                <div style="height:175px; margin-top:14px;"><canvas id="ia-chartmet-${c}"></canvas></div>
                 <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
                     회색 속빈 점은 계산에서 뺀 구간입니다(선은 그 날을 건너뜁니다). 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
                     위 점선은 고염식·BAPN·메트포민이 들어간 날, 아래 점선은 케이지 구성이 바뀐 날입니다.
+                    아래 그림은 그 구간에 실제로 들어간 메트포민입니다 — 가로축은 위와 같습니다.
                 </div>
             </td>
         </tr>`;
@@ -506,7 +603,9 @@ function iaToggleChart(cageId) {
     row.style.display = open ? 'none' : 'table-row';
     if (caret) caret.textContent = open ? '▾' : '▴';
     if (open) {
-        if (iaCharts[cageId]) { iaCharts[cageId].destroy(); delete iaCharts[cageId]; }
+        ['' + cageId, 'met-' + cageId].forEach(k => {
+            if (iaCharts[k]) { iaCharts[k].destroy(); delete iaCharts[k]; }
+        });
         return;
     }
     iaDrawChart(cageId);
@@ -587,6 +686,67 @@ function iaDrawChart(cageId) {
                       beginAtZero: true, max: (iaYMax && iaYMax.food) || undefined,
                       grid: { display: false } },
                 x:  { grid: { display: false }, ticks: { font: { size: 10 } } }
+            }
+        }
+    });
+
+    iaDrawCageMetChart(cageId, list, labels, used, events);
+}
+
+// 케이지 하나의 도달 용량. 물·사료와 세로축이 전혀 다르므로 같은 그림에 겹치지 않고
+// 바로 아래에 가로축만 맞춰 따로 그린다.
+function iaDrawCageMetChart(cageId, list, labels, used, events) {
+    const cv = document.getElementById('ia-chartmet-' + cageId);
+    if (!cv || typeof Chart === 'undefined') return;
+    const key = 'met-' + cageId;
+    if (iaCharts[key]) { iaCharts[key].destroy(); delete iaCharts[key]; }
+
+    const dose    = list.map((r, i) =>  used[i] ? iaMetDose(r) : null);
+    const doseOut = list.map((r, i) => !used[i] ? iaMetDose(r) : null);
+    // 투약 전 코호트·군이면 그릴 게 없다 — 빈 캔버스를 남기지 않는다
+    if (!dose.some(v => v !== null) && !doseOut.some(v => v !== null)) {
+        cv.parentElement.style.display = 'none';
+        return;
+    }
+    cv.parentElement.style.display = '';
+
+    const rule = iaWaterRuleOf(iaGroupOf(list[0]));
+    const target = rule ? Number(rule.value) : null;
+    const anyOut = doseOut.some(v => v !== null);
+    const OUT = { showLine: false, pointRadius: 4, pointBorderWidth: 1.5,
+                  borderColor: '#9B9689', backgroundColor: '#FAF9F5' };
+
+    iaCharts[key] = new Chart(cv.getContext('2d'), {
+        type: 'line',
+        plugins: [iaEventPlugin],
+        data: { labels, datasets: [
+            { label: '메트포민 mg/kg·일', data: dose, borderColor: '#00697a',
+              backgroundColor: '#00697a', borderWidth: 2, tension: 0.25, pointRadius: 4, spanGaps: true },
+            ...(target ? [{ label: `목표 ${target}`, data: labels.map(() => target),
+              borderColor: '#5B5F66', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false }] : []),
+            ...(anyOut ? [{ label: '제외 구간', data: doseOut, pointStyle: 'circle', ...OUT }] : [])
+        ]},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                iaEvents: { list: events },
+                legend: { labels: { boxWidth: 12, font: { size: 11 } } },
+                tooltip: { callbacks: { afterBody: items => {
+                    const r = list[items[0].dataIndex];
+                    const parts = [];
+                    if (r.doseGain > 1) parts.push(`부족분 보정 ×${Number(r.doseGain).toFixed(2)}`);
+                    if (typeof r.waterConsumed === 'number') parts.push(`섭취 ${r.waterConsumed.toFixed(1)} mL`);
+                    if (r.sumBW) parts.push(`총체중 ${r.sumBW} g`);
+                    return parts.join(' · ');
+                } } }
+            },
+            scales: {
+                // 케이지끼리 비교되게 눈금을 통일하되, 목표선이 잘리지 않게 여유를 둔다
+                y: { beginAtZero: true, title: { display: true, text: '메트포민 mg/kg·일' },
+                     max: Math.max((iaYMax && iaYMax.met) || 0, target ? target * 1.3 : 0) || undefined,
+                     grid: { color: '#f0f0f0' } },
+                x: { grid: { display: false }, ticks: { font: { size: 10 } } }
             }
         }
     });
