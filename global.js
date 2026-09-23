@@ -604,6 +604,89 @@ function doseCeilingRef(rows, opts) {
     return vals.length ? Math.max(...vals) : null;
 }
 
+// ============================================================
+//  오늘 만들 원액 — 라운드 전 추정 (대시보드 · 케이지별 입력 공통)
+//  두 화면의 「조제 지시 · 사육실 가기 전」 카드가 같은 숫자를 내려면 같은 함수를 써야 한다.
+//  예전엔 케이지별 입력 쪽이 부족분 보정·농도 상한 없이 목표 그대로 계산해서,
+//  보정을 넣은 9/18 이후 대시보드보다 적게 만들라고 했다 (2026-09-23 발견 — 원액이 모자라는 방향).
+// ============================================================
+function doseDateOf(v) {
+    if (!v) return null;
+    if (typeof v === 'string') return v.slice(0, 10);
+    if (v.toDate) { const d = v.toDate();
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+    return null;
+}
+function doseShift(dateStr, days) {
+    const d = new Date(dateStr + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+function doseTpDays(label) {
+    const m = String(label).match(/^([WD])(\d+)$/);
+    return m ? (m[1] === 'W' ? Number(m[2]) * 7 : Number(m[2])) : null;
+}
+
+// 케이지 하나의 조제 계수 k (mg/mL — 채우는 물 1 mL 당 넣을 약). 기록이 없거나 섭취가 비정상이면 k = null.
+// ctx: { rule, cfg(코호트 설정 전체), occ(케이지 개체 — surgeryDate 필요), rows(급여 기록, DOSE_HISTORY_DAYS),
+//        bw(최근 기록의 케이지 총체중), today }
+// 라운드 전이라 오늘 잰 체중·구간·도착 시 물통 바닥은 모른다. 케이지별 입력의 조제 카드는 그것까지 넣어
+// 다시 계산하므로 같거나 조금 낮게 나온다(방금 잰 구간이 기준값·상한 기준을 올리기만 하니까).
+function prepCoefFor(ctx) {
+    const { rule, cfg, occ, rows, bw, today } = ctx;
+    const h = (cfg && cfg.housing) || {};
+    const n = (occ || []).length;
+    const winOpt = { windowDays: Number(h.doseWindowDays) || 0, today };
+    const pc = recentWaterPc(rows, winOpt) ?? recentWaterPc(rows, Object.assign({ includeWeekend: true }, winOpt));
+
+    const rampDays = Number(rule.rampDays) || 0;
+    const surgs = occ.map(r => doseDateOf(r.surgeryDate));
+    const rampActive = rampDays > 0 && surgs.some(s => s && doseShift(s, rampDays) > today);
+    // 오늘 BP/MR 이 예정된 케이지는 반동 대비로 이득 없이 조제
+    const tps = (cfg && cfg.timepoints) || {};
+    const handlingToday = surgs.some(s => s && ['mr', 'bp'].some(kind => (tps[kind] || []).some(tp => {
+        const d = doseTpDays(tp); return d !== null && doseShift(s, d) === today; })));
+    const hold = rampActive ? '결찰 직후 램프 구간 — 보정 유예'
+               : handlingToday ? '오늘 BP/MR 예정 — 반동 구간 대비 유예' : null;
+    const gi = doseGainFor(rows, rule, { windowDays: Number(h.doseWindowDays) || 14,
+                                         ledgerDays: Number(h.doseLedgerDays) || 0, today, hold });
+
+    const ceilDose = Number(rule.ceilingDose) || 0;
+    const sinces = surgs.filter(Boolean).map(s => doseShift(s, rampDays));
+    const ceilSince = (sinces.length && sinces.length === n) ? sinces.sort().pop() : null;
+    const ceilRef = ceilDose > 0 ? doseCeilingRef(rows, { since: ceilSince, today }) : null;
+
+    const opts = fillOptions(h);
+    const maxFill = Math.max(...(opts.length ? opts : [700]));
+    const out = { pc, bw, n, gain: gi.gain, k: null, capped: false };
+    if (pc && bw && n && pcUsableForPrep(pc, n, maxFill)) {
+        out.k = Number(rule.value) * gi.gain * (bw / 1000) / (pc * n);
+        if (ceilRef > 0) {
+            const kCap = ceilDose * (bw / 1000) / (ceilRef * n);
+            if (out.k > kCap) { out.k = kCap; out.capped = true; }
+        }
+    }
+    return out;
+}
+
+// 계수를 모아 채울 물 후보마다 필요량과 만들 양을 낸다.
+// 케이지마다 조제 카드와 같은 식(원액 부피까지 물통 총량에 넣어 푼 것)으로 구해 더한다.
+// 기록이 없는 케이지는 아는 케이지 평균으로 메운다.
+function prepPlans(items, stock, housing) {
+    const known = items.filter(it => it.k > 0);
+    const unknown = items.filter(it => !(it.k > 0));
+    if (!known.length || !stock) return null;
+    const avgK = known.reduce((a, it) => a + it.k, 0) / known.length;
+    const mgFor = (k, fill) => (k < stock) ? (k * fill) / (1 - k / stock) : k * fill;
+    const opts = fillOptions(housing);
+    const fills = opts.length ? opts : [700];
+    const plans = fills.map(fill => {
+        const mg = known.reduce((a, it) => a + mgFor(it.k, fill), 0) + unknown.length * mgFor(avgK, fill);
+        return { fill, needCc: mg / stock, makeCc: makeVolume(mg / stock) };
+    });
+    return { plans, fills, known, unknown };
+}
+
 // 채울 수 있는 물의 양 후보. 평일 구간과 긴 구간(주말·연휴 앞)의 두 가지다.
 // 앱은 달력을 모르므로 어느 쪽인지 추측하지 않는다. 조제 카드에 둘 다 적어두고
 // 물을 채우는 사람이 고른다. (요일로 판정하면 연휴가 낀 주에 틀린다)

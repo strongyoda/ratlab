@@ -372,8 +372,9 @@ function ciWeekendOutlookLine() {
 // 사육실에 가기 전 벤치에서 만들어야 하므로, 라운드를 돌기 전에 필요량을 알아야 한다.
 // 지난 라운드의 체중(sumBW)과 마리당 섭취량으로 추정한다. 정확할 수는 없으니 여유를 얹는다.
 function ciPrepPlan() {
-    const rows = [];
+    const items = [];
     let stock = null;
+    const today = ciDate || getTodayStr();
 
     ciCages.forEach(cage => {
         if (ciDoneToday.has(String(cage.id))) return;      // 이미 넣은 케이지는 뺀다
@@ -381,42 +382,23 @@ function ciPrepPlan() {
         if (!st || st.key !== 'on') return;
 
         stock = Number(st.rule.stockConc) || stock;
-        const n = ciOccupants(cage.id).length;
-        const bw = (ciLastFeed[cage.id] || {}).sumBW;
-        const pc = ciRecentPc[cage.id] || ciRecentPcAny[cage.id];   // 지시량과 같은 기준으로
-
-        // 필요 약물량은 채우는 물의 양에 정비례한다 (mg = k × 물양).
-        // 그래서 물양을 정하지 않고 계수 k 만 모아뒀다가, 카드에서 500·700 각각으로 곱한다.
-        // 예측 섭취량이 비정상적으로 낮은 케이지는 계수가 폭주하므로 평균으로 메운다.
-        const opts = fillOptions(ciConfig && ciConfig.housing);
-        const maxFill = Math.max(...(opts.length ? opts : [700]));
-        const ok = bw && pc && n && pcUsableForPrep(pc, n, maxFill);
-        rows.push({
-            number: cage.number,
-            k: ok ? Number(st.rule.value) * (bw / 1000) / (pc * n) : null
-        });
+        // 계수 계산은 대시보드와 같은 함수 하나로 (global.js prepCoefFor).
+        // 예전엔 여기만 부족분 보정·농도 상한 없이 목표 그대로 계산해서 대시보드보다 적게 나왔다.
+        const c = prepCoefFor({ rule: st.rule, cfg: ciConfig, occ: ciOccupants(cage.id),
+                                rows: ciCageRows[cage.id] || [], bw: (ciLastFeed[cage.id] || {}).sumBW, today });
+        items.push(Object.assign({ number: cage.number }, c));
     });
-    return { rows, stock };
+    return { items, stock };
 }
 
 function ciPrepPreviewCard() {
-    const { rows, stock } = ciPrepPlan();
-    if (!rows.length || !stock) return '';
-    const known = rows.filter(r => r.k !== null);
-    const unknown = rows.filter(r => r.k === null);
-    if (!known.length) return '';
-
-    // 모르는 케이지는 아는 케이지의 평균으로 메운다
-    const avgK = known.reduce((a, r) => a + r.k, 0) / known.length;
-    const totalK = known.reduce((a, r) => a + r.k, 0) + unknown.length * avgK;
-
-    // 물통 안 총 부피 = 물 + 원액. 원액 부피까지 감안해 푼 식이 아래.
-    const need = fill => {
-        const mg = (totalK < stock) ? (totalK * fill) / (1 - totalK / stock) : totalK * fill;
-        return { cc: mg / stock, make: makeVolume(mg / stock) };
-    };
-    const opts = fillOptions(ciConfig && ciConfig.housing);
-    const list = opts.length ? opts : [700];
+    const { items, stock } = ciPrepPlan();
+    const plan = prepPlans(items, stock, ciConfig && ciConfig.housing);
+    if (!plan) return '';
+    const { known, unknown } = plan;
+    const rows = items;
+    const need = f => { const x = plan.plans.find(p => p.fill === f); return { cc: x.needCc, make: x.makeCc }; };
+    const list = plan.fills;
 
     return `
     <div class="card" style="background:var(--ink); color:var(--paper); border-color:var(--ink); padding:14px 16px;">
