@@ -443,7 +443,15 @@ function dbPrep() {
         });
         const hold = rampActive ? '결찰 직후 램프 구간 — 보정 유예'
                    : handlingToday ? '오늘 BP/MR 예정 — 반동 구간 대비 유예' : null;
-        const gi = doseGainFor(rows, rule, { windowDays: Number((cfg.housing || {}).doseWindowDays) || 14, today, hold });
+        const gi = doseGainFor(rows, rule, { windowDays: Number((cfg.housing || {}).doseWindowDays) || 14,
+                                             ledgerDays: Number((cfg.housing || {}).doseLedgerDays) || 0, today, hold });
+        // 농도 상한 — 케이지별 입력과 같은 기준(global.js doseCeilingRef). 이번 구간은 여기서 모르므로
+        // 저장된 구간만 본다. 케이지별 입력은 방금 잰 구간까지 넣으니 그쪽이 같거나 더 낮게 조제한다
+        // (여기서 만든 원액이 남을 뿐, 모자라지 않는다).
+        const ceilDose = Number(rule.ceilingDose) || 0;
+        const sinces = occ.map(r => dbDateOf(r.surgeryDate)).filter(Boolean).map(s => dbShift(s, rampDays));
+        const ceilSince = sinces.length === occ.length ? sinces.sort().pop() : null;
+        const ceilRef = ceilDose > 0 ? doseCeilingRef(rows, { since: ceilSince, today }) : null;
 
         // 필요 약물량은 채우는 물의 양에 정비례한다. 물양을 정하지 않고 계수만 모아둔다.
         // 예측 섭취량이 비정상적으로 낮은 케이지(거부·질병)는 계수가 폭주하므로
@@ -452,6 +460,7 @@ function dbPrep() {
         const item = { number: cage.number, n: occ.length, pc, bw };
         if (pc && bw && pcUsableForPrep(pc, occ.length, maxFill)) {
             item.k = Number(rule.value) * gi.gain * (bw / 1000) / (pc * occ.length);
+            if (ceilRef > 0) item.k = Math.min(item.k, ceilDose * (bw / 1000) / (ceilRef * occ.length));
             known.push(item);
         } else unknown.push(item);
     });

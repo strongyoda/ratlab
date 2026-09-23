@@ -31,7 +31,8 @@ function cfgDefaultConfig(cohort) {
         // (가장 최근 코호트 설정이 있으면 cfgCreateNew에서 그 값을 물려받는다)
         housing: { ratsPerCage: 3, cageCount: 24, waterFill: 500, waterFillLong: 700,
                    foodFill: 250, bottleCount: 1,
-                   bottleTare: 0, evapPerHour: 0.0625, lossPerHandling: 1.36, doseWindowDays: 14 },
+                   bottleTare: 0, evapPerHour: 0.0625, lossPerHandling: 1.36,
+                   doseWindowDays: 10, doseLedgerDays: 28 },
         dosing: [
             { substance: 'NaCl',      medium: 'food',  mode: 'percent',    value: 8,
               groups: ['G0', 'G1', 'G2'], startAnchor: 'ovx',      startOffset: 0,
@@ -41,10 +42,10 @@ function cfgDefaultConfig(cohort) {
               endAnchor: 'end', endOffset: 0 },
             { substance: 'Metformin', medium: 'water', mode: 'targetDose', value: 150, stockConc: 40,
               groups: ['G1'],             startAnchor: 'ligation', startOffset: 2,
-              endAnchor: 'end', endOffset: 0 },
+              endAnchor: 'end', endOffset: 0, gainCap: 2.5, rampDays: 14, ceilingDose: 350 },
             { substance: 'Metformin', medium: 'water', mode: 'targetDose', value: 150, stockConc: 40,
               groups: ['G2'],             startAnchor: 'ligation', startOffset: 28,
-              endAnchor: 'end', endOffset: 0 }
+              endAnchor: 'end', endOffset: 0, gainCap: 2.5, rampDays: 14, ceilingDose: 350 }
         ]
     };
 }
@@ -135,7 +136,7 @@ async function cfgCreateNew() {
         if (prev) {
             const h = prev.data().housing;
             // 케이지 수·마리수는 실험 규모라 코호트마다 다르므로 물려받지 않는다
-            ['waterFill', 'waterFillLong', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling', 'doseWindowDays']
+            ['waterFill', 'waterFillLong', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling', 'doseWindowDays', 'doseLedgerDays']
                 .forEach(k => { if (h[k] !== undefined && h[k] !== null) cfgDraft.housing[k] = h[k]; });
             inherited = prev.id;
         }
@@ -328,7 +329,8 @@ function cfgHousingCard(c) {
         <div style="display:flex; gap:15px; flex-wrap:wrap;">
             ${num('evapPerHour',     '증발량',      'g/시간', '안 건드리고 뒀을 때 시간당')}
             ${num('lossPerHandling', '탈착 로스',   'g/회',   '물통 뺐다 끼우기 1회당')}
-            ${num('doseWindowDays',  '농도 기준 창', '일',     '최근 며칠의 최대 섭취로 농도를 정할지. 기본 14, 8 미만 금지')}
+            ${num('doseWindowDays',  '농도 기준 창', '일',     '최근 며칠의 최대 섭취로 농도를 정할지. 8 미만 금지 (7일은 결찰일 스파이크를 놓친다)')}
+            ${num('doseLedgerDays',  '부족분 장부',  '일',     '덜 들어간 양을 며칠치까지 기억해 갚을지. 짧으면 누적이 목표에 못 붙는다 (파일럿: 10일 → 127, 28일 → 150)')}
         </div>
         ${(!Number(h.evapPerHour) && !Number(h.lossPerHandling)) ? `
         <div style="margin-top:10px; padding:8px 10px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; font-size:0.82rem; color:#7a5c00;">
@@ -412,7 +414,7 @@ function cfgDosingCard(c) {
                     <div style="display:flex; align-items:center; gap:5px;">
                         <input type="number" step="0.05" min="1" value="${d.gainCap || 1}" onchange="cfgSetDose(${i},'gainCap',this.value)"
                                style="width:72px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
-                        <span style="font-size:0.8rem; color:var(--ink-soft);">배 · 1 = 보정 없음 · 파일럿 시뮬: 1.5 → 최악 ≈243 mg, 1.7 → ≈276 mg (목표 150 기준)</span>
+                        <span style="font-size:0.8rem; color:var(--ink-soft);">배 · 1 = 보정 없음 · 파일럿 시뮬(장부 28일·농도 상한 350): 1.7 → 누적 136, 2.5 → 누적 150 · 최악 421</span>
                     </div>
                 </div>
                 <div>
@@ -422,6 +424,14 @@ function cfgDosingCard(c) {
                         <input type="number" value="${d.rampDays || 0}" onchange="cfgSetDose(${i},'rampDays',this.value)"
                                style="width:64px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.8rem; color:var(--ink-soft);">일 동안은 보정 안 함 (급성기 과다투여 방지)</span>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">농도 상한</div>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <input type="number" value="${d.ceilingDose || 0}" onchange="cfgSetDose(${i},'ceilingDose',this.value)"
+                               style="width:72px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
+                        <span style="font-size:0.8rem; color:var(--ink-soft);">mg/kg/day · 0 = 없음 · 결찰+램프 뒤 최근 4주 최대 섭취를 마셔도 이 값을 넘지 않게 농도를 누름 (아팠다 회복하는 첫 구간 대비)</span>
                     </div>
                 </div>
             </div>` : ''}
@@ -527,7 +537,7 @@ function cfgToggleTimepoint(kind, tp, on) {
 function cfgSetHousing(key, val) { cfgDraft.housing[key] = Number(val); cfgMarkDirty(); }
 
 function cfgSetDose(i, key, val) {
-    const numeric = ['value', 'stockConc', 'startOffset', 'endOffset', 'gainCap', 'rampDays'];
+    const numeric = ['value', 'stockConc', 'startOffset', 'endOffset', 'gainCap', 'rampDays', 'ceilingDose'];
     cfgDraft.dosing[i][key] = numeric.includes(key) ? Number(val) : val;
     cfgMarkDirty();
     if (key === 'value' || key === 'endAnchor') cfgRenderBody();

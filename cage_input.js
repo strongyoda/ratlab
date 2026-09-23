@@ -1526,22 +1526,40 @@ function ciUpdateDose() {
     const hold = rampActive    ? '결찰 직후 램프 구간 — 보정 유예'
                : handlingToday ? 'BP·처치·수술일 채움 — 반동 구간 대비 유예'
                : ranDry        ? '도착 시 물통 바닥 — 반동 구간 대비 유예' : null;
+    const housingCfg = (ciConfig && ciConfig.housing) || {};
     const gi = doseGainFor(ciCageRows[ciCurrent], rule, {
-        windowDays: (ciConfig && ciConfig.housing && Number(ciConfig.housing.doseWindowDays)) || 14,
+        windowDays: Number(housingCfg.doseWindowDays) || 14,
+        ledgerDays: Number(housingCfg.doseLedgerDays) || 0,
         today: todayStr, hold });
     const targetValue = Number(rule.value) * gi.gain;
 
+    // 농도 상한 (global.js doseCeilingRef). 결찰+램프가 모두 지난 뒤부터 최근 28일의 평일 최대를
+    // 마셨을 때 rule.ceilingDose 가 되는 농도를 넘기지 않는다 — 아팠다 회복하는 첫 구간 대비.
+    // 방금 잰 이번 구간도 넣는다(기준이 올라가기만 하니 안전 쪽).
+    const ceilDose = Number(rule.ceilingDose) || 0;
+    const sinceDates = alive.map(r => ciDateStr(r.surgeryDate)).filter(Boolean)
+        .map(s => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + rampDays);
+                    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); });
+    const ceilSince = sinceDates.length === alive.length ? sinceDates.sort().pop() : null;
+    let ceilRef = ceilDose > 0 ? doseCeilingRef(ciCageRows[ciCurrent], { since: ceilSince, today: todayStr }) : null;
+    if (ceilDose > 0 && ceilSince && todayStr >= ceilSince && c && c.waterPc > 0 && !c.spansWeekend && !flagged)
+        ceilRef = Math.max(ceilRef || 0, c.waterPc);
+
     // 물통 안 총 부피 = 물 + 넣을 원액. 약도 그 안에 녹아 있으므로 농도는 총 부피 기준이다.
     // needMg = k × (물 + needMg/원액농도)  →  풀면 아래.  (원액 부피를 빼먹으면 약 1% 적게 들어간다)
-    const k = targetValue * (sumBW / 1000) / expectedIntake;
-    const needMg = (k < stock) ? (k * fill) / (1 - k / stock)
-                               : targetValue * (sumBW / 1000) * (fill / expectedIntake);
+    let k = targetValue * (sumBW / 1000) / expectedIntake;
+    const kCap = (ceilDose > 0 && ceilRef > 0) ? ceilDose * (sumBW / 1000) / (ceilRef * alive.length) : Infinity;
+    const capped = k > kCap;
+    if (capped) k = kCap;
+    const effTarget = k * expectedIntake / (sumBW / 1000);   // 예상대로 마시면 실제로 들어갈 양
+    const needMg = (k < stock) ? (k * fill) / (1 - k / stock) : k * fill;
     const cc = needMg / stock;
     const totalVol = fill + cc;
     ciForm._doseCc = Number(cc.toFixed(1));
     ciForm._doseMg = Number(needMg.toFixed(1));
     ciForm._stockConc = stock;
     ciForm._doseGain = gi.gain;
+    ciForm._doseCeilRef = capped ? Number(ceilRef.toFixed(1)) : null;
 
     const deadNow = occ.length - alive.length;
     const partial = started.filter(r => !((ciForm.rats && ciForm.rats[r.ratId]) || {}).dead).length !== alive.length;
@@ -1554,7 +1572,9 @@ function ciUpdateDose() {
         <div style="font-size:0.75rem; opacity:0.88;">
             총체중 <span class="mono">${sumBW.toFixed(0)}</span>g · 목표 <span class="mono">${rule.value}</span> mg/kg/day${gi.gain > 1
                 ? ` × 이득 <span class="mono" style="color:var(--stock-canary);">${gi.gain.toFixed(2)}</span> = <span class="mono">${targetValue.toFixed(0)}</span><span style="opacity:0.8;"> (${ciEsc(gi.why)}, 상한 ${gi.cap})</span>`
-                : (gi.cap > 1 ? `<span style="opacity:0.8;"> · 이득 1.00 (${ciEsc(gi.why)})</span>` : '')} · 필요 <span class="mono">${needMg.toFixed(0)}</span>mg
+                : (gi.cap > 1 ? `<span style="opacity:0.8;"> · 이득 1.00 (${ciEsc(gi.why)})</span>` : '')}${capped
+                ? `<br><span style="color:var(--stock-canary);">농도 상한 적용</span> — 최근 4주 최대 <span class="mono">${ceilRef.toFixed(0)}</span>mL/마리를 마셔도 <span class="mono">${ceilDose}</span>을 넘지 않게 낮췄습니다. 예상대로 마시면 <span class="mono">${effTarget.toFixed(0)}</span>mg/kg/day<br>`
+                : ''} · 필요 <span class="mono">${needMg.toFixed(0)}</span>mg
             · 예상섭취 <span class="mono">${expectedIntake.toFixed(0)}</span>mL<span style="opacity:0.8;"> (${pcSource})</span>
             · 채우는 물은 <b class="mono">${daysWorth.toFixed(1)}일치</b>${daysWorth > 5 ? ' ⚠' : ''}
             · 원액 <span class="mono">${stock}</span>mg/mL · 통 안 총량 <span class="mono">${totalVol.toFixed(0)}</span>mL
@@ -1770,6 +1790,8 @@ async function ciSave() {
         feed.doseCc = Number(ciForm._doseCc) || 0;
         feed.doseMg = Number(ciForm._doseMg) || 0;
         feed.doseGain = feed.doseCc > 0 ? (Number(ciForm._doseGain) || 1) : null;   // 부족분 보정 배수 (1 = 없음)
+        // 농도 상한이 걸렸으면 그 기준 섭취량(mL/마리·일). 안 걸렸으면 null — 나중에 상한이 얼마나 자주 걸렸는지 본다
+        feed.doseCeilRef = feed.doseCc > 0 ? (ciForm._doseCeilRef || null) : null;
         feed.stockConc = feed.doseCc > 0 ? (ciForm._stockConc || null) : null;
         // 예상 섭취량을 손으로 넣었으면 남긴다 — 나중에 이상값을 만났을 때 판단 근거가 된다
         feed.manualPerCapita = Number(ciForm.manualPc) > 0 ? Number(ciForm.manualPc) : null;

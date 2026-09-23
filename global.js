@@ -513,8 +513,10 @@ function recentWaterPc(rows, opts) {
 
 // 부족분 이득 보정. 최댓값 기준은 구조적으로 목표의 70~80%만 전달한다(실제/최대 < 1).
 // 최근 구간에서 덜 들어간 만큼을 다음 농도에 얹되, 상한(rule.gainCap)으로 묶는다 —
-// 상한 × 최대 초과폭이 최악 구간을 정하므로 이 숫자가 곧 안전 천장이다
-// (파일럿 시뮬: 10일 창 + 상한 1.5 → 안정기 142 mg, 최악 243 mg, 250 초과 0건).
+// 상한 × 기준값 대비 폭음 배수가 최악 구간을 정한다. 9/18 파일럿 30번이 기준값의 1.5배를
+// 마셔서 "가드 뒤 폭음은 1.1배 이내"라던 9/17 가정이 깨졌다. 지금 설정(이득 2.5 · 장부 28일 ·
+// 농도 상한 350)의 파일럿 시뮬: 결찰+14일 이후 누적 150, 최악 1구간 421, 275 초과 3/31구간.
+// 방어 논리는 13주 랫드 독성시험 — 평균 150 < 무독성량 200, 최악 421 < 이상반응 시작 600.
 // 이득을 얹으면 안 되는 채움이 있다(opts.hold 에 사유를 넘기면 이득 1로 간다):
 //  · 결찰 직후 램프(rule.rampDays 안) — 섭취가 몇 배로 뛰어 보정 없이도 150%까지 간다
 //  · BP·처치·수술일 채움 — 다음 구간에 몰아 마신다(파일럿 BP 다음 1.9배). 여기에 1.7을 곱하면 485 mg
@@ -533,7 +535,11 @@ function doseGainFor(rows, rule, opts) {
 
     const asc = rows.slice().sort((a, b) => String(a.dateStr).localeCompare(String(b.dateStr))
         || ((a.at?.toMillis?.() || 0) - (b.at?.toMillis?.() || 0)));
-    const win = Number(o.windowDays) || 14;
+    // 장부를 며칠치 기억하나. 농도 기준 창(windowDays)과는 따로 둔다.
+    // 10일만 기억하면 그보다 오래된 적자를 버리므로, 이득을 아무리 올려도 누적이
+    // 목표에 못 붙는다(파일럿 시뮬: 장부 10일이면 이득 3.0에서도 누적 127).
+    // 28일이면 오래된 적자까지 갚아 이득 2.5·농도 상한 350에서 누적 150 (2026-09-23 결정).
+    const win = Number(o.ledgerDays) || Number(o.windowDays) || 14;
     const t0 = o.today ? new Date(o.today + 'T00:00:00').getTime() : Date.now();
 
     let conc = 0, deficit = 0, n = 0;
@@ -566,6 +572,30 @@ function doseGainFor(rows, rule, opts) {
     const gain = Math.min(cap, 1 + deficit);
     return { gain: Number(gain.toFixed(2)), cap, deficitDays: Number(deficit.toFixed(2)), n,
              why: gain > 1 ? `최근 ${n}구간 부족분 ${deficit.toFixed(1)}일치` : `최근 ${n}구간 부족분 없음` };
+}
+
+// 농도 상한의 기준 섭취량 (mL/마리·일).
+// 아파서 덜 마시던 쥐가 회복하면 평소만큼 마신다. 그때 기준값(최근 10일 최대)은 아픈 동안의
+// 낮은 값으로 내려가 있고 부족분 이득은 상한까지 차 있어서, 회복 첫 구간에 목표의 몇 배가 들어간다
+// (파일럿 30번 9/29 추정: 기준 48에 이득 1.7, 100 마시면 530 mg/kg/일).
+// 그래서 농도 위를 따로 막는다: 결찰+rampDays 이후, 최근 28일 안의 평일 클린 구간 최대를
+// 마셨을 때 딱 rule.ceilingDose 가 되는 농도를 넘기지 않는다.
+//  · 결찰 후 전체가 아니라 28일로 자르는 이유 — 90일 동안 처치일 반동 같은 스파이크가 쌓이면
+//    기준이 올라가기만 해서 건강한 케이지까지 누르게 된다
+//  · 램프 구간을 빼는 이유 — 급성기 폭음(329 등)은 '평소'가 아니다
+//  · 이 상한은 예고 없는 폭음(기준값보다 더 마시는 날)은 못 막는다. 그건 이득 상한의 몫이다
+// opts.since: 이 날짜(YYYY-MM-DD) 이후 구간만 본다 — 케이지 개체들의 결찰일+램프 중 가장 늦은 날
+const DOSE_CEIL_WINDOW_DAYS = 28;
+function doseCeilingRef(rows, opts) {
+    const o = opts || {};
+    if (!o.since) return null;
+    const t = o.today ? new Date(o.today + 'T00:00:00').getTime() : Date.now();
+    const vals = (rows || []).filter(r => !(r.flags || []).length
+            && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0
+            && !rowSpansWeekend(r) && r.dateStr && r.dateStr >= o.since
+            && (t - new Date(r.dateStr + 'T00:00:00').getTime()) / 864e5 <= DOSE_CEIL_WINDOW_DAYS)
+        .map(r => r.waterPerCapita);
+    return vals.length ? Math.max(...vals) : null;
 }
 
 // 채울 수 있는 물의 양 후보. 평일 구간과 긴 구간(주말·연휴 앞)의 두 가지다.
