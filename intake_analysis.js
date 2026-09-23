@@ -487,7 +487,9 @@ function iaCageTable(usable) {
                 <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
                     회색 속빈 점은 계산에서 뺀 구간입니다(선은 그 날을 건너뜁니다). 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
                     위 점선은 고염식·BAPN·메트포민이 들어간 날, 아래 점선은 케이지 구성이 바뀐 날입니다.
-                    아래 그림은 그 구간에 실제로 들어간 메트포민입니다 — 가로축은 위와 같습니다.
+                    아래 그림은 실제로 들어간 메트포민입니다 — 가로축은 위와 같습니다.
+                    <b>붉은 선은 투약 시작 이후의 누적 평균</b>으로, 구간 길이(평일 1일·주말 3일)로 가중해 낸 값입니다.
+                    그날 값은 오르내려도 이 선이 목표에 붙으면 받은 총량은 맞은 것입니다.
                 </div>
             </td>
         </tr>`;
@@ -716,14 +718,34 @@ function iaDrawCageMetChart(cageId, list, labels, used, events) {
     const OUT = { showLine: false, pointRadius: 4, pointBorderWidth: 1.5,
                   borderColor: '#9B9689', backgroundColor: '#FAF9F5' };
 
+    // 누적 평균 — 구간 길이가 제각각이므로(평일 1일 · 주말 3일) 구간 수가 아니라 일수로 가중한다.
+    // 단순 평균을 내면 하루짜리 구간과 사흘짜리 구간이 같은 무게가 되어 값이 틀어진다.
+    // 이 선이 곧 "투약을 시작한 뒤 하루 평균 몇 mg/kg 을 받았나"이고, 논문에 쓸 값도 이것이다.
+    // 계산에서 뺀 구간은 넣지 않는다 — 그 구간에서는 평균이 그대로 이어진다(값이 없지 떨어진 게 아니다).
+    let accMg = 0, accDays = 0;
+    const cum = list.map((r, i) => {
+        const md = used[i] ? iaMetDose(r) : null;
+        const days = r.animalDays / (r.ratCount || 1);
+        if (md !== null && days > 0) { accMg += md * days; accDays += days; }
+        return accDays > 0 ? accMg / accDays : null;
+    });
+    const cumNow = accDays > 0 ? accMg / accDays : null;
+
     iaCharts[key] = new Chart(cv.getContext('2d'), {
         type: 'line',
         plugins: [iaEventPlugin],
         data: { labels, datasets: [
-            { label: '메트포민 mg/kg·일', data: dose, borderColor: '#00697a',
-              backgroundColor: '#00697a', borderWidth: 2, tension: 0.25, pointRadius: 4, spanGaps: true },
-            ...(target ? [{ label: `목표 ${target}`, data: labels.map(() => target),
-              borderColor: '#5B5F66', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, fill: false }] : []),
+            { label: '그 구간', data: dose, borderColor: '#00697a',
+              backgroundColor: '#00697a', borderWidth: 1.5, tension: 0.25, pointRadius: 3.5, spanGaps: true },
+            { label: `누적 평균${cumNow !== null ? ` (현재 ${cumNow.toFixed(0)})` : ''}`, data: cum,
+              borderColor: '#c0504d', backgroundColor: '#c0504d', borderWidth: 2.6,
+              pointRadius: 0, tension: 0.3, spanGaps: true },
+            // 목표선은 투약이 시작된 뒤부터만 긋는다 — 투약 전 구간까지 그으면
+            // 그때도 목표가 있었던 것처럼 보인다
+            ...(target ? [{ label: `목표 ${target}`,
+              data: labels.map((_, i) => (dose[i] !== null || doseOut[i] !== null || cum[i] !== null) ? target : null),
+              borderColor: '#5B5F66', borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0,
+              fill: false, spanGaps: true }] : []),
             ...(anyOut ? [{ label: '제외 구간', data: doseOut, pointStyle: 'circle', ...OUT }] : [])
         ]},
         options: {
@@ -738,6 +760,8 @@ function iaDrawCageMetChart(cageId, list, labels, used, events) {
                     if (r.doseGain > 1) parts.push(`부족분 보정 ×${Number(r.doseGain).toFixed(2)}`);
                     if (typeof r.waterConsumed === 'number') parts.push(`섭취 ${r.waterConsumed.toFixed(1)} mL`);
                     if (r.sumBW) parts.push(`총체중 ${r.sumBW} g`);
+                    const d = r.animalDays / (r.ratCount || 1);
+                    if (d > 0) parts.push(`${d.toFixed(1)}일치`);
                     return parts.join(' · ');
                 } } }
             },
