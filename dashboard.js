@@ -61,7 +61,9 @@ async function dbLoad() {
         getRatsWithCache(),
         db.collection('cages').get(),
         db.collection('ratHousing').where('to', '==', null).get(),
-        db.collection('cageFeeding').where('dateStr', '>=', cutoff).get(),
+        // 급여 기록은 투약 계산용으로 길게 한 번 받고(global.js DOSE_HISTORY_DAYS), 나머지 기능에는
+        // 예전처럼 14일치만 넘긴다 — '진행 중 코호트'나 군별 최근 평균이 바뀌지 않게
+        db.collection('cageFeeding').where('dateStr', '>=', dbShift(today, -DOSE_HISTORY_DAYS)).get(),
         db.collection('measurements').where('date', '>=', cutoff).get(),
         db.collection('cohortConfigs').get()
     ]);
@@ -76,7 +78,8 @@ async function dbLoad() {
 
     const cages = [];   cageSnap.forEach(d => cages.push(Object.assign({ id: d.id }, d.data())));
     const housing = []; houseSnap.forEach(d => housing.push(d.data()));
-    const feeds = [];   feedSnap.forEach(d => feeds.push(d.data()));
+    const doseFeeds = [];   feedSnap.forEach(d => doseFeeds.push(d.data()));
+    const feeds = doseFeeds.filter(f => String(f.dateStr) >= cutoff);
     const meas = [];    measSnap.forEach(d => meas.push(d.data()));
     const configs = {}; cfgSnap.forEach(d => { configs[d.id] = d.data(); });
 
@@ -91,7 +94,7 @@ async function dbLoad() {
     // 화면 전체가 쓰는 alive 는 진행 중 코호트로 한정한다
     const alive = notDead.filter(r => active.includes(String(r.cohort)));
 
-    dbData = { today, rats, alive, cages, housing, feeds, meas, configs, active, labSched };
+    dbData = { today, rats, alive, cages, housing, feeds, doseFeeds, meas, configs, active, labSched };
 }
 
 function dbShift(dateStr, days) {
@@ -384,7 +387,7 @@ function dbTodoCard(t) {
 // 케이지별 입력 화면의 파란 카드와 같은 계산을 여기서도 한다.
 // 사육실 가기 전에 실험실에서 만들어야 하므로, 첫 화면에 있어야 한다.
 function dbPrep() {
-    const { today, cages, feeds, configs } = dbData;
+    const { today, cages, feeds, doseFeeds, configs } = dbData;
     const doneToday = new Set(feeds.filter(f => f.dateStr === today).map(f => String(f.cageId)));
     const lastFeed = {};
     feeds.forEach(f => {
@@ -422,7 +425,7 @@ function dbPrep() {
 
         // 예상 섭취량은 케이지별 입력과 똑같이 뽑는다 (global.js 의 공용 함수).
         // 주말 구간을 한쪽만 넣으면 두 화면의 '오늘 만들 원액'이 갈린다.
-        const rows = feeds.filter(f => String(f.cageId) === String(cage.id))
+        const rows = (doseFeeds || feeds).filter(f => String(f.cageId) === String(cage.id))
             .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
         const winOpt = { windowDays: Number((cfg.housing || {}).doseWindowDays) || 0, today };
         const pc = recentWaterPc(rows, winOpt) ?? recentWaterPc(rows, Object.assign({ includeWeekend: true }, winOpt));

@@ -586,6 +586,12 @@ function doseGainFor(rows, rule, opts) {
 //  · 이 상한은 예고 없는 폭음(기준값보다 더 마시는 날)은 못 막는다. 그건 이득 상한의 몫이다
 // opts.since: 이 날짜(YYYY-MM-DD) 이후 구간만 본다 — 케이지 개체들의 결찰일+램프 중 가장 늦은 날
 const DOSE_CEIL_WINDOW_DAYS = 28;
+
+// 투약 계산에 쓸 급여 기록을 며칠치 불러오나 (케이지별 입력 · 대시보드 공통).
+// 부족분 장부(doseLedgerDays 28)와 농도 상한 창(28)을 다 덮고, 그 첫 구간의 농도를 알려면
+// 그 앞 채움까지 있어야 하므로(물 안 간 날이 끼면 최대 사흘 전) 여유를 둔다.
+// 예전엔 두 화면 다 14일치만 받아서, 28일로 정한 장부와 상한이 조용히 14일로 잘려 돌았다(2026-09-23 발견).
+const DOSE_HISTORY_DAYS = 35;
 function doseCeilingRef(rows, opts) {
     const o = opts || {};
     if (!o.since) return null;

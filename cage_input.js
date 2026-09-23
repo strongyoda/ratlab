@@ -244,7 +244,12 @@ async function ciLoadHistory() {
         ciTodayLogs[v.ratId] = { scores: v.scores || {}, note: v.note || '' };
     });
 
-    const snap = await db.collection('cageFeeding').where('dateStr', '>=', cutoffStr).get();
+    // 급여 기록은 체중보다 길게 받는다 — 부족분 장부·농도 상한이 28일을 본다 (global.js DOSE_HISTORY_DAYS).
+    // 이 기록을 쓰는 다른 곳은 전부 '최근 몇 개'나 날짜 창으로 거르므로 길게 받아도 바뀌지 않는다.
+    const feedCutoff = new Date();
+    feedCutoff.setDate(feedCutoff.getDate() - DOSE_HISTORY_DAYS);
+    const feedCutoffStr = feedCutoff.toISOString().slice(0, 10);
+    const snap = await db.collection('cageFeeding').where('dateStr', '>=', feedCutoffStr).get();
     const byCage = {};
     snap.forEach(d => {
         const v = Object.assign({ id: d.id }, d.data());
