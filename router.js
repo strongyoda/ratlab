@@ -80,6 +80,10 @@ function switchTab(tId) {
     const tab = appTabs.find(t => t.id === tId);
     if (targetView && targetView.innerHTML.trim() === '') {
         go(tab.view, null, tId);
+    } else if (targetView && tab && tab.view === 'home' && typeof renderDashboardView === 'function') {
+        // 대시보드는 다른 탭에서 입력한 내용이 바로 반영돼야 한다. 처음 열 때 한 번만 계산하면
+        // 케이지별 입력을 마치고 돌아와도 아침 숫자가 그대로 남아 두 화면의 조제 지시가 갈려 보였다.
+        renderDashboardView(targetView);
     }
 }
 

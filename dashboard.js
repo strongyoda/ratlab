@@ -463,22 +463,29 @@ function dbPrep() {
         const item = { number: cage.number, n: occ.length, pc, bw };
         if (pc && bw && pcUsableForPrep(pc, occ.length, maxFill)) {
             item.k = Number(rule.value) * gi.gain * (bw / 1000) / (pc * occ.length);
-            if (ceilRef > 0) item.k = Math.min(item.k, ceilDose * (bw / 1000) / (ceilRef * occ.length));
+            if (ceilRef > 0) {
+                const kCap = ceilDose * (bw / 1000) / (ceilRef * occ.length);
+                if (item.k > kCap) { item.k = kCap; item.capped = true; }
+            }
             known.push(item);
         } else unknown.push(item);
     });
 
     if (!known.length || !stock) return null;
     const avgK = known.reduce((a, r) => a + r.k, 0) / known.length;
-    const totalK = known.reduce((a, r) => a + r.k, 0) + unknown.length * avgK;
+    // 케이지별 입력(ciUpdateDose)과 같은 식. 원액 부피까지 물통 총량에 넣어 푼 것.
+    // 예전엔 계수를 다 더한 뒤 한 번에 풀어서, 케이지별 값을 더한 것보다 1% 가까이 많았다.
+    const mgFor = (k, fill) => (k < stock) ? (k * fill) / (1 - k / stock) : k * fill;
     const opts = fillOptions(housing);
+    const fills = opts.length ? opts : [700];
+    known.forEach(it => { it.cc = {}; fills.forEach(f => { it.cc[f] = mgFor(it.k, f) / stock; }); });
     // 오늘 물을 얼마나 채울지는 사람이 정한다 (주말·연휴 앞이면 많이).
     // 앱은 달력을 모르므로 후보마다 만들 양을 적어 보여주기만 한다.
-    const plans = (opts.length ? opts : [700]).map(fill => {
-        const mg = (totalK < stock) ? (totalK * fill) / (1 - totalK / stock) : totalK * fill;
+    const plans = fills.map(fill => {
+        const mg = known.reduce((a, it) => a + mgFor(it.k, fill), 0) + unknown.length * mgFor(avgK, fill);
         return { fill, needCc: mg / stock, makeCc: makeVolume(mg / stock) };
     });
-    return { sub, stock, plans, known, unknown };
+    return { sub, stock, plans, known, unknown, fills, at: new Date() };
 }
 
 function dbPrepCard(p) {
@@ -503,7 +510,19 @@ function dbPrepCard(p) {
             <b class="mono" style="font-size:1.3rem; color:var(--stock-canary); white-space:nowrap;">가루 ${(x.makeCc * p.stock / 1000).toFixed(1)} g</b>
             <span style="font-size:0.85rem; opacity:0.9;">· 총 <span class="mono">${x.makeCc}</span> mL 눈금까지</span>
         </div>`).join('')}
+        <div style="margin-top:10px; font-size:0.72rem; letter-spacing:0.1em; font-weight:700; opacity:0.75;">케이지별로 넣을 원액 · 마지막 기록 기준</div>
+        ${p.known.slice().sort((a, b) => Number(a.number) - Number(b.number)).map(it => `
+        <div style="display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; padding:4px 0; font-size:0.86rem; border-bottom:1px dotted rgba(250,249,245,0.16);">
+            <b style="min-width:44px;">${dbEsc(it.number)}번</b>
+            ${p.fills.map(f => `<span>물 <span class="mono">${f}</span> → 원액 <b class="mono" style="color:var(--stock-canary);">${it.cc[f].toFixed(1)}</b> cc</span>`).join('')}
+            ${it.capped ? '<span style="font-size:0.74rem; opacity:0.8;">농도 상한 적용</span>' : ''}
+        </div>`).join('')}
+        <div style="font-size:0.74rem; opacity:0.75; margin-top:5px;">
+            위 줄을 더한 것에 30% 여유를 얹어 눈금 단위로 올린 것이 만들 양입니다.
+            케이지별 입력은 오늘 잰 체중과 방금 잰 섭취량으로 다시 계산하므로 조금 달라질 수 있습니다.
+        </div>
         <div style="font-size:0.8rem; opacity:0.9; margin-top:6px;">
+            <span class="mono">${String(p.at.getHours()).padStart(2, '0')}:${String(p.at.getMinutes()).padStart(2, '0')}</span> 계산 ·
             투약 케이지 <span class="mono">${p.known.length + p.unknown.length}</span>개 · 원액 <span class="mono">${p.stock}</span> mg/mL · 30% 여유 포함
             ${p.unknown.length ? ` · ${p.unknown.length}개(${p.unknown.map(u => dbEsc(u.number) + '번').join(', ')})는 기록이 없거나 최근 섭취가 비정상이라 평균으로 추정` : ''}
         </div>
