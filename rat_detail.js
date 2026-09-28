@@ -138,6 +138,10 @@ async function rdDoseStatusHtml() {
             d.medium === 'water' && (d.groups || []).includes(gkey) && Number(d.value) > 0);
         if (!rule) return '';
 
+        // 죽었거나 희생된 개체는 '투약 중 · N일째'가 계속 올라가면 안 된다.
+        // 대신 그때까지 며칠 투약했고 평균 얼마를 받았는지 보여준다.
+        if (rdRat.status === '사망' || rdRat.deathDate) return await rdDoseSummaryHtml(cfg, rule);
+
         const win = ciDoseWindow(rdRat, rule);
         const d = ciDaysFromStart(rdRat, rule);
         const anchor = { ligation: '수술일', ovx: 'OVX', arrival: '반입일' }[rule.startAnchor] || rule.startAnchor;
@@ -160,6 +164,59 @@ async function rdDoseStatusHtml() {
             <div style="font-size:0.76rem; color:${view.c}; opacity:0.88;">${view.s}</div>
         </div>`;
     } catch (e) { console.error(e); return ''; }
+}
+
+// 사망·희생 개체의 투약 요약 — 투약 며칠, 그동안 평균 몇 mg/kg/일.
+// 물통을 같이 쓰므로 개체값이 아니라 그 개체가 있던 케이지의 도달량이다.
+// 평균은 섭취량·투여량 화면의 누적 평균선과 같은 방식(global.js metDoseIntervals, 구간 일수 가중)이고,
+// 그 개체가 그 케이지에 있었고 투약 중이었던 시간만큼만 센다(케이지를 옮겼거나 구간 중간에 죽은 경우).
+async function rdDoseSummaryHtml(cfg, rule) {
+    const label = rdRat.sampleDate ? '희생' : '사망';
+    const endDate = ciDateStr(rdRat.deathDate);
+    const base = ciDateStr(rule.startAnchor === 'ligation' ? rdRat.surgeryDate
+                         : rule.startAnchor === 'ovx' ? rdRat.ovxDate
+                         : rule.startAnchor === 'arrival' ? rdRat.arrivalDate : null);
+    const box = (t, s) => `
+        <div style="background:var(--paper); border:1px solid var(--rule); border-radius:2px; padding:10px 12px; margin-bottom:10px;">
+            <div style="font-size:0.72rem; letter-spacing:0.1em; font-weight:700; color:var(--ink-soft);">${rule.substance} · ${label}</div>
+            <div style="font-size:1.05rem; font-weight:bold; color:var(--ink); margin:2px 0;">${t}</div>
+            <div style="font-size:0.76rem; color:var(--ink-soft);">${s}</div>
+        </div>`;
+    if (!base) return box(`${label}${endDate ? ` · ${endDate}` : ''}`, '투약 시작일을 알 수 없어 투약 기간을 계산하지 못했습니다.');
+
+    const start = ciShiftDate(base, rule.startOffset);
+    if (!endDate || endDate < start) return box(`투약 시작 전 ${label}`, endDate ? `${endDate} · 투약은 ${start}부터 예정이었습니다.` : '');
+    const dosingDays = Math.round((new Date(endDate + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000);
+
+    // 이 개체가 머문 케이지 기간
+    const hs = await db.collection('ratHousing').where('ratId', '==', rdRat.ratId).get();
+    const t0 = new Date(start + 'T00:00:00').getTime();
+    const tEnd = new Date(endDate + 'T00:00:00').getTime() + 86400000;
+    const stays = [];
+    hs.forEach(d => { const h = d.data();
+        const from = h.from?.toMillis?.() || 0, to = h.to?.toMillis?.() || tEnd;
+        const a = Math.max(from, t0), b = Math.min(to, tEnd);
+        if (b > a) stays.push({ cageId: String(h.cageId), a, b }); });
+
+    // 같은 코호트 기록을 한 번에 받아 케이지별로 나눈다 (섭취량·투여량 화면과 같은 조회)
+    const fs = await db.collection('cageFeeding').where('cohort', '==', String(rdRat.cohort)).get();
+    const byCage = {};
+    fs.forEach(d => { const v = d.data(); (byCage[String(v.cageId)] = byCage[String(v.cageId)] || []).push(v); });
+
+    let mg = 0, w = 0;
+    stays.forEach(st => metDoseIntervals(byCage[st.cageId]).forEach(iv => {
+        if (!iv.usable) return;
+        const ov = Math.min(iv.end, st.b) - Math.max(iv.start, st.a);
+        if (ov <= 0) return;
+        const wt = iv.days * ov / (iv.end - iv.start);
+        mg += iv.dose * wt; w += wt;
+    }));
+    if (!(w > 0)) return box(`투약 ${dosingDays}일 · ${label}`, `${start} ~ ${endDate} · 계산에 쓸 수 있는 섭취 기록이 없습니다.`);
+
+    const avg = mg / w;
+    const pct = avg / Number(rule.value) * 100;
+    return box(`투약 ${dosingDays}일 · 평균 <span class="mono">${avg.toFixed(0)}</span> mg/kg/day`,
+        `${start} ~ ${endDate} · 목표 ${rule.value}의 ${pct.toFixed(0)}% · 계산에 쓴 구간 ${w.toFixed(0)}일 · 물통을 같이 쓴 케이지 기준`);
 }
 
 async function rdRenderCageInfo(ratId, containerId) {

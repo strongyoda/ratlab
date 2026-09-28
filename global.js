@@ -687,6 +687,38 @@ function prepPlans(items, stock, housing) {
     return { plans, fills, known, unknown };
 }
 
+// 케이지 급여 기록 → 구간별 메트포민 도달량 (mg/kg/일).
+// 섭취량·투여량 화면의 누적 평균선과 같은 규칙이다:
+//  · 도달량 = 구간 시작 시점의 물통 농도 × 마신 양 ÷ 케이지 총체중 ÷ 마리·일
+//  · 물을 안 간 날은 직전에 탄 농도가 통 안에 그대로 이어진다
+//  · usable 은 그 화면의 통계 기준 — 이상·처치일·재실변동·사망발생 구간은 뺀다
+// start/end 는 구간의 시각(ms). 개체가 케이지를 옮겼거나 죽었을 때 겹친 만큼만 세려고 둔다.
+const MET_DOSE_DROP = ['이상', '처치일', '재실변동', '사망발생'];
+function metDoseIntervals(rows) {
+    const asc = (rows || []).slice().sort((a, b) => String(a.dateStr).localeCompare(String(b.dateStr))
+        || ((a.at?.toMillis?.() || 0) - (b.at?.toMillis?.() || 0)));
+    let conc = 0;
+    const out = [];
+    asc.forEach(r => {
+        const c0 = conc;
+        const kept = (r.noWater !== undefined && r.noWater !== null) ? !!r.noWater : !!r.noRefill;
+        if (!kept && Number(r.waterGiven) > 0) {
+            const totalVol = (typeof r.fillWater === 'number') ? Number(r.waterGiven)
+                                                               : Number(r.waterGiven) + (Number(r.doseCc) || 0);
+            conc = (Number(r.doseMg) || 0) / totalVol;
+        }
+        const days = r.animalDays / (r.ratCount || 1);
+        if (!(c0 > 0) || typeof r.waterConsumed !== 'number' || !(r.sumBW > 0) || !(days > 0)) return;
+        const end = r.at?.toMillis?.() || new Date(r.dateStr + 'T12:00:00').getTime();
+        const start = end - (Number(r.intervalHours) || days * 24) * 3600000;
+        out.push({ dateStr: r.dateStr, start, end, days,
+                   dose: c0 * r.waterConsumed / (r.sumBW / 1000) / days,
+                   usable: typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0
+                           && !(r.flags || []).some(f => MET_DOSE_DROP.includes(f)) });
+    });
+    return out;
+}
+
 // 채울 수 있는 물의 양 후보. 평일 구간과 긴 구간(주말·연휴 앞)의 두 가지다.
 // 앱은 달력을 모르므로 어느 쪽인지 추측하지 않는다. 조제 카드에 둘 다 적어두고
 // 물을 채우는 사람이 고른다. (요일로 판정하면 연휴가 낀 주에 틀린다)
