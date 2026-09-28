@@ -659,7 +659,8 @@ function prepCoefFor(ctx) {
     const opts = fillOptions(h);
     const maxFill = Math.max(...(opts.length ? opts : [700]));
     const out = { pc, bw, n, gain: gi.gain, k: null, capped: false };
-    if (pc && bw && n && pcUsableForPrep(pc, n, maxFill)) {
+    // 농도 상한이 걸리면 7일치 판정을 건너뛴다 — 한 마리 남은 케이지가 '비정상'으로 빠지지 않게 (케이지별 입력과 같은 판정)
+    if (pc && bw && n && (pcUsableForPrep(pc, n, maxFill) || (ceilDose > 0 && ceilRef > 0))) {
         out.k = Number(rule.value) * gi.gain * (bw / 1000) / (pc * n);
         if (ceilRef > 0) {
             const kCap = ceilDose * (bw / 1000) / (ceilRef * n);

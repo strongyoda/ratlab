@@ -1118,15 +1118,20 @@ function ciComputeIntake() {
     // (구간 도중에 죽거나 옮겨가도 그만큼만 세어짐)
     const t0 = last.at.toDate().getTime();
     const t1 = ciWorkMs();
+    // 구간 양 끝에서 이 정도 안쪽으로 들고 난 것은 '구간 중 변동'으로 치지 않는다.
+    // 사망은 급여 기록과 같은 저장 버튼에서 처리되는데 재실 기록이 몇 초 늦게 닫힌다.
+    // 그걸 변동으로 보면 사망 다음 구간이 통째로 '재실변동'으로 빠졌다
+    // (2026-09-26 파일럿 04G0: 급여 11:22:10, 재실 종료 11:22:11 → 9/28 구간이 1초 겹쳐 제외됨).
+    const EDGE_MS = 30 * 60000;
     let animalHours = 0, changed = false;
     ciAllHousing.forEach(h => {
         if (String(h.cageId) !== String(ciCurrent)) return;
         const from = h.from && h.from.toMillis ? h.from.toMillis() : 0;
         const to = h.to && h.to.toMillis ? h.to.toMillis() : t1;
         const ov = Math.min(t1, to) - Math.max(t0, from);
-        if (ov > 0) {
+        if (ov > EDGE_MS) {
             animalHours += ov / 3600000;
-            if (from > t0 || to < t1) changed = true;   // 구간 중간에 들어오거나 나감
+            if (from > t0 + EDGE_MS || to < t1 - EDGE_MS) changed = true;   // 구간 중간에 들어오거나 나감
         }
     });
     const days = hours / 24;
@@ -1472,8 +1477,31 @@ function ciUpdateDose() {
     // 채우는 물이 예상 섭취의 몇 일치인가. 평일 3일치 · 금요일 4~5일치가 정상이다.
     // 섭취량이 비정상적으로 낮게 잡히면 이 값이 수십~수백 일치로 튀고, 그대로 두면
     // 물통 하나에 몇 g 을 타라는 지시가 나온다. 그때는 계산을 멈추고 손으로 받는다.
+    const todayStr = ciDate || getTodayStr();
+    const podOf = r => { const s = ciDateStr(r.surgeryDate);
+        return s ? Math.round((new Date(todayStr + 'T00:00:00') - new Date(s + 'T00:00:00')) / 864e5) : null; };
+    const rampDays = Number(rule.rampDays) || 0;
+
+    // 농도 상한 (global.js doseCeilingRef). 결찰+램프가 모두 지난 뒤부터 최근 28일의 평일 최대를
+    // 마셨을 때 rule.ceilingDose 가 되는 농도를 넘기지 않는다 — 아팠다 회복하는 첫 구간 대비.
+    // 방금 잰 이번 구간도 넣는다(기준이 올라가기만 하니 안전 쪽).
+    const ceilDose = Number(rule.ceilingDose) || 0;
+    const sinceDates = alive.map(r => ciDateStr(r.surgeryDate)).filter(Boolean)
+        .map(s => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + rampDays);
+                    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); });
+    const ceilSince = sinceDates.length === alive.length ? sinceDates.sort().pop() : null;
+    let ceilRef = ceilDose > 0 ? doseCeilingRef(ciCageRows[ciCurrent], { since: ceilSince, today: todayStr }) : null;
+    if (ceilDose > 0 && ceilSince && todayStr >= ceilSince && c && c.waterPc > 0 && !c.spansWeekend && !flagged)
+        ceilRef = Math.max(ceilRef || 0, c.waterPc);
+
     const daysWorth = (expectedPc > 0) ? fill / (expectedPc * alive.length) : Infinity;
-    const wild = daysWorth > CI_DAYS_CAP;
+    // 농도 상한이 걸리는 케이지는 7일치 장치를 건너뛴다. 상한이 최근 4주 최대 섭취 기준으로
+    // 농도 위를 이미 막으므로, 섭취가 낮게 잡혀도 농도가 폭주하지 않는다.
+    // 7일치 장치는 2마리 기준이라 한 마리만 남은 케이지에선 정상 섭취여도 700 mL가 8~13일치로 잡혀
+    // 조제를 멈췄다 — 파일럿 29번이 04G0 사망 뒤 9/26부터 약 없이 물만 들어갔다(2026-09-29 발견).
+    // 결찰 직후처럼 상한 기준이 아직 없을 때만 예전대로 막는다.
+    const ceilOn = ceilDose > 0 && ceilRef > 0;
+    const wild = daysWorth > CI_DAYS_CAP && !ceilOn;
 
     if (missing.length || !expectedPc || !stock || !fill || wild) {
         // 계산 못 하면 지시량도 0으로 — 이전 계산값이 남은 채 저장되면
@@ -1501,10 +1529,6 @@ function ciUpdateDose() {
     const expectedIntake = expectedPc * alive.length;
 
     // 부족분 이득 보정 (global.js doseGainFor). 결찰 후 rule.rampDays 안이면 유예.
-    const todayStr = ciDate || getTodayStr();
-    const podOf = r => { const s = ciDateStr(r.surgeryDate);
-        return s ? Math.round((new Date(todayStr + 'T00:00:00') - new Date(s + 'T00:00:00')) / 864e5) : null; };
-    const rampDays = Number(rule.rampDays) || 0;
     const rampActive = rampDays > 0 && alive.some(r => { const p = podOf(r); return p !== null && p < rampDays; });
     // 이번에 채운 물이 반동 구간에 마셔질 채움이면 이득을 얹지 않는다 (global.js doseGainFor 주석).
     // 플래그는 오늘 폼의 것, 잔량은 도착해서 잰 값 — 둘 다 이 화면만 안다. 대시보드는 예정된 BP/MR로만 판정한다.
@@ -1519,18 +1543,6 @@ function ciUpdateDose() {
         ledgerDays: Number(housingCfg.doseLedgerDays) || 0,
         today: todayStr, hold });
     const targetValue = Number(rule.value) * gi.gain;
-
-    // 농도 상한 (global.js doseCeilingRef). 결찰+램프가 모두 지난 뒤부터 최근 28일의 평일 최대를
-    // 마셨을 때 rule.ceilingDose 가 되는 농도를 넘기지 않는다 — 아팠다 회복하는 첫 구간 대비.
-    // 방금 잰 이번 구간도 넣는다(기준이 올라가기만 하니 안전 쪽).
-    const ceilDose = Number(rule.ceilingDose) || 0;
-    const sinceDates = alive.map(r => ciDateStr(r.surgeryDate)).filter(Boolean)
-        .map(s => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + rampDays);
-                    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); });
-    const ceilSince = sinceDates.length === alive.length ? sinceDates.sort().pop() : null;
-    let ceilRef = ceilDose > 0 ? doseCeilingRef(ciCageRows[ciCurrent], { since: ceilSince, today: todayStr }) : null;
-    if (ceilDose > 0 && ceilSince && todayStr >= ceilSince && c && c.waterPc > 0 && !c.spansWeekend && !flagged)
-        ceilRef = Math.max(ceilRef || 0, c.waterPc);
 
     // 물통 안 총 부피 = 물 + 넣을 원액. 약도 그 안에 녹아 있으므로 농도는 총 부피 기준이다.
     // needMg = k × (물 + needMg/원액농도)  →  풀면 아래.  (원액 부피를 빼먹으면 약 1% 적게 들어간다)
