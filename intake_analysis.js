@@ -15,6 +15,9 @@ let iaRats = [];      // 이 코호트 개체 (처치 시작일 계산용)
 let iaYMax = null;    // 케이지끼리 비교되게 세로축을 통일한다
 let iaCages = {};     // cageId -> {group, cohort}
 let iaWeights = {};   // ratId -> [{date, weight}]
+let iaCageSum = {};   // cageId -> 드롭다운·패널에 쓰는 요약
+let iaCageKeys = [];  // 케이지 순서 (이전·다음 버튼)
+let iaCageSel = null; // 지금 보고 있는 케이지 — 코호트를 다시 불러와도 같은 케이지가 있으면 유지
 
 async function renderIntakeView(main) {
     main.innerHTML = `
@@ -306,6 +309,7 @@ function iaRender() {
 
     // 표를 그린 뒤에 캔버스가 생기므로 그래프는 여기서 그린다
     iaDrawMetGroupChart(usable);
+    if (iaCageSel) iaSelectCage(iaCageSel);
 }
 
 // ---------- 메트포민(물 투약) 그래프 ----------
@@ -444,76 +448,106 @@ function iaCageTable(usable) {
     mMax = Math.max(mMax, Math.min(mOut, mMax * 2));
     iaYMax = { water: round(wMax, 10), food: round(fMax, 5), met: round(mMax, 50) };
 
-    const rows = keys.map(c => {
+    // 케이지가 36개까지 늘어나므로 목록을 펼쳐 보는 대신 드롭다운으로 하나를 골라 본다.
+    // 드롭다운 항목과 선택한 케이지 패널이 같은 요약을 쓴다.
+    iaCageSum = {};
+    keys.forEach(c => {
         const list = byCage[c];
-        const w = iaStat(list.map(r => r.waterPerCapita));
-        const f = iaStat(list.map(r => r.foodPerCapita).filter(v => typeof v === 'number'));
         const g = iaGroupOf(list[0]);
         const doses = list.map(iaMetDose).filter(v => v !== null);   // list는 시간순 → 마지막이 최근
-        const m = iaStat(doses);
-        const latest = doses.length ? doses[doses.length - 1] : null;
         // '최근'은 마지막 계산 가능 구간 하나다. 며칠짜리인지 화면만 봐서는 알 수 없어
         // (주말이면 3일 치) 구간의 끝 날짜를 같이 적는다.
         let latestRow = null;
         for (let i = list.length - 1; i >= 0; i--) {
             if (iaMetDose(list[i]) !== null) { latestRow = list[i]; break; }
         }
-        const latestLabel = latestRow && latestRow.dateStr
-            ? `~${String(latestRow.dateStr).slice(5).replace('-', '/')}` : '최근';
-        // 이 케이지 군의 목표 용량 — 최근 구간이 목표의 몇 %인지 보여준다.
-        // 평균 ± 표준편차는 초기 사고 구간(과다·미달)이 섞여 폭만 커 보이고,
-        // 지금 잘 맞고 있는지는 최근 구간이 말해준다.
-        const rule = ((iaConfig && iaConfig.dosing) || [])
-            .find(d => d.medium === 'water' && (d.groups || []).includes(g) && Number(d.value) > 0);
-        return `<tr onclick="iaToggleChart('${c}')" style="cursor:pointer; border-bottom:1px solid var(--rule);">
-            <td style="padding:7px; font-weight:bold;">${c}번</td>
-            <td style="padding:7px; font-size:0.8rem; color:var(--ink-soft);">${iaGroupName(g)}</td>
-            <td style="padding:7px; text-align:center;">${list.length}</td>
-            <td style="padding:7px; text-align:center;">${iaFmt(w, 0)}</td>
-            <td style="padding:7px; text-align:center;">${f ? iaFmt(f, 1) : '-'}</td>
-            <td style="padding:7px; text-align:center;">
-                ${latest !== null ? `
-                    <b style="color:var(--ink-blue);">${latestLabel} ${latest.toFixed(0)}</b>
-                    ${rule ? `<b style="color:${Math.abs(latest / Number(rule.value) - 1) <= 0.15 ? 'var(--approve)' : 'var(--red)'};">
-                        (${(latest / Number(rule.value) * 100).toFixed(0)}%)</b>` : ''}
-                    <br><span style="font-size:0.72rem; color:var(--ink-soft);">평균 ${iaFmt(m, 0)} · ${doses.length}구간</span>` : '-'}</td>
-            <td style="padding:7px; text-align:center; color:var(--ink-soft); font-size:0.75rem;"
-                id="ia-caret-${c}">▾</td>
-        </tr>
-        <tr id="ia-chartrow-${c}" style="display:none;">
-            <td colspan="7" style="padding:10px 7px 16px; background:var(--paper);">
-                <div style="height:230px;"><canvas id="ia-chart-${c}"></canvas></div>
-                <div style="height:175px; margin-top:14px;"><canvas id="ia-chartmet-${c}"></canvas></div>
-                <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
-                    회색 속빈 점은 계산에서 뺀 구간입니다(선은 그 날을 건너뜁니다). 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
-                    위 점선은 고염식·BAPN·메트포민이 들어간 날, 아래 점선은 케이지 구성이 바뀐 날입니다.
-                    아래 그림은 실제로 들어간 메트포민입니다 — 가로축은 위와 같습니다.
-                    <b>붉은 선은 투약 시작 이후의 누적 평균</b>으로, 구간 길이(평일 1일·주말 3일)로 가중해 낸 값입니다.
-                    그날 값은 오르내려도 이 선이 목표에 붙으면 받은 총량은 맞은 것입니다.
-                </div>
-            </td>
-        </tr>`;
-    }).join('');
+        iaCageSum[c] = {
+            g, n: list.length,
+            w: iaStat(list.map(r => r.waterPerCapita)),
+            f: iaStat(list.map(r => r.foodPerCapita).filter(v => typeof v === 'number')),
+            m: iaStat(doses), nDose: doses.length,
+            latest: doses.length ? doses[doses.length - 1] : null,
+            latestLabel: latestRow && latestRow.dateStr
+                ? `~${String(latestRow.dateStr).slice(5).replace('-', '/')}` : '최근',
+            rule: iaWaterRuleOf(g)
+        };
+    });
+    iaCageKeys = keys;
+    // 처음엔 투약 중인 케이지 중 첫 번째를, 없으면 첫 케이지를 연다
+    if (!iaCageSel || !keys.includes(iaCageSel))
+        iaCageSel = keys.find(c => iaCageSum[c].latest !== null) || keys[0];
+
+    const opt = c => { const s = iaCageSum[c];
+        return `<option value="${c}" ${c === iaCageSel ? 'selected' : ''}>${c}번${s.latest !== null
+            ? ` · 메트포민 ${s.latest.toFixed(0)}` : ''} · 물 ${s.w ? s.w.mean.toFixed(0) : '-'}</option>`; };
+    // 군이 둘 이상이면 군별로 묶는다 (C14: G1 미투약 · G2 조기 · G3 후기)
+    const groups = [...new Set(keys.map(c => iaCageSum[c].g))].sort();
+    const options = groups.length > 1
+        ? groups.map(g => `<optgroup label="${iaGroupName(g)}">${keys.filter(c => iaCageSum[c].g === g).map(opt).join('')}</optgroup>`).join('')
+        : keys.map(opt).join('');
+    const quiet = 'background:var(--paper); color:var(--ink); outline:1px solid var(--rule); padding:6px 10px;';
 
     return `
     <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
             <h4 style="margin:0; color:var(--ink);">케이지별</h4>
-            <span style="font-size:0.8rem; color:var(--ink-soft);">줄을 누르면 추이 그래프가 열립니다</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+                <button class="btn-small" onclick="iaStepCage(-1)" aria-label="이전 케이지" style="${quiet}">◀</button>
+                <select id="ia-cage-sel" onchange="iaSelectCage(this.value)" aria-label="케이지 선택"
+                        style="padding:7px 8px; border:1px solid #C9C5B8; border-radius:2px; min-width:210px;">${options}</select>
+                <button class="btn-small" onclick="iaStepCage(1)" aria-label="다음 케이지" style="${quiet}">▶</button>
+            </div>
         </div>
-        <div style="overflow-x:auto;">
-        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
-            <thead><tr style="">
-                <th style="padding:7px; text-align:left;">케이지</th><th style="padding:7px; text-align:left;">군</th>
-                <th style="padding:7px;">구간</th><th style="padding:7px;">물 mL/day/마리</th>
-                <th style="padding:7px;">사료 g/day/마리</th>
-                <th style="padding:7px;">Metformin<br><span style="font-weight:normal; font-size:0.72rem;">mg/kg/day</span></th>
-                <th style="padding:7px;"></th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-        </table>
-        </div>
+        <div id="ia-cage-panel"></div>
     </div>`;
+}
+
+// 드롭다운에서 고른 케이지의 요약과 그래프를 그린다
+function iaSelectCage(cageId) {
+    const c = String(cageId);
+    const s = iaCageSum[c];
+    const panel = document.getElementById('ia-cage-panel');
+    if (!s || !panel) return;
+    iaCageSel = c;
+    const sel = document.getElementById('ia-cage-sel');
+    if (sel && sel.value !== c) sel.value = c;
+    Object.keys(iaCharts).forEach(k => { iaCharts[k].destroy(); delete iaCharts[k]; });
+
+    // 평균 ± 표준편차는 초기 사고 구간(과다·미달)이 섞여 폭만 커 보이고,
+    // 지금 잘 맞고 있는지는 최근 구간이 말해준다. 그래서 메트포민은 최근값을 크게 보인다.
+    const pct = (s.latest !== null && s.rule) ? s.latest / Number(s.rule.value) : null;
+    const cell = (label, big, small, color) => `
+        <div style="flex:1; min-width:130px; background:var(--sheet); border:1px solid var(--rule); border-radius:2px; padding:9px 11px;">
+            <div style="font-size:0.74rem; color:var(--ink-soft);">${label}</div>
+            <div class="mono" style="font-size:1.25rem; font-weight:bold; color:${color};">${big}</div>
+            <div style="font-size:0.72rem; color:var(--ink-soft);">${small}</div>
+        </div>`;
+    panel.innerHTML = `
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+            ${cell('군', iaGroupName(s.g), `${s.n}구간 기록`, 'var(--ink)')}
+            ${cell('물 mL/day/마리', iaFmt(s.w, 0), '평균 ± 표준편차', 'var(--ink-blue)')}
+            ${cell('사료 g/day/마리', s.f ? iaFmt(s.f, 1) : '-', '평균 ± 표준편차', '#7A5C00')}
+            ${s.latest !== null ? cell(`메트포민 ${s.latestLabel}`,
+                `${s.latest.toFixed(0)}${pct !== null ? ` <span style="font-size:0.85rem; color:${Math.abs(pct - 1) <= 0.15 ? 'var(--approve)' : 'var(--red)'};">(${(pct * 100).toFixed(0)}%)</span>` : ''}`,
+                `mg/kg/day · 평균 ${iaFmt(s.m, 0)} · ${s.nDose}구간`, 'var(--ink)') : ''}
+        </div>
+        <div style="height:230px;"><canvas id="ia-chart-${c}"></canvas></div>
+        <div style="height:175px; margin-top:14px;"><canvas id="ia-chartmet-${c}"></canvas></div>
+        <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
+            회색 속빈 점은 계산에서 뺀 구간입니다(선은 그 날을 건너뜁니다). 세로축은 모든 케이지가 같은 눈금이라 그대로 비교됩니다.
+            위 점선은 고염식·BAPN·메트포민이 들어간 날, 아래 점선은 케이지 구성이 바뀐 날입니다.
+            아래 그림은 실제로 들어간 메트포민입니다 — 가로축은 위와 같습니다.
+            <b>붉은 선은 투약 시작 이후의 누적 평균</b>으로, 구간 길이(평일 1일·주말 3일)로 가중해 낸 값입니다.
+            그날 값은 오르내려도 이 선이 목표에 붙으면 받은 총량은 맞은 것입니다.
+        </div>`;
+    iaDrawChart(c);
+}
+
+function iaStepCage(delta) {
+    const n = iaCageKeys.length;
+    if (!n) return;
+    const i = iaCageKeys.indexOf(iaCageSel);
+    iaSelectCage(iaCageKeys[((i < 0 ? 0 : i) + delta + n) % n]);
 }
 
 // 이 케이지에 고염식·BAPN·메트포민이 언제부터 들어갔는지.
@@ -594,24 +628,6 @@ const iaEventPlugin = {
         });
     }
 };
-
-// 케이지 한 줄을 눌렀을 때 물·사료 추이를 그린다.
-// 케이지가 24개까지 늘어나므로 기본은 닫아두고, 연 것만 그린다.
-function iaToggleChart(cageId) {
-    const row = document.getElementById('ia-chartrow-' + cageId);
-    const caret = document.getElementById('ia-caret-' + cageId);
-    if (!row) return;
-    const open = row.style.display !== 'none';
-    row.style.display = open ? 'none' : 'table-row';
-    if (caret) caret.textContent = open ? '▾' : '▴';
-    if (open) {
-        ['' + cageId, 'met-' + cageId].forEach(k => {
-            if (iaCharts[k]) { iaCharts[k].destroy(); delete iaCharts[k]; }
-        });
-        return;
-    }
-    iaDrawChart(cageId);
-}
 
 function iaDrawChart(cageId) {
     // 제외 구간까지 전부 가로축에 올린다. 통계에 쓴 값은 선으로 잇고,

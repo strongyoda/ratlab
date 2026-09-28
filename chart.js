@@ -1557,6 +1557,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         wtTable += `<tr style="background:var(--stock-green-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
         finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
+        // 섭취 · 투약 노출 (cohort_exposure.js) — 결과 카드 바로 아래에 노출과 교란 점검을 붙인다
+        finalHtml += `<div id="coExpo${uniqueSuffix}"></div>`;
         resDiv.innerHTML = finalHtml;
 
         const areMaxY = fixedOptions && fixedOptions.maxAreLoc !== undefined ? Math.max(5, fixedOptions.maxAreLoc + 1) : undefined;
@@ -1636,6 +1638,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             //bpChart.options.plugins.zoom.zoom.onZoomComplete = ({ chart }) => syncZoomPeers(chart, syncChartsSbp); bpChart.options.plugins.zoom.pan.onPanComplete   = ({ chart }) => syncZoomPeers(chart, syncChartsSbp);
             wtChart.update('none'); bpChart.update('none');
         }
+        // 기다리지 않는다 — 급여 기록을 따로 읽으므로 위 카드들이 먼저 보이게 한다
+        if (typeof coRenderExposure === 'function') coRenderExposure(`coExpo${uniqueSuffix}`, rats, uniqueSuffix);
     } catch (e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
 }
 

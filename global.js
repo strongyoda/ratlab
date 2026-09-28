@@ -711,7 +711,7 @@ function metDoseIntervals(rows) {
         if (!(c0 > 0) || typeof r.waterConsumed !== 'number' || !(r.sumBW > 0) || !(days > 0)) return;
         const end = r.at?.toMillis?.() || new Date(r.dateStr + 'T12:00:00').getTime();
         const start = end - (Number(r.intervalHours) || days * 24) * 3600000;
-        out.push({ dateStr: r.dateStr, start, end, days,
+        out.push({ dateStr: r.dateStr, start, end, days, row: r,
                    dose: c0 * r.waterConsumed / (r.sumBW / 1000) / days,
                    usable: typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0
                            && !(r.flags || []).some(f => MET_DOSE_DROP.includes(f)) });
