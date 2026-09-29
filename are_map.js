@@ -149,16 +149,13 @@
         const pct = n => total ? Math.round(n / total * 100) : 0;
         const legendDot = (t, filled) => `<svg width="12" height="12" style="vertical-align:-1px"><circle cx="6" cy="6" r="4.2" fill="${filled ? typeColor(t) : 'var(--sheet,#fff)'}" stroke="${typeColor(t)}" stroke-width="1.6"/></svg>`;
         return `
-        <div style="margin-top:14px; border-top:1px dashed var(--rule); padding-top:14px;">
-            <h5 style="text-align:center; color:var(--ink); margin:0 0 8px;">ARE 위치 지도</h5>
-            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; justify-content:center;">
-                <svg viewBox="${VB.join(' ')}" style="width:100%; max-width:300px; height:auto; background:var(--sheet); border:1px solid var(--rule);">${baseSvg()}${dots}</svg>
-                <div style="font-size:0.8rem; min-width:150px; line-height:1.9;">
-                    <div class="mono" style="font-size:0.9rem;"><b>R</b> ${tally.R} (${pct(tally.R)}%) · <b>L</b> ${tally.L} (${pct(tally.L)}%) · <b>정중</b> ${tally.mid}</div>
-                    <div>${legendDot('macro', true)} Macro ${legendDot('micro', true)} Micro ${legendDot('미확인', true)} 미확인</div>
-                    <div style="color:var(--ink-soft);">${legendDot('micro', true)} 찍은 위치 <span class="mono">${exactN}</span> · ${legendDot('micro', false)} 부위로 추정 <span class="mono">${pts.length - exactN}</span></div>
-                    <div style="color:var(--ink-soft); font-size:0.75rem;">점에 마우스를 올리면 개체 번호가 보입니다.</div>
-                </div>
+        <div>
+            <h5 style="text-align:center; color:var(--ink); margin:0 0 10px;">ARE 위치 지도</h5>
+            <svg viewBox="${VB.join(' ')}" style="width:100%; max-width:240px; height:auto; display:block; margin:0 auto; background:var(--sheet); border:1px solid var(--rule);">${baseSvg()}${dots}</svg>
+            <div style="font-size:0.78rem; line-height:1.8; text-align:center; margin-top:6px;">
+                <div class="mono" style="font-size:0.85rem;"><b>R</b> ${tally.R} (${pct(tally.R)}%) · <b>L</b> ${tally.L} (${pct(tally.L)}%) · <b>정중</b> ${tally.mid}</div>
+                <div>${legendDot('macro', true)} Macro ${legendDot('micro', true)} Micro ${legendDot('미확인', true)} 미확인</div>
+                <div style="color:var(--ink-soft);">${legendDot('micro', true)} 찍은 위치 <span class="mono">${exactN}</span> · ${legendDot('micro', false)} 부위로 추정 <span class="mono">${pts.length - exactN}</span></div>
             </div>
         </div>`;
     }
