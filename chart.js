@@ -406,6 +406,21 @@ async function initDetailSelectors(targetId) {
 }
 
 
+// 랫드 상세: 번호 선택 옆 ▲▼ — 목록에서 윗번호/아랫번호로 옮긴다 (선택을 바꾼 것과 똑같이 동작)
+function stepDetailRat(dir) {
+    const sel = document.getElementById('dt-rat-sel');
+    if (!sel) return;
+    const vals = Array.from(sel.options).map(o => o.value).filter(Boolean);
+    if (!vals.length) return;
+    const i = vals.indexOf(sel.value);
+    const next = i < 0 ? vals[dir > 0 ? 0 : vals.length - 1] : vals[i + dir];
+    if (!next) return;   // 맨 위·맨 아래에서는 멈춘다
+    const dirty = typeof rdDirtyCount === 'function' ? rdDirtyCount() : 0;
+    if (dirty && !confirm(`저장하지 않은 변경 ${dirty}건이 있습니다. 저장하지 않고 ${next}(으)로 넘어갈까요?`)) return;
+    sel.value = next;
+    sel.dispatchEvent(new Event('change'));
+}
+
 function updateRatList(preSelectId = null) {
     const cVal = document.getElementById('dt-cohort-sel').value;
     const rSel = document.getElementById('dt-rat-sel');

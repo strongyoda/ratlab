@@ -573,9 +573,13 @@ async function go(view, targetId = null, specificTabId = null) {
                 </div>
                 <div style="flex:1;">
                     <label style="font-size:0.85rem; font-weight:bold; color:var(--navy);">번호(ID) 선택</label>
-                    <select id="dt-rat-sel" onchange="loadDetailData()" style="width:100%; padding:10px;">
-                        <option value="">-</option>
-                    </select>
+                    <div style="display:flex; gap:6px;">
+                        <select id="dt-rat-sel" onchange="loadDetailData()" style="flex:1; min-width:0; padding:10px;">
+                            <option value="">-</option>
+                        </select>
+                        <button type="button" class="btn-small" onclick="stepDetailRat(-1)" title="윗번호" aria-label="윗번호로" style="padding:0 12px; border:1px solid var(--ink); background:var(--sheet); color:var(--ink); border-radius:2px; cursor:pointer; font-weight:bold;">▲</button>
+                        <button type="button" class="btn-small" onclick="stepDetailRat(1)" title="아랫번호" aria-label="아랫번호로" style="padding:0 12px; border:1px solid var(--ink); background:var(--sheet); color:var(--ink); border-radius:2px; cursor:pointer; font-weight:bold;">▼</button>
+                    </div>
                 </div>
             </div>
         </div>

@@ -108,7 +108,7 @@
             const key = `${Math.round(p.x)},${Math.round(p.y)}`;
             const k = seen[key] = (seen[key] || 0) + 1;
             if (k === 1) return p;
-            const a = k * 2.4, r = 5 * Math.sqrt(k - 1);
+            const a = k * 2.4, r = 3.8 * Math.sqrt(k - 1);
             return { ...p, x: p.x + r * Math.cos(a), y: p.y + r * Math.sin(a) };
         });
     }
@@ -143,7 +143,7 @@
         if (!pts.length) return '';
         const dots = spread(pts).map(p => {
             const c = typeColor(p.type);
-            return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.type === 'macro' ? 7 : 5.5}" fill="${p.exact ? c : 'var(--sheet, #fff)'}" fill-opacity="${p.exact ? 0.85 : 1}" stroke="${c}" stroke-width="2"><title>${esc(p.tip)}</title></circle>`;
+            return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.type === 'macro' ? 5.3 : 4.1}" fill="${p.exact ? c : 'var(--sheet, #fff)'}" fill-opacity="${p.exact ? 0.85 : 1}" stroke="${c}" stroke-width="1.6"><title>${esc(p.tip)}</title></circle>`;
         }).join('');
         const total = tally.R + tally.L + tally.mid;
         const pct = n => total ? Math.round(n / total * 100) : 0;
@@ -168,7 +168,7 @@
         const pts = spread(list.map((loc, i) => { const p = lesionPoint(loc); return p ? { ...p, i, type: loc.type } : null; }).filter(Boolean));
         const marks = pts.map(p => {
             const c = typeColor(p.type);
-            return `<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="10" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="2"/><text x="${p.x.toFixed(1)}" y="${(p.y + 4.2).toFixed(1)}" font-size="12" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${p.i + 1}</text></g>`;
+            return `<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="7.5" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="1.6"/><text x="${p.x.toFixed(1)}" y="${(p.y + 3.2).toFixed(1)}" font-size="9" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${p.i + 1}</text></g>`;
         }).join('');
         const note = loc => { const p = lesionPoint(loc); return !p ? ' <span style="color:var(--ink-soft);">(그림에 없음)</span>' : p.exact ? '' : ' <span style="color:var(--ink-soft);">(위치 추정)</span>'; };
         const rows = list.length ? list.map((loc, i) => `<div style="display:flex; gap:6px; align-items:baseline;"><b class="mono" style="color:${typeColor(loc.type)}; min-width:14px;">${i + 1}</b><span><b>${esc(loc.type)}</b> · ${esc(locText(loc))}${note(loc)}</span></div>`).join('')
@@ -202,7 +202,7 @@
             tallies.push(t);
         });
         if (!pts.length) return '';
-        const dots = spread(pts).map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.type === 'macro' ? 7.5 : 5}" fill="${p.type === '미확인' ? 'var(--sheet,#fff)' : p.color}" fill-opacity="${p.exact ? 0.9 : 0.45}" stroke="${p.color}" stroke-width="2"${p.exact ? '' : ' stroke-dasharray="2 1.5"'}><title>${esc(p.tip)}</title></circle>`).join('');
+        const dots = spread(pts).map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.type === 'macro' ? 5.6 : 3.8}" fill="${p.type === '미확인' ? 'var(--sheet,#fff)' : p.color}" fill-opacity="${p.exact ? 0.9 : 0.45}" stroke="${p.color}" stroke-width="1.6"${p.exact ? '' : ' stroke-dasharray="2 1.5"'}><title>${esc(p.tip)}</title></circle>`).join('');
         const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '-';
         const td = 'padding:5px 6px; white-space:nowrap;';
         const rows = tallies.map(t => `<tr style="border-bottom:1px solid var(--rule);">
@@ -246,7 +246,7 @@
                 const loc = { side: row.querySelector('.are-side').value, art: row.querySelector('.are-art').value, x: row.dataset.x !== undefined && row.dataset.x !== '' ? Number(row.dataset.x) : undefined, y: row.dataset.y !== undefined && row.dataset.y !== '' ? Number(row.dataset.y) : undefined };
                 const p = lesionPoint(loc); if (!p) return '';
                 const c = typeColor(row.querySelector('.are-tp').value);
-                return `<g><circle cx="${p.x}" cy="${p.y}" r="9.5" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="1.8"/><text x="${p.x}" y="${p.y + 4}" font-size="11.5" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${i + 1}</text></g>`;
+                return `<g><circle cx="${p.x}" cy="${p.y}" r="7.1" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="1.4"/><text x="${p.x}" y="${p.y + 3}" font-size="8.6" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${i + 1}</text></g>`;
             }).join('');
             rows.forEach((row, i) => { const n = row.querySelector('.are-no'); if (n) n.textContent = i + 1; });
         }
