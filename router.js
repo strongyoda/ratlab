@@ -462,6 +462,27 @@ async function go(view, targetId = null, specificTabId = null) {
                     <button id="btn-extract-ai" class="btn" style="background:#8e24aa; color:white; font-size:1.1rem; padding:15px;" onclick="exportForAI()">📄 AI 프롬프트용 텍스트 데이터 추출 및 다운로드</button>
                 </div>
                 <div id="ai-extract-status" style="margin-top:15px; font-weight:bold; color:var(--navy); text-align:center;"></div>
+
+                <div style="margin-top:28px; border-top:3px double var(--ink); padding-top:16px;">
+                    <b style="font-size:1rem;">논문용 CSV</b>
+                    <div style="font-size:0.85rem; color:var(--ink-soft); margin:6px 0 12px; line-height:1.6;">
+                        엑셀·통계 프로그램에 바로 넣는 표입니다. 모든 표에 cohort · group · ratId가 있어 서로 붙일 수 있습니다.<br>
+                        POD는 수술일 기준으로 다시 계산합니다(옛 코호트의 시점 라벨과 다를 수 있음). 숨김 처리된 개체는 빠집니다.
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; font-size:0.85rem;">
+                        <b>코호트</b>
+                        <button type="button" class="btn-small" onclick="pcAll(true)">전체 선택</button>
+                        <button type="button" class="btn-small" onclick="pcAll(false)">전체 해제</button>
+                    </div>
+                    <div id="pc-cohorts" style="font-size:0.9rem; margin-bottom:12px;">불러오는 중...</div>
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <button type="button" class="btn btn-blue pc-btn" style="width:auto;" onclick="exportPaperCsv('simple')">간단 파일 받기
+                            <span style="display:block; font-weight:normal; font-size:0.75rem;">한 장 · 1행 = 1마리 · 코드명·수술·ARE·MRA·샘플·사망·ARE위치</span></button>
+                        <button type="button" class="btn pc-btn" style="width:auto;" onclick="exportPaperCsv('full')">자세한 파일 받기
+                            <span style="display:block; font-weight:normal; font-size:0.75rem;">4개 · 개체표 · ARE 병변표 · 측정표(체중·혈압) · MR표</span></button>
+                    </div>
+                    <div id="pc-status" style="margin-top:10px; font-size:0.85rem;"></div>
+                </div>
             </div>
 
         </div>`;
@@ -738,6 +759,8 @@ function admTab(mode) {
 
     // 수정 탭을 열면 코호트 목록을 채워둔다
     if (mode === 'edit') deSubTab('rat');
+    // 논문용 CSV의 코호트 목록
+    if (mode === 'ai' && typeof initPaperCsv === 'function') initPaperCsv();
 }
 
 
