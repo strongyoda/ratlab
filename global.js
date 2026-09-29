@@ -723,9 +723,10 @@ function metDoseIntervals(rows) {
 // 채울 수 있는 물의 양 후보. 평일 구간과 긴 구간(주말·연휴 앞)의 두 가지다.
 // 앱은 달력을 모르므로 어느 쪽인지 추측하지 않는다. 조제 카드에 둘 다 적어두고
 // 물을 채우는 사람이 고른다. (요일로 판정하면 연휴가 낀 주에 틀린다)
+// 1000 통을 쓰는 코호트면 그 채움량(bigFill)도 후보에 넣는다 — 주말 물 예보는 제일 큰 값으로 본다.
 function fillOptions(housing) {
     const h = housing || {};
-    const v = [Number(h.waterFill) || 0, Number(h.waterFillLong) || 0].filter(x => x > 0);
+    const v = [Number(h.waterFill) || 0, Number(h.waterFillLong) || 0, Number(h.bigFill) || 0].filter(x => x > 0);
     return [...new Set(v)].sort((a, b) => a - b);
 }
 

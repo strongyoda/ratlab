@@ -514,6 +514,10 @@ function ciOpen(cageId) {
         handlings: '',              // 비우면 체중 잰 날 기준으로 자동
         manualPc: '',               // 쓸 만한 섭취 기록이 없을 때 손으로 넣는 예상 섭취량
         bottleSwap: false, newTare: '',   // 오늘 물통을 갈았는가 + 새 통 무게
+        // 오늘 걸 물통 크기. 평소엔 700 통, 주말·연휴처럼 오래 버텨야 할 때만 1000 통을 고른다.
+        // 그래서 직전 기록을 물려받지 않고 늘 700에서 시작한다 (금요일 1000이 월요일로 넘어오면 틀린다).
+        bottleSize: CI_BOTTLE_STD,
+        bigTare: Number(h.bigBottleTare) > 0 ? String(h.bigBottleTare) : '',
         rats: {}
     };
     ciOccupants(cageId).forEach(r => ciEnsureRatForm(r.ratId));
@@ -554,6 +558,8 @@ function ciRestoreToday(row) {
     // 통을 간 날은 자리에 등록된 무게가 이미 새 통으로 바뀌어 있다.
     // 잔량은 그날 쓴 옛 통 무게로 계산해야 하므로 그 값을 그대로 물려준다.
     if (Number(row.bottleTare) > 0) ciForm._tareOverride = Number(row.bottleTare);
+    ciForm.bottleSize = ciIsBig(row) ? CI_BOTTLE_BIG : CI_BOTTLE_STD;
+    if (ciIsBig(row) && Number(row.fillBottleTare) > 0) ciForm.bigTare = String(row.fillBottleTare);
 
     ciOccupants(ciCurrent).forEach(r => {
         const f = ciEnsureRatForm(r.ratId);
@@ -581,7 +587,8 @@ function ciRenderForm() {
     const showBottle = Number(ciForm.bottleCount) > 1 || Number(h.bottleCount || 1) > 1;
     // 빈 물통 무게가 설정돼 있으면 저울에 올린 값을 그대로 받고 물 양은 앱이 뺀다
     const tare = ciTareOf(ciCurrent);
-    const tareIsOwn = Number(cage.bottleTare) > 0;   // 이 자리 실측값인지, 코호트 기본값인지
+    const lastBig = ciIsBig(ciBaseline(ciCurrent));   // 지난번에 1000 통을 걸었나 — 지금 떼어낸 통
+    const tareIsOwn = lastBig || Number(cage.bottleTare) > 0;   // 이 자리 실측값인지, 코호트 기본값인지
 
     const idx = ciCages.findIndex(c => String(c.id) === ciCurrent);
     const next = ciCages[idx + 1];
@@ -685,7 +692,7 @@ function ciRenderForm() {
             <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g 통째</span>
         </div>
         <div style="font-size:0.8rem; color:${tareIsOwn ? 'var(--ink-soft)' : 'var(--stamp)'}; margin:0 0 10px 62px;">
-            빈 통 <span class="mono">${tare}</span> g 제외 → 물 <b id="ci-ws-out" class="mono">${ciForm.waterRemaining === '' ? '-' : ciForm.waterRemaining} g</b>
+            ${lastBig ? '<b>1000 통</b> ' : ''}빈 통 <span class="mono">${tare}</span> g 제외 → 물 <b id="ci-ws-out" class="mono">${ciForm.waterRemaining === '' ? '-' : ciForm.waterRemaining} g</b>
             ${tareIsOwn ? '' : '<br>이 자리의 물통 무게가 등록되지 않아 <b>코호트 기본값</b>을 씁니다. 케이지 현황에서 실측값을 넣어주세요.'}
         </div>` : `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
@@ -703,7 +710,7 @@ function ciRenderForm() {
             <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g 잔량</span>
         </div>
 
-        ${tare > 0 ? `
+        ${(tare > 0 && ciForm.bottleSize !== CI_BOTTLE_BIG) ? `
         <div style="margin-top:2px; padding-top:8px; border-top:1px dashed #eee;">
             <label style="display:block; font-size:0.85rem;">
                 <input type="checkbox" ${ciForm.bottleSwap ? 'checked' : ''}
@@ -764,6 +771,7 @@ function ciRenderForm() {
                 잰 것을 그대로 다시 넣습니다. 사료만 갈 날은 <b>물 그대로 둠</b>만 켜세요.
             </span>
         </div>
+        ${tare > 0 ? ciBottleSizeRow(lastBig) : ''}
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
             <div style="flex:1; min-width:170px; ${ciForm.noWater ? 'opacity:0.4; pointer-events:none;' : ''}">
             ${tare > 0 ? `
@@ -773,9 +781,9 @@ function ciRenderForm() {
                        oninput="ciSetFillScale(this.value)" placeholder="원액 넣기 전" aria-label="물 채운 통 무게 (그램)"
                        style="width:100%; height:42px;">
                 <div style="font-size:0.75rem; color:var(--ink-soft); margin-top:4px;">
-                    빈 통 <b class="mono">${fillTare} g</b>${swapped ? ' <b style="color:#b45309;">(새 통)</b>' : ''} 제외 → 물
+                    ${ciForm.bottleSize === CI_BOTTLE_BIG ? '<b>1000 통</b> ' : ''}빈 통 <b id="ci-fs-tare" class="mono">${fillTare} g</b>${swapped ? ' <b style="color:#b45309;">(새 통)</b>' : ''} 제외 → 물
                     <b id="ci-fs-out" class="mono" style="color:var(--ink);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
-                    <span style="color:var(--ink-soft);">· 700 mL면 <span class="mono">${(fillTare + 700).toFixed(0)}</span> g 근처</span>
+                    <span style="color:var(--ink-soft);">· ${ciFillHint()} mL면 <span class="mono">${(fillTare + ciFillHint()).toFixed(0)}</span> g 근처</span>
                     ${swapped ? `<br><span style="color:#b45309;">채워서 다는 건 새 통이라 새 무게로 뺍니다.
                         1단계에서 잰 잔량은 떼어낸 옛 통(${tare} g) 기준입니다.</span>` : ''}
                 </div>
@@ -912,6 +920,9 @@ function ciTareOf(cageId) {
     // 오늘 기록을 다시 열었으면 그때 쓴 값을 그대로 쓴다 (통을 간 날은 자리 값이 이미 바뀌어 있다)
     if (ciForm && ciForm._tareOverride > 0 && String(cageId) === String(ciCurrent))
         return Number(ciForm._tareOverride);
+    // 지난번에 1000 통을 걸었으면 지금 떼어낸 것도 그 통이다. 자리에 등록된 무게는 700 통 것이다.
+    const last = ciBaseline(cageId);
+    if (ciIsBig(last)) return Number(last.fillBottleTare) || ciBigTareDefault();
     const cage = ciCages.find(c => String(c.id) === String(cageId));
     if (cage && Number(cage.bottleTare) > 0) return Number(cage.bottleTare);
     return Number((ciConfig && ciConfig.housing && ciConfig.housing.bottleTare) || 0);
@@ -925,8 +936,95 @@ function ciTareOf(cageId) {
 // 여기를 옛 무게로 빼면 채운 양이 그 차이만큼 어긋나고,
 // 채운 양은 다음 구간 섭취량의 기준이라 오차가 그대로 넘어간다.
 function ciFillTareOf() {
+    if (ciForm.noWater) return ciTareOf(ciCurrent);       // 같은 통을 다시 건다
+    if (ciForm.bottleSize === CI_BOTTLE_BIG) return Number(ciForm.bigTare) || ciBigTareDefault();
     if (ciForm.bottleSwap && Number(ciForm.newTare) > 0) return Number(ciForm.newTare);
+    // 지난번 1000 통이었으면 ciTareOf 는 그 통 무게를 돌려준다. 오늘 거는 700 통은 자리에 등록된 통이다.
+    if (ciIsBig(ciBaseline(ciCurrent))) return ciStdTareOf(ciCurrent);
     return ciTareOf(ciCurrent);
+}
+
+// ---------- 물통 크기 (700 · 1000) ----------
+// 1000 통은 꽂을 때마다 처음에 새다가 멈춘다. 2026-09-21~23 빈 케이지 실측:
+// 5~10초 꽂았다 빼기 3회 4.4·4.2·4.3 g, 좀 오래 두면 10.7 g, 걸어둔 하루 11.6 g.
+// 하루 11.6 g 에서 증발(700 통과 같은 0.0625 g/시간 × 24 = 1.5)을 빼면 한 번 걸 때 약 10 g.
+// 로스는 '그 구간 동안 걸려 있던 통' 기준이다 — 지난번에 채워 건 통.
+const CI_BOTTLE_STD = 700;
+const CI_BOTTLE_BIG = 1000;
+function ciIsBig(row) { return !!row && Number(row.bottleSize) === CI_BOTTLE_BIG; }
+function ciBigTareDefault() {
+    return Number((ciConfig && ciConfig.housing && ciConfig.housing.bigBottleTare) || 0);
+}
+// 자리에 등록된 700 통 무게 (1000 통 판정 없이)
+function ciStdTareOf(cageId) {
+    const cage = ciCages.find(c => String(c.id) === String(cageId));
+    if (cage && Number(cage.bottleTare) > 0) return Number(cage.bottleTare);
+    return Number((ciConfig && ciConfig.housing && ciConfig.housing.bottleTare) || 0);
+}
+// 이 구간(지난 기록 → 지금)에 쓸 로스 상수. 1000 통 값이 설정에 없으면 700 통 값으로 가되 표시한다.
+function ciLossConsts(last) {
+    const h = (ciConfig && ciConfig.housing) || {};
+    const std = { evap: Number(h.evapPerHour) || 0, hand: Number(h.lossPerHandling) || 0, big: false, unset: false };
+    if (!ciIsBig(last)) return std;
+    const hasBig = Number(h.bigLossPerHandling) > 0;
+    return {
+        evap: Number(h.bigEvapPerHour) > 0 ? Number(h.bigEvapPerHour) : std.evap,
+        hand: hasBig ? Number(h.bigLossPerHandling) : std.hand,
+        big: true, unset: !hasBig
+    };
+}
+function ciSetBottleSize(size) {
+    ciForm.bottleSize = size;
+    if (size === CI_BOTTLE_BIG) { ciForm.bottleSwap = false; ciForm.newTare = ''; }
+    ciRecalcFill();
+    ciRenderForm();
+}
+function ciSetBigTare(val) {
+    ciForm.bigTare = val;
+    ciRecalcFill();
+    ciUpdateCalc();
+    const el = document.getElementById('ci-fs-tare'); if (el) el.textContent = ciFillTareOf() + ' g';
+    const w = document.getElementById('ci-bigtare-warn'); if (w) w.hidden = Number(val) > 0;
+}
+// 채움 무게 안내에 쓸 물 양: 1000 통이면 설정의 1000 통 채움량, 아니면 700
+function ciFillHint() {
+    const h = (ciConfig && ciConfig.housing) || {};
+    return ciForm.bottleSize === CI_BOTTLE_BIG ? (Number(h.bigFill) || CI_BOTTLE_BIG) : CI_BOTTLE_STD;
+}
+function ciBottleSizeRow(lastBig) {
+    const h = (ciConfig && ciConfig.housing) || {};
+    const big = ciForm.bottleSize === CI_BOTTLE_BIG;
+    if (ciForm.noWater) return `
+        <div style="margin-bottom:10px; font-size:0.8rem; color:var(--ink-soft);">
+            물통 <b>${lastBig ? '1000' : '700'} 통</b> 그대로 (지난번에 건 통)
+        </div>`;
+    const btn = (size, label) => `
+        <button type="button" class="btn-small" onclick="ciSetBottleSize(${size})" aria-pressed="${ciForm.bottleSize === size}"
+                style="min-width:84px; ${ciForm.bottleSize === size
+                    ? 'background:var(--ink); color:var(--paper);'
+                    : 'background:var(--paper); color:var(--ink); outline:1px solid var(--rule);'}">${label}</button>`;
+    return `
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">물통</span>
+            ${btn(CI_BOTTLE_STD, '700 통')}${btn(CI_BOTTLE_BIG, '1000 통')}
+            <span style="font-size:0.75rem; color:var(--ink-soft);">주말·연휴처럼 오래 버텨야 할 때 1000</span>
+        </div>
+        ${big ? `
+        <div style="display:flex; align-items:center; gap:10px; margin:0 0 10px;">
+            <span style="width:52px; font-size:0.85rem; color:var(--ink-soft);">빈 통</span>
+            <input type="number" step="any" inputmode="decimal" id="ci-bigtare" value="${ciEsc(ciForm.bigTare)}"
+                   oninput="ciSetBigTare(this.value)" placeholder="1000 통 빈 무게" aria-label="1000 통 빈 무게 (그램)"
+                   style="flex:1; height:38px; font-size:0.95rem;">
+            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g</span>
+        </div>
+        ${!(Number(ciForm.bigTare) > 0) ? `
+        <div id="ci-bigtare-warn" style="font-size:0.78rem; color:var(--stamp); margin:-4px 0 10px 62px;">
+            1000 통 빈 무게를 넣어야 채운 양이 계산됩니다. 코호트 설정에 넣어두면 자동으로 채워집니다.
+        </div>` : ''}
+        ${!(Number(h.bigLossPerHandling) > 0) ? `
+        <div style="font-size:0.78rem; color:#7a5c00; margin:-4px 0 10px 62px;">
+            코호트 설정에 1000 통 탈착 로스가 없어 다음 회차 계산은 700 통 값으로 됩니다.
+        </div>` : ''}` : ''}`;
 }
 
 // 빈 통 무게가 바뀌면(통 교체 체크·새 통 무게 수정) 채운 양을 다시 구해야 한다
@@ -1094,9 +1192,9 @@ function ciComputeIntake() {
     // 같은 케이지를 방금 또 저장한 경우(수정 등) 몇 분을 한 구간으로 계산하면
     // 마리당 값이 터무니없이 커진다. 너무 짧은 구간은 계산하지 않는다.
     if (hours < 4) return { tooShort: true, hours };
-    const cfgH = (ciConfig && ciConfig.housing) || {};
-    const evapPerHour = Number(cfgH.evapPerHour) || 0;
-    const lossPerHandling = Number(cfgH.lossPerHandling) || 0;
+    const lc = ciLossConsts(last);          // 지난번에 건 통(700 · 1000) 기준
+    const evapPerHour = lc.evap;
+    const lossPerHandling = lc.hand;
     const bottles = Number(last.bottleCount) || 1;
 
     // 물통을 뗐다 낄 때마다 로스가 난다.
@@ -1140,6 +1238,7 @@ function ciComputeIntake() {
 
     return {
         hours, days, loss, evapLoss, handLoss, handlings, autoHandlings,
+        evapPerHour, lossPerHandling, bigBottle: lc.big, bigUnset: lc.unset,
         water, food, n, animalDays, housingChanged: changed,
         spansWeekend: ciSpansWeekend(t0, t1),
         waterPc: animalDays > 0 ? water / animalDays : null,
@@ -1177,8 +1276,9 @@ function ciUpdateCalc() {
             <div style="font-size:0.75rem; opacity:0.85; margin-top:3px;">
                 ${c.hours.toFixed(1)}시간 · ${c.animalDays.toFixed(2)} 마리·일
                 ${c.lossKnown ? `· 로스 ${c.loss.toFixed(1)}g
-                    <span style="opacity:0.8;">(증발 ${c.evapLoss.toFixed(1)} + 탈착 ${c.handLoss.toFixed(1)}, ${c.handlings}회)</span>`
+                    <span style="opacity:0.8;">(${c.bigBottle ? '1000 통 · ' : ''}증발 ${c.evapLoss.toFixed(1)} + 탈착 ${c.handLoss.toFixed(1)}, ${c.handlings}회)</span>`
                     : '· <b>로스 상수 미설정</b>'}
+                ${c.bigUnset ? '<br><b>1000 통 탈착 로스가 코호트 설정에 없어 700 통 값으로 계산했습니다.</b>' : ''}
                 ${c.housingChanged ? '<br>구간 중 재실 변동이 있어 이 구간은 예상치 계산에서 제외됩니다.' : ''}
                 ${c.spansWeekend ? '<br>주말이 낀 구간이라 투약 농도 산정에는 쓰지 않고, 최근 평일 값으로 계산합니다. 섭취량 기록 자체는 그대로 남습니다.' : ''}
                 ${(!c.spansWeekend && ciOffFrom24(c.hours) > CI_SPAN_TOL_H)
@@ -1731,7 +1831,6 @@ async function ciSave() {
     }
 
     {
-        const cfgH = (ciConfig && ciConfig.housing) || {};
         // 계산에 쓴 상수를 그 기록에 함께 남긴다 → 나중에 설정을 바꿔도 과거가 변하지 않음
         const cageDoc = ciCages.find(x => String(x.id) === ciCurrent);
         const feed = {
@@ -1754,8 +1853,12 @@ async function ciSave() {
             noRefill: !!(ciForm.noWater && ciForm.noFood),   // 옛 화면 호환
             ratCount: occ.length,
             ratIds: occ.map(r => r.ratId),
-            evapPerHour: Number(cfgH.evapPerHour) || 0,
-            lossPerHandling: Number(cfgH.lossPerHandling) || 0,
+            // 이 구간 계산에 실제로 쓴 상수 (지난번에 건 통 기준 — 1000 통이면 그 값)
+            evapPerHour: ciLossConsts(ciBaseline(ciCurrent)).evap,
+            lossPerHandling: ciLossConsts(ciBaseline(ciCurrent)).hand,
+            // 오늘 채워 건 통. 물을 그대로 두면 지난번 통이 그대로 걸려 있다.
+            bottleSize: ciForm.noWater ? (ciIsBig(ciBaseline(ciCurrent)) ? CI_BOTTLE_BIG : CI_BOTTLE_STD)
+                                       : (ciForm.bottleSize === CI_BOTTLE_BIG ? CI_BOTTLE_BIG : CI_BOTTLE_STD),
             // 저울에 찍힌 원본값과 그때 쓴 빈 통 무게를 같이 남긴다.
             // 나중에 빈 통 무게가 틀린 걸로 밝혀져도 원본이 있으면 되돌려 계산할 수 있다.
             waterScale: ciForm.waterScale === '' ? null : Number(ciForm.waterScale),

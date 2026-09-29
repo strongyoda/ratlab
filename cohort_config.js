@@ -32,6 +32,8 @@ function cfgDefaultConfig(cohort) {
         housing: { ratsPerCage: 3, cageCount: 24, waterFill: 500, waterFillLong: 700,
                    foodFill: 250, bottleCount: 1,
                    bottleTare: 0, evapPerHour: 0.0625, lossPerHandling: 1.36,
+                   // 1000 통 (가끔 쓰는 큰 통). 2026-09-21~23 빈 케이지 실측으로 탈착 1회 약 10 g
+                   bigFill: 1000, bigBottleTare: 0, bigEvapPerHour: 0.0625, bigLossPerHandling: 10.1,
                    doseWindowDays: 10, doseLedgerDays: 28 },
         dosing: [
             { substance: 'NaCl',      medium: 'food',  mode: 'percent',    value: 8,
@@ -136,7 +138,8 @@ async function cfgCreateNew() {
         if (prev) {
             const h = prev.data().housing;
             // 케이지 수·마리수는 실험 규모라 코호트마다 다르므로 물려받지 않는다
-            ['waterFill', 'waterFillLong', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling', 'doseWindowDays', 'doseLedgerDays']
+            ['waterFill', 'waterFillLong', 'foodFill', 'bottleCount', 'bottleTare', 'evapPerHour', 'lossPerHandling', 'doseWindowDays', 'doseLedgerDays',
+             'bigFill', 'bigBottleTare', 'bigEvapPerHour', 'bigLossPerHandling']
                 .forEach(k => { if (h[k] !== undefined && h[k] !== null) cfgDraft.housing[k] = h[k]; });
             inherited = prev.id;
         }
@@ -285,7 +288,7 @@ function cfgHousingCard(c) {
         <div class="input-group" style="min-width:150px;">
             <label style="font-weight:bold; color:var(--navy);">${label}</label>
             <div style="display:flex; align-items:center; gap:6px;">
-                <input type="number" step="any" value="${h[key]}" onchange="cfgSetHousing('${key}', this.value)"
+                <input type="number" step="any" value="${h[key] ?? ''}" onchange="cfgSetHousing('${key}', this.value)"
                        style="width:100%; padding:8px; border:1px solid #C9C5B8; border-radius:2px;">
                 <span style="font-size:0.85rem; color:var(--ink-soft); white-space:nowrap;">${unit}</span>
             </div>
@@ -331,6 +334,18 @@ function cfgHousingCard(c) {
             ${num('lossPerHandling', '탈착 로스',   'g/회',   '물통 뺐다 끼우기 1회당')}
             ${num('doseWindowDays',  '농도 기준 창', '일',     '최근 며칠의 최대 섭취로 농도를 정할지. 8 미만 금지 (7일은 결찰일 스파이크를 놓친다)')}
             ${num('doseLedgerDays',  '부족분 장부',  '일',     '덜 들어간 양을 며칠치까지 기억해 갚을지. 짧으면 누적이 목표에 못 붙는다 (파일럿: 10일 → 127, 28일 → 150)')}
+        </div>
+        <h4 style="color:var(--navy); margin:18px 0 6px;">🫙 1000 mL 물통</h4>
+        <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">
+            평소엔 700 통, 주말·연휴처럼 오래 버텨야 할 때 케이지별 입력에서 <b>1000 통</b>을 고릅니다.
+            1000 통은 꽂을 때마다 처음에 새다가 멈춰서 <b>탈착 로스가 700 통보다 훨씬 큽니다</b>.
+            고른 통의 값이 그다음 회차 섭취량 계산에 쓰입니다.
+        </div>
+        <div style="display:flex; gap:15px; flex-wrap:wrap;">
+            ${num('bigFill',            '채우는 양',   'mL',     '조제 어림 · 주말 물 예보에 쓰임')}
+            ${num('bigBottleTare',      '빈 통',       'g',      '마개·급수구 포함, 마른 통으로')}
+            ${num('bigEvapPerHour',     '증발량',      'g/시간', '비우면 700 통 값')}
+            ${num('bigLossPerHandling', '탈착 로스',   'g/회',   '꽂았다 뺄 때 새는 양. 9/22→9/23 실측 하루 11.6 g − 증발 1.5 = 10.1')}
         </div>
         ${(!Number(h.evapPerHour) && !Number(h.lossPerHandling)) ? `
         <div style="margin-top:10px; padding:8px 10px; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; font-size:0.82rem; color:#7a5c00;">
