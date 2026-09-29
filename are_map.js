@@ -7,7 +7,8 @@
 (function () {
     // 바탕 그림: are_map_base.png (359×481, 전임자 논문 모식도). 좌표는 이 그림의 픽셀 좌표다.
     const W = 359, H = 481;
-    const IMG = 'are_map_base.png?v=2';   // 그림을 바꾸면 v를 올린다(캐시)
+    const IMG = 'are_map_base.png?v=2';
+    const VB = [95, 20, 220, 330];   // 화면에 보이는 영역(x, y, 폭, 높이) — 윌리스환 주변만 잘라 확대   // 그림을 바꾸면 v를 올린다(캐시)
 
     // ▼ 그림 좌표 — are_map_editor.html(점 끌어서 조정)에서 만든 값을 그대로 붙여넣는다
     // 혈관 구간: side/art는 기존 선택지(R·L·A-com·BA / ACA·ICA·MCA·PCA·P-com)와 맞춘다
@@ -61,8 +62,8 @@
         const cands = SEGS.filter(sg => sg.side === side && (side === 'A-com' || side === 'BA' || sg.art === art));
         const sg = cands.find(c => c.label === art) || cands[0];
         if (sg) return pointAtHalf(sg.pts);
-        if (side === 'R') return [28, 300];         // 좌우만 아는 기록: 바깥 여백
-        if (side === 'L') return [W - 28, 300];
+        if (side === 'R') return [110, 42];        // 좌우만 아는 기록: 위쪽 바깥 여백
+        if (side === 'L') return [300, 42];
         return null;
     }
 
@@ -96,8 +97,8 @@
     function baseSvg() {
         return `
             <image href="${IMG}" x="0" y="0" width="${W}" height="${H}"/>
-            <g font-size="18" font-weight="800" fill="var(--ink, #23282E)"><text x="12" y="26">R</text><text x="${W - 12}" y="26" text-anchor="end">L</text></g>
-            <text x="${W / 2}" y="${H - 4}" font-size="10" text-anchor="middle" fill="var(--ink-soft, #5B5F66)">복측 시야 · 위쪽 = 코 쪽</text>`;
+            <g font-size="15" font-weight="800" fill="var(--ink, #23282E)"><text x="${VB[0] + 8}" y="${VB[1] + 18}">R</text><text x="${VB[0] + VB[2] - 8}" y="${VB[1] + 18}" text-anchor="end">L</text></g>
+            <text x="${VB[0] + VB[2] / 2}" y="${VB[1] + VB[3] - 4}" font-size="9" text-anchor="middle" fill="var(--ink-soft, #5B5F66)">복측 시야 · 위쪽 = 코 쪽</text>`;
     }
 
     // 같은 지점에 여러 개가 겹치면 해바라기 배열로 살짝 퍼뜨린다
@@ -151,7 +152,7 @@
         <div style="margin-top:14px; border-top:1px dashed var(--rule); padding-top:14px;">
             <h5 style="text-align:center; color:var(--ink); margin:0 0 8px;">ARE 위치 지도</h5>
             <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; justify-content:center;">
-                <svg viewBox="0 0 ${W} ${H}" style="width:100%; max-width:300px; height:auto; background:var(--sheet); border:1px solid var(--rule);">${baseSvg()}${dots}</svg>
+                <svg viewBox="${VB.join(' ')}" style="width:100%; max-width:300px; height:auto; background:var(--sheet); border:1px solid var(--rule);">${baseSvg()}${dots}</svg>
                 <div style="font-size:0.8rem; min-width:150px; line-height:1.9;">
                     <div class="mono" style="font-size:0.9rem;"><b>R</b> ${tally.R} (${pct(tally.R)}%) · <b>L</b> ${tally.L} (${pct(tally.L)}%) · <b>정중</b> ${tally.mid}</div>
                     <div>${legendDot('macro', true)} Macro ${legendDot('micro', true)} Micro ${legendDot('미확인', true)} 미확인</div>
@@ -162,12 +163,78 @@
         </div>`;
     }
 
+    // ---------- 랫드 상세: 한 개체의 병변을 번호로 ----------
+    // editAttrs: 그림을 누르면 사망/ARE 기록 창이 열리도록 붙일 속성 문자열 (data-simple-cod ...)
+    function ratHtml(rat, editAttrs = '') {
+        if (!rat || !rat.are || !String(rat.are).startsWith('O')) return '';
+        const list = Array.isArray(rat.areList) ? rat.areList : [];
+        const pts = spread(list.map((loc, i) => { const p = lesionPoint(loc); return p ? { ...p, i, type: loc.type } : null; }).filter(Boolean));
+        const marks = pts.map(p => {
+            const c = typeColor(p.type);
+            return `<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="10" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="2"/><text x="${p.x.toFixed(1)}" y="${(p.y + 4.2).toFixed(1)}" font-size="12" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${p.i + 1}</text></g>`;
+        }).join('');
+        const note = loc => { const p = lesionPoint(loc); return !p ? ' <span style="color:var(--ink-soft);">(그림에 없음)</span>' : p.exact ? '' : ' <span style="color:var(--ink-soft);">(위치 추정)</span>'; };
+        const rows = list.length ? list.map((loc, i) => `<div style="display:flex; gap:6px; align-items:baseline;"><b class="mono" style="color:${typeColor(loc.type)}; min-width:14px;">${i + 1}</b><span><b>${esc(loc.type)}</b> · ${esc(locText(loc))}${note(loc)}</span></div>`).join('')
+            : '<div style="color:var(--ink-soft);">위치 기록이 없습니다. 그림을 눌러 추가하세요.</div>';
+        return `
+            <div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+                <button type="button" ${editAttrs} title="눌러서 ARE 위치 수정" aria-label="ARE 위치 수정" style="padding:0; border:1px solid var(--rule); background:var(--sheet); cursor:pointer; flex:none; width:190px; max-width:100%;">
+                    <svg viewBox="${VB.join(' ')}" style="width:100%; height:auto; display:block;">${baseSvg()}${marks}</svg>
+                </button>
+                <div style="flex:1; min-width:120px; font-size:0.82rem; line-height:1.7;">${rows}</div>
+            </div>`;
+    }
+
+    // ---------- 비교: 여러 군의 병변을 군 색깔로 한 그림에 ----------
+    // groups: [{ name, color, rats }]
+    function compareHtml(groups) {
+        const pts = [], tallies = [];
+        (groups || []).forEach(g => {
+            const t = { name: g.name, color: g.color, n: 0, animals: 0, total: (g.rats || []).length, R: 0, L: 0, mid: 0, macro: 0, micro: 0, unk: 0 };
+            (g.rats || []).forEach(r => {
+                if (!r || !r.are || !String(r.are).startsWith('O')) return;
+                t.animals++;
+                (Array.isArray(r.areList) ? r.areList : []).forEach(loc => {
+                    t.n++;
+                    if (loc.type === 'macro') t.macro++; else if (loc.type === 'micro') t.micro++; else t.unk++;
+                    if (loc.side === 'R') t.R++; else if (loc.side === 'L') t.L++; else if (loc.side === 'A-com' || loc.side === 'BA') t.mid++;
+                    const p = lesionPoint(loc);
+                    if (p) pts.push({ ...p, type: loc.type, color: g.color, tip: `${g.name} · ${r.ratId} · ${loc.type} · ${locText(loc)}${p.exact ? '' : ' (위치 추정)'}` });
+                });
+            });
+            tallies.push(t);
+        });
+        if (!pts.length) return '';
+        const dots = spread(pts).map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.type === 'macro' ? 7.5 : 5}" fill="${p.type === '미확인' ? 'var(--sheet,#fff)' : p.color}" fill-opacity="${p.exact ? 0.9 : 0.45}" stroke="${p.color}" stroke-width="2"${p.exact ? '' : ' stroke-dasharray="2 1.5"'}><title>${esc(p.tip)}</title></circle>`).join('');
+        const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '-';
+        const td = 'padding:5px 6px; white-space:nowrap;';
+        const rows = tallies.map(t => `<tr style="border-bottom:1px solid var(--rule);">
+            <td style="${td} text-align:left;"><span style="display:inline-block; width:10px; height:10px; background:${t.color}; margin-right:5px;"></span>${esc(t.name)}</td>
+            <td class="mono" style="${td}">${t.animals}/${t.total}</td>
+            <td class="mono" style="${td}">${t.n} <span style="color:var(--ink-soft); font-size:0.75rem;">(${t.macro}/${t.micro}/${t.unk})</span></td>
+            <td class="mono" style="${td}">${t.R} <span style="color:var(--ink-soft); font-size:0.75rem;">${pct(t.R, t.n)}</span></td>
+            <td class="mono" style="${td}">${t.L} <span style="color:var(--ink-soft); font-size:0.75rem;">${pct(t.L, t.n)}</span></td>
+            <td class="mono" style="${td}">${t.mid}</td></tr>`).join('');
+        return `
+            <h4 style="margin:0 0 8px; color:var(--navy); text-align:center;">비교군 ARE 위치 지도</h4>
+            <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; justify-content:center;">
+                <svg viewBox="${VB.join(' ')}" style="width:100%; max-width:320px; height:auto; background:var(--sheet); border:1px solid var(--rule);">${baseSvg()}${dots}</svg>
+                <div style="flex:1; min-width:260px; max-width:520px; font-size:0.8rem; overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; text-align:center;">
+                        <thead><tr style="border-bottom:1px solid var(--ink);"><th style="${td} text-align:left;">군</th><th style="${td}">ARE 개체</th><th style="${td}">병변 <span style="font-weight:normal; font-size:0.72rem;">(ma/mi/?)</span></th><th style="${td}">R</th><th style="${td}">L</th><th style="${td}">정중</th></tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                    <div style="color:var(--ink-soft); margin-top:8px; line-height:1.7;">점 색 = 군 · 큰 점 macro, 작은 점 micro, 속 빈 점 미확인 · 흐린 점선 = 부위로 추정한 위치<br>점에 마우스를 올리면 개체 번호가 보입니다.</div>
+                </div>
+            </div>`;
+    }
+
     // ---------- 입력: 모달 안에서 위치 찍기 ----------
     // rowsEl 안의 .modal-are-row(각 행에 .are-tp/.are-side/.are-art 선택)와 연동한다
     function mountEditor(hostEl, rowsEl, addRow) {
         hostEl.innerHTML = `
             <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">그림을 누르면 선택된 행(굵은 테두리)의 위치가 찍힙니다. 선택된 행이 없으면 새 행이 생깁니다.</div>
-            <svg class="are-map-svg" viewBox="0 0 ${W} ${H}" style="width:100%; max-width:280px; display:block; margin:0 auto; background:var(--sheet); border:1px solid var(--rule); cursor:crosshair;">${baseSvg()}<g class="are-map-marks"></g></svg>`;
+            <svg class="are-map-svg" viewBox="${VB.join(' ')}" style="width:100%; max-width:280px; display:block; margin:0 auto; background:var(--sheet); border:1px solid var(--rule); cursor:crosshair;">${baseSvg()}<g class="are-map-marks"></g></svg>`;
         const svg = hostEl.querySelector('svg');
         const marks = svg.querySelector('.are-map-marks');
         let active = null;
@@ -218,5 +285,5 @@
         return { render, setActive };
     }
 
-    window.AreMap = { statsHtml, mountEditor, locate, locText, lesionPoint, landmark, SEGS, LANDMARKS, W, H, IMG };
+    window.AreMap = { statsHtml, ratHtml, compareHtml, mountEditor, locate, locText, lesionPoint, landmark, SEGS, LANDMARKS, W, H, IMG };
 })();

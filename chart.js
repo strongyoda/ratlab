@@ -665,12 +665,19 @@ async function loadDetailData(forceId = null) {
                         </div>
                     </div>
 
-                    <div style="flex:4; min-width:250px; display:flex; flex-direction:column; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; padding:15px;">
+                    <div style="flex:4; min-width:250px; display:flex; flex-direction:column; gap:15px;">
+                    ${window.AreMap && rat.are && String(rat.are).startsWith('O') ? `
+                    <div style="background:var(--paper); padding:15px; border-radius:2px; border:1px solid var(--rule);">
+                        <h4 style="margin:0 0 10px 0; font-size:0.9rem; color:var(--navy);"><i class="material-icons" style="font-size:18px; vertical-align:middle;">place</i> ARE 위치</h4>
+                        ${AreMap.ratHtml(rat, `data-simple-cod data-doc="${docId}" data-cod="${chEsc(rat.cod || '')}" data-are="${chEsc(rat.are || '')}" data-death="${rat.deathDate || getTodayStr()}"`)}
+                    </div>` : ''}
+                    <div style="flex:1; display:flex; flex-direction:column; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; padding:15px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                             <span style="font-weight:bold; color:#7A5C00; display:flex; align-items:center; gap:5px;"><i class="material-icons" aria-hidden="true" style="font-size:18px;">note</i> 개체 자유 메모</span>
                             
                         </div>
-                        <textarea id="general-memo-area" aria-label="개체 자유 메모" oninput="rdSet('generalMemo', this.value)" style="flex:1; width:100%; border:1px solid #E3C55C; border-radius:2px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${chEsc(rat.generalMemo || '')}</textarea>
+                        <textarea id="general-memo-area" aria-label="개체 자유 메모" oninput="rdSet('generalMemo', this.value)" style="flex:1; min-height:140px; width:100%; border:1px solid #E3C55C; border-radius:2px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${chEsc(rat.generalMemo || '')}</textarea>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -2733,6 +2740,18 @@ function renderUnifiedTimeline(groupsData, container) {
     `;
     
     container.parentNode.insertBefore(wrapper, container);
+
+    // 비교군 ARE 위치 지도 (타임라인 바로 아래, 군 색깔 그대로)
+    const oldAreMap = document.getElementById('unified-are-map-wrapper');
+    if (oldAreMap) oldAreMap.remove();
+    const areMapHtml = window.AreMap ? AreMap.compareHtml(groupsData) : '';
+    if (areMapHtml) {
+        const areWrap = document.createElement('div');
+        areWrap.id = 'unified-are-map-wrapper';
+        areWrap.style.cssText = wrapper.style.cssText;
+        areWrap.innerHTML = areMapHtml;
+        container.parentNode.insertBefore(areWrap, container);
+    }
 
     const datasets = [];
     let minAge = 999;
