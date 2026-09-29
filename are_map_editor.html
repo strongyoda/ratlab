@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARE 지도 편집기</title>
+<!-- 로컬 전용 도구 (업로드 불필요). are_map.js의 혈관 좌표를 점 끌기로 조정한다 -->
+<style>
+    body { margin: 0; font-family: 'Pretendard', 'Noto Sans KR', sans-serif; font-size: 13px; background: #FAF9F5; color: #23282E; }
+    .wrap { display: flex; gap: 16px; padding: 14px; align-items: flex-start; flex-wrap: wrap; }
+    svg { width: 540px; max-width: 100%; height: auto; background: #fff; border: 1px solid #D8D4C6; touch-action: none; user-select: none; }
+    .panel { flex: 1; min-width: 300px; max-width: 460px; }
+    h1 { font-size: 15px; margin: 0 0 6px; }
+    .help { background: #fff; border: 1px solid #D8D4C6; padding: 8px 10px; line-height: 1.7; margin-bottom: 10px; }
+    .seg { display: flex; gap: 6px; align-items: center; padding: 4px 6px; border: 1px solid transparent; cursor: pointer; }
+    .seg.on { border-color: #23282E; background: #fff; }
+    .sw { width: 14px; height: 14px; border-radius: 2px; flex: none; }
+    .seg input, .seg select { font-size: 12px; padding: 2px; }
+    .seg input.lbl { width: 120px; }
+    button { font-size: 12px; padding: 5px 10px; border: 1px solid #23282E; background: #fff; cursor: pointer; border-radius: 2px; }
+    button.pri { background: #2B5F8A; color: #fff; border-color: #2B5F8A; }
+    .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; align-items: center; }
+    .handle { cursor: grab; }
+    .lm { cursor: grab; }
+    #msg { color: #2F6B3A; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <svg id="cv" viewBox="0 0 359 481"></svg>
+    <div class="panel">
+        <h1>ARE 지도 편집기</h1>
+        <div class="help">
+            • <b>동그라미</b>(혈관 점)와 <b>검은 네모</b>(분지부)를 끌어서 옮깁니다.<br>
+            • 오른쪽 목록에서 혈관을 고른 뒤 <b>그림 빈 곳을 클릭</b> → 그 혈관 끝에 점 추가.<br>
+            • 점을 <b>우클릭</b> → 점 삭제.<br>
+            • <b>좌우 대칭</b>을 켜면 R 점을 옮길 때 같은 이름의 L 점도 거울처럼 같이 움직입니다.<br>
+            • 고친 내용은 자동 저장됩니다(이 브라우저). 다 되면 Claude에게 "다 했어"라고 말하면 됩니다.
+        </div>
+        <div class="row">
+            <label><input type="checkbox" id="mirror"> 좌우 대칭 (정중선 x=<input id="mid" type="number" value="205" style="width:50px">)</label>
+            <label><input type="checkbox" id="showAll" checked> 모든 혈관 보기</label>
+        </div>
+        <div id="list"></div>
+        <div class="row">
+            <button onclick="addSeg()">+ 새 혈관</button>
+            <button onclick="addLm()">+ 새 분지부</button>
+            <button onclick="if(confirm('are_map.js 원래 값으로 되돌릴까요?')){localStorage.removeItem(KEY);location.reload()}">처음 값으로</button>
+            <button class="pri" onclick="copyCode()">코드 복사</button>
+            <span id="msg"></span>
+        </div>
+        <div id="lms"></div>
+    </div>
+</div>
+<script src="are_map.js?v=editor"></script>
+<script>
+const KEY = 'areMapEditorGeom';
+const COLORS = ['#e53935', '#43a047', '#1e88e5', '#fb8c00', '#8e24aa', '#00acc1', '#000000', '#757575', '#d81b60', '#6d4c41'];
+const colorOf = {}; let ci = 0;
+const col = label => colorOf[label] || (colorOf[label] = COLORS[ci++ % COLORS.length]);
+const clone = o => JSON.parse(JSON.stringify(o));
+
+let G;
+try { G = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+if (!G || !Array.isArray(G.segs)) G = { segs: clone(AreMap.SEGS), landmarks: clone(AreMap.LANDMARKS) };
+window.__geom = G;   // Claude가 읽어 가는 값
+let sel = 0;
+const svg = document.getElementById('cv');
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(G)); } catch (e) {} };
+const r1 = v => Math.round(v * 10) / 10;
+
+function toSvg(e) { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); }
+function twin(sg) {
+    if (sg.side !== 'R' && sg.side !== 'L') return null;
+    const o = sg.side === 'R' ? 'L' : 'R';
+    return G.segs.find(s => s.side === o && s.label === sg.label && s.pts.length === sg.pts.length) || null;
+}
+const lmTwin = lm => (lm.side === 'R' || lm.side === 'L') ? G.landmarks.find(l => l.side === (lm.side === 'R' ? 'L' : 'R') && l.label === lm.label) : null;
+const mid = () => Number(document.getElementById('mid').value) || 205;
+const mirrorOn = () => document.getElementById('mirror').checked;
+
+function draw() {
+    const all = document.getElementById('showAll').checked;
+    let h = `<image href="${AreMap.IMG}" width="359" height="481"/>`;
+    h += `<line x1="${mid()}" y1="0" x2="${mid()}" y2="481" stroke="#999" stroke-dasharray="3 3" stroke-width=".6" opacity="${mirrorOn() ? .8 : 0}"/>`;
+    G.segs.forEach((sg, i) => {
+        if (!all && i !== sel) return;
+        const c = col(sg.label), on = i === sel;
+        h += `<polyline points="${sg.pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${c}" stroke-width="${on ? 3.5 : 2.2}" stroke-opacity="${on ? .9 : .55}" stroke-linejoin="round" stroke-linecap="round" data-seg="${i}" style="cursor:pointer"/>`;
+    });
+    G.segs.forEach((sg, i) => {
+        if (!all && i !== sel) return;
+        const c = col(sg.label), on = i === sel;
+        sg.pts.forEach((p, j) => h += `<circle class="handle" cx="${p[0]}" cy="${p[1]}" r="${on ? 4.2 : 2.8}" fill="${on ? '#fff' : c}" stroke="${c}" stroke-width="1.6" data-seg="${i}" data-pt="${j}"/>`);
+    });
+    G.landmarks.forEach((l, k) => h += `<rect class="lm" x="${l.x - 4}" y="${l.y - 4}" width="8" height="8" fill="#23282E" data-lm="${k}"><title>${l.side} ${l.label}</title></rect>`);
+    h += `<g font-size="18" font-weight="800"><text x="12" y="26">R</text><text x="347" y="26" text-anchor="end">L</text></g>`;
+    svg.innerHTML = h;
+    renderList();
+}
+
+function renderList() {
+    document.getElementById('list').innerHTML = G.segs.map((sg, i) => `
+        <div class="seg ${i === sel ? 'on' : ''}" onclick="sel=${i};draw()">
+            <span class="sw" style="background:${col(sg.label)}"></span>
+            <select onchange="G.segs[${i}].side=this.value;save();draw()" onclick="event.stopPropagation()">${['R', 'L', 'A-com', 'BA', '-'].map(v => `<option ${v === sg.side ? 'selected' : ''}>${v}</option>`).join('')}</select>
+            <select onchange="G.segs[${i}].art=this.value;save();draw()" onclick="event.stopPropagation()">${['-', 'ACA', 'ICA', 'MCA', 'PCA', 'P-com'].map(v => `<option ${v === sg.art ? 'selected' : ''}>${v}</option>`).join('')}</select>
+            <input class="lbl" value="${sg.label}" onclick="event.stopPropagation()" onchange="G.segs[${i}].label=this.value;save();draw()">
+            <span style="color:#5B5F66">${sg.pts.length}점</span>
+            <button onclick="event.stopPropagation();if(confirm('이 혈관을 지울까요?')){G.segs.splice(${i},1);sel=0;save();draw()}">삭제</button>
+        </div>`).join('');
+    document.getElementById('lms').innerHTML = '<div style="margin-top:10px;font-weight:bold;">분지부</div>' + G.landmarks.map((l, k) => `
+        <div class="seg"><span class="sw" style="background:#23282E"></span>
+            <select onchange="G.landmarks[${k}].side=this.value;save();draw()">${['R', 'L', 'A-com', 'BA'].map(v => `<option ${v === l.side ? 'selected' : ''}>${v}</option>`).join('')}</select>
+            <select onchange="G.landmarks[${k}].art=this.value;save();draw()">${['-', 'ACA', 'ICA', 'MCA', 'PCA', 'P-com'].map(v => `<option ${v === l.art ? 'selected' : ''}>${v}</option>`).join('')}</select>
+            <input class="lbl" value="${l.label}" onchange="G.landmarks[${k}].label=this.value;save();draw()">
+            <button onclick="if(confirm('이 분지부를 지울까요?')){G.landmarks.splice(${k},1);save();draw()}">삭제</button>
+        </div>`).join('');
+}
+
+let drag = null;
+svg.addEventListener('pointerdown', e => {
+    const t = e.target;
+    if (e.button === 2) return;
+    if (t.dataset.pt !== undefined) { sel = +t.dataset.seg; drag = { seg: +t.dataset.seg, pt: +t.dataset.pt }; }
+    else if (t.dataset.lm !== undefined) drag = { lm: +t.dataset.lm };
+    else if (t.dataset.seg !== undefined) { sel = +t.dataset.seg; draw(); return; }
+    else if (G.segs[sel]) {   // 빈 곳 클릭 → 선택 혈관 끝에 점 추가
+        const p = toSvg(e); G.segs[sel].pts.push([r1(p.x), r1(p.y)]); save(); draw(); return;
+    }
+    if (drag) svg.setPointerCapture(e.pointerId);
+});
+svg.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const p = toSvg(e), x = r1(Math.max(0, Math.min(359, p.x))), y = r1(Math.max(0, Math.min(481, p.y)));
+    if (drag.lm !== undefined) {
+        const l = G.landmarks[drag.lm]; l.x = x; l.y = y;
+        const tw = mirrorOn() && lmTwin(l); if (tw) { tw.x = r1(2 * mid() - x); tw.y = y; }
+    } else {
+        const sg = G.segs[drag.seg]; sg.pts[drag.pt] = [x, y];
+        const tw = mirrorOn() && twin(sg); if (tw) tw.pts[drag.pt] = [r1(2 * mid() - x), y];
+    }
+    draw();
+});
+svg.addEventListener('pointerup', () => { if (drag) { drag = null; save(); draw(); } });
+svg.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const t = e.target;
+    if (t.dataset.pt === undefined) return;
+    const sg = G.segs[+t.dataset.seg];
+    if (sg.pts.length <= 2) return alert('혈관은 점이 2개 이상이어야 합니다. 혈관째 지우려면 목록의 삭제를 쓰세요.');
+    const j = +t.dataset.pt; sg.pts.splice(j, 1);
+    const tw = mirrorOn() && twin({ ...sg, pts: new Array(sg.pts.length + 1) }); if (tw) tw.pts.splice(j, 1);
+    save(); draw();
+});
+['mirror', 'showAll', 'mid'].forEach(id => document.getElementById(id).addEventListener('change', draw));
+
+function addSeg() { G.segs.push({ side: 'R', art: '-', label: '새 혈관', pts: [[180, 240], [200, 240]] }); sel = G.segs.length - 1; save(); draw(); }
+function addLm() { G.landmarks.push({ side: 'R', art: '-', label: '새 분지부', x: 180, y: 240 }); save(); draw(); }
+function code() {
+    const j = o => '        ' + JSON.stringify(o).replace(/":/g, '": ').replace(/,"/g, ', "').replace(/\],\[/g, '], [');
+    return `    const SEGS = [\n${G.segs.map(j).join(',\n')}\n    ];\n    // 이름 있는 분지부 — 이 근처를 누르면 부위 이름이 분지부로 붙는다\n    const LANDMARKS = [\n${G.landmarks.map(j).join(',\n')}\n    ];`;
+}
+function copyCode() {
+    navigator.clipboard.writeText(code()).then(() => { document.getElementById('msg').textContent = '복사됨'; setTimeout(() => document.getElementById('msg').textContent = '', 1500); });
+}
+draw();
+</script>
+</body>
+</html>

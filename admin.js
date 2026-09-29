@@ -1501,6 +1501,7 @@ function addEdMrRow() {
 }
 
 // 1. 전역에 모달 행 추가 함수 정의 (A-com 추가 및 자동 보정)
+const chEscAdm = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 window.addModalAreRow = function(data = {}) {
     const container = document.getElementById('modal-are-rows');
     const row = document.createElement('div');
@@ -1509,6 +1510,7 @@ window.addModalAreRow = function(data = {}) {
     row.style.gap = '5px'; 
     row.style.marginBottom = '5px';
     row.style.alignItems = 'center';
+    row.style.flexWrap = 'wrap';
 
     // 기존에 A-com을 우측 동맥(art)에서 선택했던 데이터가 있다면 자동으로 좌측(side)으로 보정
     if (data.art === 'A-com') {
@@ -1519,19 +1521,25 @@ window.addModalAreRow = function(data = {}) {
     // BA 또는 A-com일 경우 두 번째 드롭다운(동맥) 비활성화
     const isNoSide = (data.side === 'BA' || data.side === 'A-com');
 
+    // 그림에서 찍은 좌표·부위 이름 (are_map.js)
+    if (typeof data.x === 'number' && typeof data.y === 'number') { row.dataset.x = data.x; row.dataset.y = data.y; }
+    if (data.site) row.dataset.site = data.site;
+
     row.innerHTML = `
-        <select class="are-tp" style="padding:4px;">
+        <span class="are-no mono" style="min-width:14px; font-weight:bold; font-size:0.8rem;"></span>
+        <select class="are-tp" style="padding:4px; flex:1 1 0; min-width:0; width:auto;">
             <option value="micro" ${data.type==='micro'?'selected':''}>Micro</option>
             <option value="macro" ${data.type==='macro'?'selected':''}>Macro</option>
             <option value="미확인" ${data.type==='미확인'?'selected':''}>미확인</option>
         </select>
-        <select class="are-side" style="padding:4px;" onchange="this.nextElementSibling.disabled = (this.value === 'BA' || this.value === 'A-com'); if(this.value==='BA' || this.value === 'A-com') this.nextElementSibling.value='-';">
+        <select class="are-side" style="padding:4px; flex:1 1 0; min-width:0; width:auto;" onchange="this.nextElementSibling.disabled = (this.value === 'BA' || this.value === 'A-com'); if(this.value==='BA' || this.value === 'A-com') this.nextElementSibling.value='-';">
             <option value="R" ${data.side==='R'?'selected':''}>R</option>
             <option value="L" ${data.side==='L'?'selected':''}>L</option>
             <option value="BA" ${data.side==='BA'?'selected':''}>BA</option>
             <option value="A-com" ${data.side==='A-com'?'selected':''}>A-com</option>
+            <option value="-" ${data.side==='-'?'selected':''}>좌우?</option>
         </select>
-        <select class="are-art" style="padding:4px;" ${isNoSide ? 'disabled' : ''}>
+        <select class="are-art" style="padding:4px; flex:1 1 0; min-width:0; width:auto;" ${isNoSide ? 'disabled' : ''}>
             <option value="-">-</option>
             <option value="ACA" ${data.art==='ACA'?'selected':''}>ACA</option>
             <option value="ICA" ${data.art==='ICA'?'selected':''}>ICA</option>
@@ -1539,6 +1547,7 @@ window.addModalAreRow = function(data = {}) {
             <option value="PCA" ${data.art==='PCA'?'selected':''}>PCA</option>
             <option value="P-com" ${data.art==='P-com'?'selected':''}>P-com</option>
         </select>
+        <span class="are-site" style="order:9; flex-basis:100%; padding-left:19px; font-size:0.72rem; color:var(--ink-soft);">${chEscAdm(data.site || '')}</span>
         <button class="btn-red btn-small" onclick="this.parentElement.remove()" style="padding:2px 6px;">X</button>
     `;
     container.appendChild(row);
@@ -1658,10 +1667,12 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
         areListBox.style.boxSizing = 'border-box';
         
         areListBox.innerHTML = `
+            <div id="modal-are-map"></div>
             <div id="modal-are-rows"></div>
             <button type="button" class="btn-small btn-blue" onclick="addModalAreRow()" style="width:auto; min-width:120px; white-space:nowrap; padding:8px 15px; margin:0 auto; font-weight:bold;">+ 위치 추가</button>
         `;
         parentWrap.appendChild(areListBox);
+        if (window.AreMap) window.modalAreMap = AreMap.mountEditor(document.getElementById('modal-are-map'), document.getElementById('modal-are-rows'), addModalAreRow);
         
         mainSel.addEventListener('change', function() {
             document.getElementById('modal-are-list-box').style.display = this.value === 'O' ? 'flex' : 'none';
@@ -1699,6 +1710,7 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
         }
     }
     areListBox.style.display = main === 'O' ? 'flex' : 'none';
+    if (window.modalAreMap) { window.modalAreMap.setActive(null); window.modalAreMap.render(); }
 
     let deathInputBox = document.getElementById('modal-death-date-box');
     if (!deathInputBox) {
@@ -1761,9 +1773,11 @@ window.saveSimpleCod = async function() {
             else if(tp === 'macro') areCounts.macro++;
             else areCounts.unk++;
             
-            const locStr = (side === 'BA' || side === 'A-com') ? side : `${side} ${art !== '-' ? art : ''}`.trim();
-            areList.push({ type: tp, side: side, art: art });
-            detailStrs.push(`${tp} (${locStr})`);
+            const item = { type: tp, side: side, art: art };
+            if (row.dataset.x !== undefined && row.dataset.x !== '') { item.x = Number(row.dataset.x); item.y = Number(row.dataset.y); }
+            if (row.dataset.site) item.site = row.dataset.site;
+            areList.push(item);
+            detailStrs.push(`${tp} (${window.AreMap ? AreMap.locText(item) : side})`);
         });
         
         const joined = detailStrs.length > 0 ? detailStrs.join(', ') : `micro:${areCounts.micro}, macro:${areCounts.macro}, 미확인:${areCounts.unk}`;
