@@ -8,7 +8,7 @@
 <style>
     body { margin: 0; font-family: 'Pretendard', 'Noto Sans KR', sans-serif; font-size: 13px; background: #FAF9F5; color: #23282E; }
     .wrap { display: flex; gap: 16px; padding: 14px; align-items: flex-start; flex-wrap: wrap; }
-    svg { width: 540px; max-width: 100%; height: auto; background: #fff; border: 1px solid #D8D4C6; touch-action: none; user-select: none; }
+    svg { width: 520px; max-width: 100%; height: auto; background: #fff; border: 1px solid #D8D4C6; touch-action: none; user-select: none; }
     .panel { flex: 1; min-width: 300px; max-width: 460px; }
     h1 { font-size: 15px; margin: 0 0 6px; }
     .help { background: #fff; border: 1px solid #D8D4C6; padding: 8px 10px; line-height: 1.7; margin-bottom: 10px; }
@@ -27,7 +27,7 @@
 </head>
 <body>
 <div class="wrap">
-    <svg id="cv" viewBox="0 0 359 481"></svg>
+    <svg id="cv"></svg>
     <div class="panel">
         <h1>ARE 지도 편집기</h1>
         <div class="help">
@@ -38,7 +38,7 @@
             • 고친 내용은 자동 저장됩니다(이 브라우저). 다 되면 Claude에게 "다 했어"라고 말하면 됩니다.
         </div>
         <div class="row">
-            <label><input type="checkbox" id="mirror"> 좌우 대칭 (정중선 x=<input id="mid" type="number" value="205" style="width:50px">)</label>
+            <label><input type="checkbox" id="mirror"> 좌우 대칭 (정중선 x=<input id="mid" type="number" value="374" style="width:50px">)</label>
             <label><input type="checkbox" id="showAll" checked> 모든 혈관 보기</label>
         </div>
         <div id="list"></div>
@@ -52,9 +52,11 @@
         <div id="lms"></div>
     </div>
 </div>
-<script src="are_map.js?v=editor"></script>
+<script src="are_map.js?v=editor2"></script>
 <script>
-const KEY = 'areMapEditorGeom';
+const KEY = 'areMapEditorGeom:' + AreMap.IMG;   // 그림마다 따로 저장 (옛 그림 편집값이 새 그림을 덮지 않게)
+const IW = AreMap.W, IH = AreMap.H, S = IW / 359;   // 점 크기 배율
+document.getElementById('cv').setAttribute('viewBox', `0 0 ${IW} ${IH}`);
 const COLORS = ['#e53935', '#43a047', '#1e88e5', '#fb8c00', '#8e24aa', '#00acc1', '#000000', '#757575', '#d81b60', '#6d4c41'];
 const colorOf = {}; let ci = 0;
 const col = label => colorOf[label] || (colorOf[label] = COLORS[ci++ % COLORS.length]);
@@ -76,25 +78,25 @@ function twin(sg) {
     return G.segs.find(s => s.side === o && s.label === sg.label && s.pts.length === sg.pts.length) || null;
 }
 const lmTwin = lm => (lm.side === 'R' || lm.side === 'L') ? G.landmarks.find(l => l.side === (lm.side === 'R' ? 'L' : 'R') && l.label === lm.label) : null;
-const mid = () => Number(document.getElementById('mid').value) || 205;
+const mid = () => Number(document.getElementById('mid').value) || IW / 2;
 const mirrorOn = () => document.getElementById('mirror').checked;
 
 function draw() {
     const all = document.getElementById('showAll').checked;
-    let h = `<image href="${AreMap.IMG}" width="359" height="481"/>`;
-    h += `<line x1="${mid()}" y1="0" x2="${mid()}" y2="481" stroke="#999" stroke-dasharray="3 3" stroke-width=".6" opacity="${mirrorOn() ? .8 : 0}"/>`;
+    let h = `<rect width="${IW}" height="${IH}" fill="#fff"/><image href="${AreMap.IMG}" width="${IW}" height="${IH}"/>`;
+    h += `<line x1="${mid()}" y1="0" x2="${mid()}" y2="${IH}" stroke="#999" stroke-dasharray="${3 * S} ${3 * S}" stroke-width="${.6 * S}" opacity="${mirrorOn() ? .8 : 0}"/>`;
     G.segs.forEach((sg, i) => {
         if (!all && i !== sel) return;
         const c = col(sg.label), on = i === sel;
-        h += `<polyline points="${sg.pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${c}" stroke-width="${on ? 3.5 : 2.2}" stroke-opacity="${on ? .9 : .55}" stroke-linejoin="round" stroke-linecap="round" data-seg="${i}" style="cursor:pointer"/>`;
+        h += `<polyline points="${sg.pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${c}" stroke-width="${(on ? 3.5 : 2.2) * S}" stroke-opacity="${on ? .9 : .55}" stroke-linejoin="round" stroke-linecap="round" data-seg="${i}" style="cursor:pointer"/>`;
     });
     G.segs.forEach((sg, i) => {
         if (!all && i !== sel) return;
         const c = col(sg.label), on = i === sel;
-        sg.pts.forEach((p, j) => h += `<circle class="handle" cx="${p[0]}" cy="${p[1]}" r="${on ? 4.2 : 2.8}" fill="${on ? '#fff' : c}" stroke="${c}" stroke-width="1.6" data-seg="${i}" data-pt="${j}"/>`);
+        sg.pts.forEach((p, j) => h += `<circle class="handle" cx="${p[0]}" cy="${p[1]}" r="${(on ? 4.2 : 2.8) * S}" fill="${on ? '#fff' : c}" stroke="${c}" stroke-width="${1.6 * S}" data-seg="${i}" data-pt="${j}"/>`);
     });
-    G.landmarks.forEach((l, k) => h += `<rect class="lm" x="${l.x - 4}" y="${l.y - 4}" width="8" height="8" fill="#23282E" data-lm="${k}"><title>${l.side} ${l.label}</title></rect>`);
-    h += `<g font-size="18" font-weight="800"><text x="12" y="26">R</text><text x="347" y="26" text-anchor="end">L</text></g>`;
+    G.landmarks.forEach((l, k) => h += `<rect class="lm" x="${l.x - 4 * S}" y="${l.y - 4 * S}" width="${8 * S}" height="${8 * S}" fill="#23282E" data-lm="${k}"><title>${l.side} ${l.label}</title></rect>`);
+    h += `<g font-size="${18 * S}" font-weight="800"><text x="${12 * S}" y="${26 * S}">R</text><text x="${IW - 12 * S}" y="${26 * S}" text-anchor="end">L</text></g>`;
     svg.innerHTML = h;
     renderList();
 }
@@ -132,7 +134,7 @@ svg.addEventListener('pointerdown', e => {
 });
 svg.addEventListener('pointermove', e => {
     if (!drag) return;
-    const p = toSvg(e), x = r1(Math.max(0, Math.min(359, p.x))), y = r1(Math.max(0, Math.min(481, p.y)));
+    const p = toSvg(e), x = r1(Math.max(0, Math.min(IW, p.x))), y = r1(Math.max(0, Math.min(IH, p.y)));
     if (drag.lm !== undefined) {
         const l = G.landmarks[drag.lm]; l.x = x; l.y = y;
         const tw = mirrorOn() && lmTwin(l); if (tw) { tw.x = r1(2 * mid() - x); tw.y = y; }
@@ -155,8 +157,8 @@ svg.addEventListener('contextmenu', e => {
 });
 ['mirror', 'showAll', 'mid'].forEach(id => document.getElementById(id).addEventListener('change', draw));
 
-function addSeg() { G.segs.push({ side: 'R', art: '-', label: '새 혈관', pts: [[180, 240], [200, 240]] }); sel = G.segs.length - 1; save(); draw(); }
-function addLm() { G.landmarks.push({ side: 'R', art: '-', label: '새 분지부', x: 180, y: 240 }); save(); draw(); }
+function addSeg() { G.segs.push({ side: 'R', art: '-', label: '새 혈관', pts: [[IW * 0.4, IH * 0.5], [IW * 0.45, IH * 0.5]] }); sel = G.segs.length - 1; save(); draw(); }
+function addLm() { G.landmarks.push({ side: 'R', art: '-', label: '새 분지부', x: IW * 0.4, y: IH * 0.5 }); save(); draw(); }
 function code() {
     const j = o => '        ' + JSON.stringify(o).replace(/":/g, '": ').replace(/,"/g, ', "').replace(/\],\[/g, '], [');
     return `    const SEGS = [\n${G.segs.map(j).join(',\n')}\n    ];\n    // 이름 있는 분지부 — 이 근처를 누르면 부위 이름이 분지부로 붙는다\n    const LANDMARKS = [\n${G.landmarks.map(j).join(',\n')}\n    ];`;

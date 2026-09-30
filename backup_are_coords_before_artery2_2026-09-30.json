@@ -1,0 +1,539 @@
+{
+ "note": "2026-09-30 좌표 이전 전 areList",
+ "rats": [
+  {
+   "_id": "0O4BY83noB461YBlaL1P",
+   "ratId": "C1011G1",
+   "areList": [
+    {
+     "x": 193.9,
+     "side": "R",
+     "y": 140.9,
+     "art": "ACA",
+     "type": "micro",
+     "site": "ACA"
+    }
+   ]
+  },
+  {
+   "_id": "0YwWZrXWUAmjSHTK1oW0",
+   "ratId": "C1001G1",
+   "areList": [
+    {
+     "type": "macro",
+     "site": "PCA P1",
+     "art": "PCA",
+     "y": 255,
+     "side": "L",
+     "x": 221.1
+    }
+   ]
+  },
+  {
+   "_id": "20R5MYVzvufN2eSYJrli",
+   "ratId": "C0401G1",
+   "areList": [
+    {
+     "y": 83.7,
+     "side": "A-com",
+     "site": "Azygos ACA",
+     "type": "micro",
+     "x": 210.1,
+     "art": "-"
+    }
+   ]
+  },
+  {
+   "_id": "5zTZHAUgYcAE2heUMkVT",
+   "ratId": "C1006G1",
+   "areList": [
+    {
+     "site": "ACA",
+     "type": "미확인",
+     "art": "ACA",
+     "side": "R",
+     "y": 145.9,
+     "x": 191.6
+    }
+   ]
+  },
+  {
+   "_id": "6HNenWrEDvMJQU9Y4BHa",
+   "ratId": "C1101G1",
+   "areList": [
+    {
+     "x": 221.8,
+     "art": "ACA",
+     "side": "L",
+     "y": 152,
+     "site": "ACA–olfactory 분지부",
+     "type": "미확인"
+    }
+   ]
+  },
+  {
+   "_id": "9ZmTJ4vVXjsZPwBSLeC8",
+   "ratId": "C0310G1",
+   "areList": [
+    {
+     "y": 254.7,
+     "art": "PCA",
+     "site": "PCA P1",
+     "type": "macro",
+     "side": "L",
+     "x": 222.1
+    }
+   ]
+  },
+  {
+   "_id": "EDPjslnXGi20uOhOnxcE",
+   "ratId": "C0305G1",
+   "areList": [
+    {
+     "side": "R",
+     "x": 187,
+     "site": "ICA 분지부",
+     "type": "micro",
+     "art": "ICA",
+     "y": 184
+    }
+   ]
+  },
+  {
+   "_id": "HM8ssjoXZSjf8IefQ0Sp",
+   "ratId": "C0406G1",
+   "areList": [
+    {
+     "y": 254.7,
+     "art": "PCA",
+     "side": "L",
+     "site": "PCA P1",
+     "type": "macro",
+     "x": 222.1
+    }
+   ]
+  },
+  {
+   "_id": "JRvzBwwBYJ8LWP8qzWQS",
+   "ratId": "C0608G1",
+   "areList": [
+    {
+     "side": "R",
+     "x": 186.5,
+     "type": "micro",
+     "site": "ACA–olfactory 분지부",
+     "y": 156,
+     "art": "ACA"
+    },
+    {
+     "type": "micro",
+     "site": "ICA 분지부",
+     "x": 184.9,
+     "art": "ICA",
+     "side": "R",
+     "y": 181.8
+    }
+   ]
+  },
+  {
+   "_id": "Mbel8JtSMq85uBM4QWpH",
+   "ratId": "C0311G1",
+   "areList": [
+    {
+     "side": "R",
+     "y": 152.2,
+     "type": "micro",
+     "site": "ACA–olfactory 분지부",
+     "x": 184.2,
+     "art": "ACA"
+    }
+   ]
+  },
+  {
+   "_id": "N1EEAK4dfKM8lLCJMRjb",
+   "ratId": "C0407G1",
+   "areList": [
+    {
+     "site": "ACA–olfactory 분지부",
+     "type": "micro",
+     "y": 153.6,
+     "side": "R",
+     "art": "ACA",
+     "x": 182.6
+    }
+   ]
+  },
+  {
+   "_id": "OVK7GxGo0Q1TDdGVvB89",
+   "ratId": "C0314G1",
+   "areList": [
+    {
+     "y": 152.2,
+     "side": "R",
+     "x": 184.2,
+     "type": "micro",
+     "site": "ACA–olfactory 분지부",
+     "art": "ACA"
+    },
+    {
+     "y": 184,
+     "site": "ICA 분지부",
+     "type": "macro",
+     "side": "R",
+     "art": "ICA",
+     "x": 187
+    },
+    {
+     "side": "A-com",
+     "type": "micro",
+     "x": 203,
+     "site": "A-com (ACA 합류부)",
+     "art": "-",
+     "y": 133
+    },
+    {
+     "side": "L",
+     "x": 219.5,
+     "site": "PCA P1",
+     "type": "macro",
+     "y": 254.4,
+     "art": "PCA"
+    }
+   ]
+  },
+  {
+   "_id": "OsRfCyWAluTes5KJu4qv",
+   "ratId": "C0504G1",
+   "areList": [
+    {
+     "y": 152.2,
+     "side": "R",
+     "x": 184.2,
+     "art": "ACA",
+     "type": "micro",
+     "site": "ACA–olfactory 분지부"
+    }
+   ]
+  },
+  {
+   "_id": "QEcYwk3YPXQbZ8Q7Tuon",
+   "ratId": "C0409G1",
+   "areList": [
+    {
+     "art": "-",
+     "x": 212.1,
+     "site": "Basilar top (perforator)",
+     "type": "micro",
+     "y": 265.9,
+     "side": "BA"
+    },
+    {
+     "x": 203,
+     "art": "-",
+     "y": 84.4,
+     "side": "A-com",
+     "site": "Azygos ACA",
+     "type": "micro"
+    }
+   ]
+  },
+  {
+   "_id": "Rbqw3zZwoWeYCG5Matmj",
+   "ratId": "C1102G1",
+   "areList": [
+    {
+     "type": "미확인",
+     "y": 146.5,
+     "site": "ACA",
+     "side": "L",
+     "art": "ACA",
+     "x": 217.9
+    }
+   ]
+  },
+  {
+   "_id": "Sv4oKtvcitpnFb9fZsmt",
+   "ratId": "C0508G1",
+   "areList": [
+    {
+     "y": 178.8,
+     "art": "ICA",
+     "type": "micro",
+     "site": "ICA 분지부",
+     "x": 185.7,
+     "side": "R"
+    }
+   ]
+  },
+  {
+   "_id": "UYubGqQ0YdTOwSI3XUWZ",
+   "ratId": "C1307G1",
+   "areList": [
+    {
+     "y": 119.8,
+     "side": "A-com",
+     "site": "Azygos ACA",
+     "type": "macro",
+     "art": "-",
+     "x": 205.3
+    }
+   ]
+  },
+  {
+   "_id": "Ua4XZCVAhNnB8S0XImXN",
+   "ratId": "C0606G1",
+   "areList": [
+    {
+     "x": 185.7,
+     "art": "ACA",
+     "site": "ACA–olfactory 분지부",
+     "type": "micro",
+     "side": "R",
+     "y": 156.8
+    }
+   ]
+  },
+  {
+   "_id": "UtXWmlWmoYuMDLpFyAPk",
+   "ratId": "C1002G1",
+   "areList": [
+    {
+     "art": "PCA",
+     "x": 219.5,
+     "type": "미확인",
+     "y": 254.9,
+     "site": "PCA P1",
+     "side": "L"
+    },
+    {
+     "side": "R",
+     "type": "미확인",
+     "site": "ACA–olfactory 분지부",
+     "x": 188.1,
+     "art": "ACA",
+     "y": 147.5
+    }
+   ]
+  },
+  {
+   "_id": "V5aHCOcDMtIWzXAXk70d",
+   "ratId": "C1330G0",
+   "areList": [
+    {
+     "art": "PCA",
+     "x": 219.5,
+     "y": 253.4,
+     "type": "macro",
+     "site": "PCA P1",
+     "side": "L"
+    }
+   ]
+  },
+  {
+   "_id": "VmgA9UkKu4rZXIGvBcOa",
+   "ratId": "C0912G1",
+   "areList": [
+    {
+     "x": 205.3,
+     "side": "A-com",
+     "type": "미확인",
+     "site": "A-com (ACA 합류부)",
+     "art": "-",
+     "y": 126.9
+    }
+   ]
+  },
+  {
+   "_id": "f06esm9JC1EgBQw5d3cs",
+   "ratId": "C1321G0",
+   "areList": [
+    {
+     "y": 127,
+     "art": "-",
+     "type": "micro",
+     "site": "A-com (ACA 합류부)",
+     "side": "A-com",
+     "x": 203.8
+    }
+   ]
+  },
+  {
+   "_id": "gNfn42VblprJzo9iRWwu",
+   "ratId": "C0506G1",
+   "areList": [
+    {
+     "side": "R",
+     "site": "ACA",
+     "type": "micro",
+     "y": 145,
+     "x": 191.2,
+     "art": "ACA"
+    }
+   ]
+  },
+  {
+   "_id": "j8jTtZbjorUfa9hoy7dv",
+   "ratId": "C0303G1",
+   "areList": [
+    {
+     "x": 222.1,
+     "side": "L",
+     "site": "PCA P1",
+     "type": "macro",
+     "art": "PCA",
+     "y": 254.7
+    }
+   ]
+  },
+  {
+   "_id": "jcjs4Z1UbjkAcpTdHyly",
+   "ratId": "C0610G1",
+   "areList": [
+    {
+     "site": "ACA–olfactory 분지부",
+     "type": "micro",
+     "art": "ACA",
+     "y": 155.9,
+     "side": "R",
+     "x": 186.5
+    },
+    {
+     "art": "MCA",
+     "y": 174.2,
+     "type": "micro",
+     "x": 175.5,
+     "site": "MCA",
+     "side": "R"
+    }
+   ]
+  },
+  {
+   "_id": "jsrHiFrr8JFUhE47YBsU",
+   "ratId": "C1008G1",
+   "areList": [
+    {
+     "art": "-",
+     "site": "Azygos ACA",
+     "type": "미확인",
+     "x": 206.1,
+     "side": "A-com",
+     "y": 112.8
+    }
+   ]
+  },
+  {
+   "_id": "k9TGkAZuOEWxQzUFcJPN",
+   "ratId": "C1003G1",
+   "areList": [
+    {
+     "side": "L",
+     "y": 254.7,
+     "type": "macro",
+     "site": "PCA P1",
+     "x": 222.1,
+     "art": "PCA"
+    }
+   ]
+  },
+  {
+   "_id": "rIclxjBBKg9TLFwhFQkp",
+   "ratId": "C0509G1",
+   "areList": [
+    {
+     "x": 184.2,
+     "type": "micro",
+     "site": "ACA–olfactory 분지부",
+     "side": "R",
+     "art": "ACA",
+     "y": 152.2
+    }
+   ]
+  },
+  {
+   "_id": "sRMWcOuupSvjiq2LEA3t",
+   "ratId": "C0910G1",
+   "areList": [
+    {
+     "side": "R",
+     "site": "MCA",
+     "type": "macro",
+     "x": 180.2,
+     "art": "MCA",
+     "y": 179.5
+    }
+   ]
+  },
+  {
+   "_id": "v2Ci4eWkPOi2SaCLCqL1",
+   "ratId": "C1009G1",
+   "areList": [
+    {
+     "y": 254.7,
+     "art": "PCA",
+     "type": "미확인",
+     "site": "PCA",
+     "x": 222.1,
+     "side": "L"
+    }
+   ]
+  },
+  {
+   "_id": "vO2UX6Zl6DwRJHFSdHK3",
+   "ratId": "C0607G1",
+   "areList": [
+    {
+     "side": "R",
+     "type": "micro",
+     "site": "ACA–olfactory 분지부",
+     "y": 156.1,
+     "x": 184.9,
+     "art": "ACA"
+    },
+    {
+     "y": 250.4,
+     "type": "macro",
+     "site": "PCA P1",
+     "art": "PCA",
+     "side": "L",
+     "x": 221.1
+    },
+    {
+     "x": 184.9,
+     "side": "R",
+     "art": "ICA",
+     "y": 185.2,
+     "type": "micro",
+     "site": "ICA 분지부"
+    }
+   ]
+  },
+  {
+   "_id": "zJjC6qCRlE19eY4PBsF3",
+   "ratId": "C0301G1",
+   "areList": [
+    {
+     "side": "L",
+     "y": 153.6,
+     "type": "micro",
+     "site": "ACA–olfactory 분지부",
+     "x": 227.3,
+     "art": "ACA"
+    }
+   ]
+  },
+  {
+   "_id": "zbueJRqpOOwdQTAtHI65",
+   "ratId": "C0410G1",
+   "areList": [
+    {
+     "art": "ACA",
+     "x": 183.3,
+     "type": "micro",
+     "site": "ACA–olfactory 분지부",
+     "y": 153.6,
+     "side": "R"
+    }
+   ]
+  }
+ ]
+}

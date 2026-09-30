@@ -5,42 +5,45 @@
 //  · x, y가 없는 옛 기록은 side + art로 대표 지점에 '추정' 점으로 찍는다
 // ==========================================
 (function () {
-    // 바탕 그림: are_map_base.png (359×481, 전임자 논문 모식도). 좌표는 이 그림의 픽셀 좌표다.
-    const W = 359, H = 481;
-    const IMG = 'are_map_base.png?v=2';
-    const VB = [95, 20, 220, 330];   // 화면에 보이는 영역(x, y, 폭, 높이) — 윌리스환 주변만 잘라 확대   // 그림을 바꾸면 v를 올린다(캐시)
+    // 바탕 그림: artery2.png (750×1380, 혈관만 그린 모식도). 좌표는 이 그림의 픽셀 좌표다.
+    // 그림을 바꾸면 IMG의 v를 올리고(캐시), DB에 찍힌 좌표도 새 그림으로 옮겨야 한다.
+    const W = 750, H = 1380;
+    const IMG = 'artery2.png?v=1';
+    const VB = [0, 0, W, H];          // 화면에 보이는 영역(x, y, 폭, 높이) — 그림 전체
+    const U = VB[2] / 220;            // 점·글씨 크기 배율 (옛 그림 기준 크기 × U)
 
     // ▼ 그림 좌표 — are_map_editor.html(점 끌어서 조정)에서 만든 값을 그대로 붙여넣는다
     // 혈관 구간: side/art는 기존 선택지(R·L·A-com·BA / ACA·ICA·MCA·PCA·P-com)와 맞춘다
     const SEGS = [
-        {"side": "R", "art": "ICA", "label": "ICA", "pts": [[128.3, 396.9], [145, 370], [144.9, 327.1], [144.9, 297.2], [167.5, 266.6], [174.8, 229.4], [190.1, 215.4], [185, 182]]},
-        {"side": "R", "art": "MCA", "label": "MCA", "pts": [[185, 180], [158.2, 170.2], [135, 175]]},
-        {"side": "R", "art": "ACA", "label": "ACA", "pts": [[185, 180], [190.1, 156.2], [196, 142], [203, 133]]},
-        {"side": "R", "art": "ACA", "label": "Olfactory a.", "pts": [[182.8, 150.9], [196.1, 79.1]]},
-        {"side": "R", "art": "P-com", "label": "P-com", "pts": [[190.8, 222.7], [192, 240]]},
-        {"side": "R", "art": "PCA", "label": "PCA", "pts": [[204.8, 261.3], [191.5, 246.6]]},
-        {"side": "L", "art": "ICA", "label": "ICA", "pts": [[283.2, 398.9], [265, 370], [271.9, 319.8], [264.6, 287.9], [245.3, 252.6], [244.7, 224.7], [233.4, 210.1], [231.4, 182.8]]},
-        {"side": "L", "art": "MCA", "label": "MCA", "pts": [[231.4, 181.5], [254.6, 172.9], [269.3, 170.2]]},
-        {"side": "L", "art": "ACA", "label": "ACA", "pts": [[231.4, 179.5], [223.4, 157.6], [214, 142], [207, 133]]},
-        {"side": "L", "art": "ACA", "label": "Olfactory a.", "pts": [[230, 149.6], [218.1, 76.5]]},
-        {"side": "L", "art": "P-com", "label": "P-com", "pts": [[230.7, 219.4], [227.4, 242]]},
-        {"side": "L", "art": "PCA", "label": "PCA", "pts": [[217.4, 261.3], [226.7, 248]]},
-        {"side": "A-com", "art": "-", "label": "Azygos ACA", "pts": [[203, 133], [208.8, 98.4], [209.4, 57.8]]},
-        {"side": "BA", "art": "-", "label": "Basilar a.", "pts": [[213.4, 268.6], [208.1, 319.1], [207, 395]]}
+        {"side": "R", "art": "ICA", "label": "ICA", "pts": [[201, 1348], [207, 1250], [214, 1150], [223, 1100], [235, 1000], [247, 975], [260, 950], [274, 902], [289, 862], [286, 800], [283.3, 724], [286.7, 675.6]]},
+        {"side": "R", "art": "MCA", "label": "MCA", "pts": [[285.6, 675.6], [240.6, 646.7], [199, 628.3], [172, 592]]},
+        {"side": "R", "art": "ACA", "label": "ACA", "pts": [[289, 661.7], [296, 621.3], [323.7, 607.5], [354.8, 585.6], [373.3, 567.1]]},
+        {"side": "R", "art": "ACA", "label": "Olfactory a.", "pts": [[366.3, 322.5], [324.8, 510.6], [294.8, 620.2]]},
+        {"side": "R", "art": "P-com", "label": "P-com", "pts": [[287.9, 804.8], [290.2, 857.9]]},
+        {"side": "L", "art": "ICA", "label": "ICA", "pts": [[547, 1348], [541, 1250], [534, 1150], [525, 1100], [513, 1000], [501, 975], [488, 950], [474, 902], [459, 862], [462, 800], [465, 700], [466.7, 669.8]]},
+        {"side": "L", "art": "MCA", "label": "MCA", "pts": [[469, 666.3], [508.3, 650.2], [552, 617], [576, 592]]},
+        {"side": "L", "art": "ACA", "label": "ACA", "pts": [[467.9, 662.9], [455.2, 619], [407.9, 599.4], [372.1, 568.3]]},
+        {"side": "L", "art": "ACA", "label": "Olfactory a.", "pts": [[386, 323.7], [417.1, 482.9], [452.9, 606.3]]},
+        {"side": "L", "art": "P-com", "label": "P-com", "pts": [[463.3, 804.8], [458.7, 866]]},
+        {"side": "A-com", "art": "-", "label": "Azygos ACA", "pts": [[374, 30], [374, 160], [374, 305]]},
+        {"side": "A-com", "art": "-", "label": "A-com / interconnecting", "pts": [[374, 340], [374, 450], [374, 566]]},
+        {"side": "BA", "art": "-", "label": "Basilar a.", "pts": [[375.6, 922.5], [374, 1100], [374, 1308]]},
+        {"side": "R", "art": "PCA", "label": "PCA", "pts": [[291.3, 857.9], [332.9, 869.4], [373.3, 900.6]]},
+        {"side": "L", "art": "PCA", "label": "PCA", "pts": [[380.2, 900.6], [418.3, 868.3], [464.4, 867.1]]}
     ];
     // 이름 있는 분지부 — 이 근처를 누르면 부위 이름이 분지부로 붙는다
     // PCA P1 = 기저동맥 끝 ~ P-com 합류부 사이 구간의 가운데, 합류부는 따로 'P1–P-com 접합부'
     const LANDMARKS = [
-        {"side": "R", "art": "ICA", "label": "ICA 분지부", "x": 187, "y": 184},
-        {"side": "R", "art": "ACA", "label": "ACA–olfactory 분지부", "x": 184.2, "y": 152.2},
-        {"side": "R", "art": "PCA", "label": "PCA P1", "x": 198.2, "y": 254},
-        {"side": "R", "art": "PCA", "label": "P1–P-com 접합부", "x": 192.8, "y": 244},
-        {"side": "L", "art": "ICA", "label": "ICA 분지부", "x": 232, "y": 182.8},
-        {"side": "L", "art": "ACA", "label": "ACA–olfactory 분지부", "x": 226.7, "y": 153.6},
-        {"side": "L", "art": "PCA", "label": "PCA P1", "x": 222.1, "y": 254.7},
-        {"side": "L", "art": "PCA", "label": "P1–P-com 접합부", "x": 226.7, "y": 246},
-        {"side": "A-com", "art": "-", "label": "A-com (ACA 합류부)", "x": 203, "y": 133},
-        {"side": "BA", "art": "-", "label": "Basilar top", "x": 212.1, "y": 265.9}
+        {"side": "R", "art": "ICA", "label": "ICA 분지부", "x": 283.3, "y": 674.4},
+        {"side": "R", "art": "ACA", "label": "ACA–olfactory 분지부", "x": 294.8, "y": 621.3},
+        {"side": "R", "art": "PCA", "label": "PCA P1", "x": 332.9, "y": 874},
+        {"side": "R", "art": "PCA", "label": "P1–P-com 접합부", "x": 289, "y": 862.5},
+        {"side": "L", "art": "ICA", "label": "ICA 분지부", "x": 469, "y": 666.3},
+        {"side": "L", "art": "ACA", "label": "ACA–olfactory 분지부", "x": 455.2, "y": 616.7},
+        {"side": "L", "art": "PCA", "label": "PCA P1", "x": 418, "y": 872},
+        {"side": "L", "art": "PCA", "label": "P1–P-com 접합부", "x": 460, "y": 870},
+        {"side": "A-com", "art": "-", "label": "A-com (ACA 합류부)", "x": 374, "y": 566},
+        {"side": "BA", "art": "-", "label": "Basilar top", "x": 374.4, "y": 908.7}
     ];
     // ▲ 그림 좌표 끝
 
@@ -62,8 +65,8 @@
         const cands = SEGS.filter(sg => sg.side === side && (side === 'A-com' || side === 'BA' || sg.art === art));
         const sg = cands.find(c => c.label === art) || cands[0];
         if (sg) return pointAtHalf(sg.pts);
-        if (side === 'R') return [110, 42];        // 좌우만 아는 기록: 위쪽 바깥 여백
-        if (side === 'L') return [300, 42];
+        if (side === 'R') return [VB[0] + 40 * U, VB[1] + 60 * U];        // 좌우만 아는 기록: 위쪽 바깥 여백
+        if (side === 'L') return [VB[0] + VB[2] - 40 * U, VB[1] + 60 * U];
         return null;
     }
 
@@ -76,10 +79,10 @@
     // 그림 좌표 → {side, art, site}. 혈관에서 너무 멀면 null
     function locate(x, y) {
         const p = [x, y];
-        let lm = null, lmD = 8;
+        let lm = null, lmD = 8 * U;
         LANDMARKS.forEach(l => { const d = Math.hypot(l.x - x, l.y - y); if (d < lmD) { lmD = d; lm = l; } });
         if (lm) return { side: lm.side, art: lm.art, site: lm.label };
-        let best = null, bestD = 14;
+        let best = null, bestD = 14 * U;
         SEGS.forEach(sg => {
             for (let i = 0; i < sg.pts.length - 1; i++) {
                 const d = distToSeg(p, sg.pts[i], sg.pts[i + 1]);
@@ -97,8 +100,8 @@
     function baseSvg() {
         return `
             <image href="${IMG}" x="0" y="0" width="${W}" height="${H}"/>
-            <g font-size="15" font-weight="800" fill="var(--ink, #23282E)"><text x="${VB[0] + 8}" y="${VB[1] + 18}">R</text><text x="${VB[0] + VB[2] - 8}" y="${VB[1] + 18}" text-anchor="end">L</text></g>
-            <text x="${VB[0] + VB[2] / 2}" y="${VB[1] + VB[3] - 4}" font-size="9" text-anchor="middle" fill="var(--ink-soft, #5B5F66)">복측 시야 · 위쪽 = 코 쪽</text>`;
+            <g font-size="${15 * U}" font-weight="800" fill="var(--ink, #23282E)"><text x="${VB[0] + 8 * U}" y="${VB[1] + 18 * U}">R</text><text x="${VB[0] + VB[2] - 8 * U}" y="${VB[1] + 18 * U}" text-anchor="end">L</text></g>
+            <text x="${VB[0] + VB[2] / 2}" y="${VB[1] + VB[3] - 4 * U}" font-size="${9 * U}" text-anchor="middle" fill="var(--ink-soft, #5B5F66)">복측 시야 · 위쪽 = 코 쪽</text>`;
     }
 
     // 같은 지점에 여러 개가 겹치면 해바라기 배열로 살짝 퍼뜨린다
@@ -108,9 +111,42 @@
             const key = `${Math.round(p.x)},${Math.round(p.y)}`;
             const k = seen[key] = (seen[key] || 0) + 1;
             if (k === 1) return p;
-            const a = k * 2.4, r = 3.8 * Math.sqrt(k - 1);
+            const a = k * 2.4, r = 3.8 * U * Math.sqrt(k - 1);
             return { ...p, x: p.x + r * Math.cos(a), y: p.y + r * Math.sin(a) };
         });
+    }
+
+    // 통계·비교용: 같은 자리의 점은 퍼뜨리지 않고 하나로 묶어 개수를 적는다.
+    // (퍼뜨리면 많이 몰린 분지부에서 바깥 점이 혈관을 벗어나 보인다)
+    // 같은 자리 안에서 종류(sub)가 다르면 작은 원을 나란히 둔다 — 대개 3개 이하라 혈관 폭 안쪽이다.
+    // style(sub, n) → { r, fill, stroke, opacity, dash, text }
+    function clusterDots(pts, subKey, style) {
+        const pos = new Map();
+        pts.forEach(p => {
+            const k = `${Math.round(p.x)},${Math.round(p.y)}`;
+            if (!pos.has(k)) pos.set(k, { x: p.x, y: p.y, subs: new Map() });
+            const g = pos.get(k), sk = subKey(p);
+            if (!g.subs.has(sk)) g.subs.set(sk, []);
+            g.subs.get(sk).push(p);
+        });
+        let html = '';
+        pos.forEach(g => {
+            const subs = [...g.subs.values()];
+            const m = subs.length;
+            subs.forEach((list, i) => {
+                const st = style(list[0], list.length);
+                const r = st.r * (list.length > 1 ? Math.min(1.9, 1 + 0.28 * Math.log2(list.length)) : 1);
+                // 2개 이하는 좌우로, 그 이상은 작은 고리 모양으로
+                let dx = 0, dy = 0;
+                if (m === 2) dx = (i - 0.5) * 2.1 * st.r;
+                else if (m > 2) { const a = -Math.PI / 2 + i * 2 * Math.PI / m; dx = Math.cos(a) * 1.5 * st.r; dy = Math.sin(a) * 1.5 * st.r; }
+                const cx = (g.x + dx).toFixed(1), cy = (g.y + dy).toFixed(1);
+                const tip = esc(list.map(p => p.tip).join(String.fromCharCode(10)));
+                html += `<g><title>${tip}</title><circle cx="${cx}" cy="${cy}" r="${r.toFixed(1)}" fill="${st.fill}" fill-opacity="${st.opacity}" stroke="${st.stroke}" stroke-width="${1.6 * U}"${st.dash ? ` stroke-dasharray="${2 * U} ${1.5 * U}"` : ''}/>`
+                      + (list.length > 1 ? `<text x="${cx}" y="${(Number(cy) + r * 0.36).toFixed(1)}" font-size="${(r * 1.05).toFixed(1)}" font-weight="800" text-anchor="middle" fill="${st.text}">${list.length}</text>` : '') + '</g>';
+            });
+        });
+        return html;
     }
 
     function lesionPoint(loc) {
@@ -141,10 +177,11 @@
             });
         });
         if (!pts.length) return '';
-        const dots = spread(pts).map(p => {
+        const dots = clusterDots(pts, p => `${p.type}|${p.exact}`, p => {
             const c = typeColor(p.type);
-            return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.type === 'macro' ? 5.3 : 4.1}" fill="${p.exact ? c : 'var(--sheet, #fff)'}" fill-opacity="${p.exact ? 0.85 : 1}" stroke="${c}" stroke-width="1.6"><title>${esc(p.tip)}</title></circle>`;
-        }).join('');
+            return { r: (p.type === 'macro' ? 5.3 : 4.1) * U, fill: p.exact ? c : 'var(--sheet, #fff)', opacity: p.exact ? 0.9 : 1,
+                     stroke: c, dash: false, text: p.exact ? '#fff' : c };
+        });
         const total = tally.R + tally.L + tally.mid;
         const pct = n => total ? Math.round(n / total * 100) : 0;
         const legendDot = (t, filled) => `<svg width="12" height="12" style="vertical-align:-1px"><circle cx="6" cy="6" r="4.2" fill="${filled ? typeColor(t) : 'var(--sheet,#fff)'}" stroke="${typeColor(t)}" stroke-width="1.6"/></svg>`;
@@ -168,7 +205,7 @@
         const pts = spread(list.map((loc, i) => { const p = lesionPoint(loc); return p ? { ...p, i, type: loc.type } : null; }).filter(Boolean));
         const marks = pts.map(p => {
             const c = typeColor(p.type);
-            return `<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="7.5" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="1.6"/><text x="${p.x.toFixed(1)}" y="${(p.y + 3.2).toFixed(1)}" font-size="9" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${p.i + 1}</text></g>`;
+            return `<g><circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${7.5 * U}" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="${1.6 * U}"/><text x="${p.x.toFixed(1)}" y="${(p.y + 3.2 * U).toFixed(1)}" font-size="${9 * U}" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${p.i + 1}</text></g>`;
         }).join('');
         const note = loc => { const p = lesionPoint(loc); return !p ? ' <span style="color:var(--ink-soft);">(그림에 없음)</span>' : p.exact ? '' : ' <span style="color:var(--ink-soft);">(위치 추정)</span>'; };
         const rows = list.length ? list.map((loc, i) => `<div style="display:flex; gap:6px; align-items:baseline;"><b class="mono" style="color:${typeColor(loc.type)}; min-width:14px;">${i + 1}</b><span><b>${esc(loc.type)}</b> · ${esc(locText(loc))}${note(loc)}</span></div>`).join('')
@@ -202,7 +239,9 @@
             tallies.push(t);
         });
         if (!pts.length) return '';
-        const dots = spread(pts).map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${p.type === 'macro' ? 5.6 : 3.8}" fill="${p.type === '미확인' ? 'var(--sheet,#fff)' : p.color}" fill-opacity="${p.exact ? 0.9 : 0.45}" stroke="${p.color}" stroke-width="1.6"${p.exact ? '' : ' stroke-dasharray="2 1.5"'}><title>${esc(p.tip)}</title></circle>`).join('');
+        const dots = clusterDots(pts, p => `${p.color}|${p.type}|${p.exact}`, p => ({
+            r: (p.type === 'macro' ? 5.6 : 3.8) * U, fill: p.type === '미확인' ? 'var(--sheet,#fff)' : p.color,
+            opacity: p.exact ? 0.9 : 0.45, stroke: p.color, dash: !p.exact, text: p.type === '미확인' ? p.color : '#fff' }));
         const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '-';
         const td = 'padding:5px 6px; white-space:nowrap;';
         const rows = tallies.map(t => `<tr style="border-bottom:1px solid var(--rule);">
@@ -246,7 +285,7 @@
                 const loc = { side: row.querySelector('.are-side').value, art: row.querySelector('.are-art').value, x: row.dataset.x !== undefined && row.dataset.x !== '' ? Number(row.dataset.x) : undefined, y: row.dataset.y !== undefined && row.dataset.y !== '' ? Number(row.dataset.y) : undefined };
                 const p = lesionPoint(loc); if (!p) return '';
                 const c = typeColor(row.querySelector('.are-tp').value);
-                return `<g><circle cx="${p.x}" cy="${p.y}" r="7.1" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="1.4"/><text x="${p.x}" y="${p.y + 3}" font-size="8.6" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${i + 1}</text></g>`;
+                return `<g><circle cx="${p.x}" cy="${p.y}" r="${7.1 * U}" fill="${p.exact ? c : 'var(--sheet,#fff)'}" stroke="${c}" stroke-width="${1.4 * U}"/><text x="${p.x}" y="${p.y + 3 * U}" font-size="${8.6 * U}" font-weight="800" text-anchor="middle" fill="${p.exact ? '#fff' : c}">${i + 1}</text></g>`;
             }).join('');
             rows.forEach((row, i) => { const n = row.querySelector('.are-no'); if (n) n.textContent = i + 1; });
         }
@@ -282,5 +321,5 @@
         return { render, setActive };
     }
 
-    window.AreMap = { statsHtml, ratHtml, compareHtml, mountEditor, locate, locText, lesionPoint, landmark, SEGS, LANDMARKS, W, H, IMG };
+    window.AreMap = { statsHtml, ratHtml, compareHtml, mountEditor, locate, locText, lesionPoint, landmark, SEGS, LANDMARKS, W, H, IMG, VB, U };
 })();
