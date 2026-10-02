@@ -670,6 +670,31 @@ function prepCoefFor(ctx) {
     return out;
 }
 
+// 조제 계산에 쓸 케이지 총체중 (g).
+// 케이지 마지막 급여 기록의 sumBW 는 '그때' 있던 개체의 합이라, 그 뒤 합사·분리·사망이 있으면 틀린다.
+// (2026-10-02 발견: 합사하려고 라운드 전에 미리 옮기면 한 마리 체중을 두 마리로 나눠 조제량이 크게 모자랐다.
+//  사망 다음 날에도 죽은 개체 체중이 남아 조제량이 넘쳤다.)
+// 그래서 지금 케이지에 있는 개체마다 최근 체중(latestW: ratId → g)을 더한다.
+// 한 마리라도 최근 체중이 없으면 마지막 기록을 마리 수 비례로 고친다.
+function prepCageBW(occ, lastFeed, latestW) {
+    const n = (occ || []).length;
+    const ws = (occ || []).map(r => Number(latestW && latestW[r.ratId]) || 0);
+    if (n && ws.every(w => w > 0)) return ws.reduce((a, b) => a + b, 0);
+    const bw = lastFeed ? Number(lastFeed.sumBW) : 0, n0 = lastFeed ? Number(lastFeed.ratCount) : 0;
+    if (bw > 0 && n0 > 0 && n && n0 !== n) return bw / n0 * n;
+    return bw || undefined;
+}
+// 체중 기록 목록 → 개체별 가장 최근 체중
+function latestWeights(meas) {
+    const out = {}, at = {};
+    (meas || []).forEach(m => {
+        const w = Number(m.weight), d = String(m.date || '').slice(0, 10);
+        if (!(w > 0) || !d || !m.ratId) return;
+        if (!at[m.ratId] || d >= at[m.ratId]) { at[m.ratId] = d; out[m.ratId] = w; }
+    });
+    return out;
+}
+
 // 계수를 모아 채울 물 후보마다 필요량과 만들 양을 낸다.
 // 케이지마다 조제 카드와 같은 식(원액 부피까지 물통 총량에 넣어 푼 것)으로 구해 더한다.
 // 기록이 없는 케이지는 아는 케이지 평균으로 메운다.

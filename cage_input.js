@@ -16,6 +16,7 @@ let ciHousing = [];
 let ciAllHousing = [];   // 끝난 재실 포함 (구간 중 변동을 반영하려면 필요)
 let ciRats = [];
 let ciLastFeed = {};     // cageId -> 직전 방문 기록 (오늘 것일 수도 있음)
+let ciLatestW = {};      // ratId -> 최근 체중 (조제 카드용)
 let ciPrevFeed = {};     // cageId -> 오늘 이전의 마지막 기록 (오늘 재입력 시 비교 기준)
 let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day). 주말 낀 구간은 뺀 값
 let ciRecentPcAny = {};  // 위와 같되 주말 구간도 포함. 평일 기록이 아예 없을 때만 쓴다
@@ -227,6 +228,7 @@ async function ciLoadHistory() {
     // 물 안 가는 날 체중은 「상태 & 체중 기록」으로 들어가 cageFeeding 행이 안 생기므로,
     // 탈착 횟수는 여기서 따로 세야 한다. (주말은 잰 기록이 없어 자동으로 0이 된다)
     const measSnap = await db.collection('measurements').where('date', '>=', cutoffStr).get();
+    ciLatestW = latestWeights(measSnap.docs.map(d => d.data()));   // 조제 카드: 지금 있는 개체의 최근 체중 합
     const weighByRat = {};
     measSnap.forEach(d => {
         const v = d.data();
@@ -385,7 +387,7 @@ function ciPrepPlan() {
         // 계수 계산은 대시보드와 같은 함수 하나로 (global.js prepCoefFor).
         // 예전엔 여기만 부족분 보정·농도 상한 없이 목표 그대로 계산해서 대시보드보다 적게 나왔다.
         const c = prepCoefFor({ rule: st.rule, cfg: ciConfig, occ: ciOccupants(cage.id),
-                                rows: ciCageRows[cage.id] || [], bw: (ciLastFeed[cage.id] || {}).sumBW, today });
+                                rows: ciCageRows[cage.id] || [], bw: prepCageBW(ciOccupants(cage.id), ciLastFeed[cage.id], ciLatestW), today });
         items.push(Object.assign({ number: cage.number }, c));
     });
     return { items, stock };

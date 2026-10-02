@@ -387,7 +387,8 @@ function dbTodoCard(t) {
 // 케이지별 입력 화면의 파란 카드와 같은 계산을 여기서도 한다.
 // 사육실 가기 전에 실험실에서 만들어야 하므로, 첫 화면에 있어야 한다.
 function dbPrep() {
-    const { today, cages, feeds, doseFeeds, configs } = dbData;
+    const { today, cages, feeds, doseFeeds, configs, meas } = dbData;
+    const latestW = latestWeights(meas);   // 합사·사망 뒤에도 '지금 있는 개체'의 체중으로 조제한다
     const doneToday = new Set(feeds.filter(f => f.dateStr === today).map(f => String(f.cageId)));
     const lastFeed = {};
     feeds.forEach(f => {
@@ -425,7 +426,7 @@ function dbPrep() {
 
         // 계수 계산은 케이지별 입력과 같은 함수 하나로 (global.js prepCoefFor)
         const rows = (doseFeeds || feeds).filter(f => String(f.cageId) === String(cage.id));
-        const bw = (lastFeed[String(cage.id)] || {}).sumBW;
+        const bw = prepCageBW(occ, lastFeed[String(cage.id)], latestW);
         const c = prepCoefFor({ rule, cfg, occ, rows, bw, today });
         items.push(Object.assign({ number: cage.number }, c));
     });
