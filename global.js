@@ -560,9 +560,10 @@ function doseGainFor(rows, rule, opts) {
         // 빼두면 주 2회꼴(금→월)로 부족분이 통째로 사라져 이득이 실제보다 빨리 풀린다.
         // (2026-09-21 사용자 결정)
         if ((r.flags || []).length) return;
-        if (!(cAtStart > 0) || !(r.waterConsumed > 0) || !(r.sumBW > 0) || !(r.animalDays > 0)) return;
+        const kgd = rowKgDays(r);
+        if (!(cAtStart > 0) || !(r.waterConsumed > 0) || !(kgd > 0) || !(r.animalDays > 0)) return;
         const days = r.animalDays / (r.ratCount || 1);
-        const achieved = cAtStart * r.waterConsumed / (r.sumBW / 1000) / days / target;   // 1 = 목표
+        const achieved = cAtStart * r.waterConsumed / kgd / target;   // 1 = 목표
         deficit += days * (1 - achieved);      // 넘친 구간은 부족분을 깎는다 (순부족)
         n++;
     });
@@ -713,6 +714,17 @@ function prepPlans(items, stock, housing) {
     return { plans, fills, known, unknown };
 }
 
+// 구간의 kg·일 — 개체별 체중 × 그 개체가 구간에 실제로 있던 일수의 합.
+// 2026-10-07부터 케이지별 입력이 저장 때 kgDays 로 남긴다. 없는 옛 기록은 예전 식
+// (저장 시점 거주자 총체중 × 마리당 일수)으로 되돌려 같은 값을 낸다.
+// 왜 바꿨나: 합사·사망·이동이 낀 구간은 '총체중'(저장 시점 거주자)과 '마리·일'(실제 재실)의
+// 기준이 달라서 도달량이 틀어졌다 (2026-10-02 29번: 03G0 혼자 마신 물을 두 마리 체중으로 나눠 +25%).
+function rowKgDays(r) {
+    if (Number(r.kgDays) > 0) return Number(r.kgDays);
+    const days = Number(r.animalDays) / (Number(r.ratCount) || 1);
+    return (Number(r.sumBW) > 0 && days > 0) ? (Number(r.sumBW) / 1000) * days : 0;
+}
+
 // 케이지 급여 기록 → 구간별 메트포민 도달량 (mg/kg/일).
 // 섭취량·투여량 화면의 누적 평균선과 같은 규칙이다:
 //  · 도달량 = 구간 시작 시점의 물통 농도 × 마신 양 ÷ 케이지 총체중 ÷ 마리·일
@@ -734,11 +746,12 @@ function metDoseIntervals(rows) {
             conc = (Number(r.doseMg) || 0) / totalVol;
         }
         const days = r.animalDays / (r.ratCount || 1);
-        if (!(c0 > 0) || typeof r.waterConsumed !== 'number' || !(r.sumBW > 0) || !(days > 0)) return;
+        const kgd = rowKgDays(r);
+        if (!(c0 > 0) || typeof r.waterConsumed !== 'number' || !(kgd > 0) || !(days > 0)) return;
         const end = r.at?.toMillis?.() || new Date(r.dateStr + 'T12:00:00').getTime();
         const start = end - (Number(r.intervalHours) || days * 24) * 3600000;
         out.push({ dateStr: r.dateStr, start, end, days, row: r,
-                   dose: c0 * r.waterConsumed / (r.sumBW / 1000) / days,
+                   dose: c0 * r.waterConsumed / kgd,
                    usable: typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0
                            && !(r.flags || []).some(f => MET_DOSE_DROP.includes(f)) });
     });
@@ -788,4 +801,28 @@ function pcUsableForPrep(pc, n, maxFill) {
 // 그 한 칸이 가루 1 g 이라 소량을 만들 때 두 배 넘게 만들게 됐다.
 function makeVolume(needCc) {
     return Math.max(5, Math.ceil(needCc * 1.3));
+}
+
+
+// ============================================================
+//  마지막 생존 확인일 (사망일 규칙: 사망일 = 발견일, 2026-10-07 사용자 결정)
+//  주말에 죽으면 발견일이 월요일로 몰린다. 그래서 '마지막으로 살아 있던 게 확인된 날'을
+//  같이 남겨 분석에서는 [마지막 생존 확인 ~ 발견] 구간(또는 중간값)으로 다룬다.
+//  증거: 체중(>0) · 상태 점수(>0) · 그 개체가 든 케이지 급여 기록. 모두 사망일 '전날까지'만 —
+//  사망 당일 기록은 사체 무게일 수도 있고(C1321 사례), 급여 행은 죽은 개체도 ratIds에 들어간다.
+// ============================================================
+async function lastAliveDateFor(ratId, deathDate) {
+    const d = String(deathDate || '').slice(0, 10);
+    if (!ratId || !d) return null;
+    let best = null;
+    const take = v => { const x = String(v || '').slice(0, 10); if (x && x < d && (!best || x > best)) best = x; };
+    const [ms, ls, fs] = await Promise.all([
+        db.collection('measurements').where('ratId', '==', ratId).get(),
+        db.collection('dailyLogs').where('ratId', '==', ratId).get(),
+        db.collection('cageFeeding').where('ratIds', 'array-contains', ratId).get()
+    ]);
+    ms.forEach(x => { const v = x.data(); if (Number(v.weight) > 0) take(v.date); });
+    ls.forEach(x => { const v = x.data(); if (Number(v.totalScore) > 0) take(v.date); });
+    fs.forEach(x => take(x.data().dateStr));
+    return best;
 }

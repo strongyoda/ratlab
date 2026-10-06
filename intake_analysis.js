@@ -128,6 +128,7 @@ const iaFmt = (s, d = 1) => s ? `${s.mean.toFixed(d)} ± ${s.sd.toFixed(d)}` : '
 // iaRender가 붙여둔 __conc(구간 시작 시점의 물통 농도)를 쓴다.
 function iaMetDose(r) {
     if (!(r.__conc > 0) || typeof r.waterConsumed !== 'number') return null;
+    if (Number(r.kgDays) > 0) return r.__conc * r.waterConsumed / Number(r.kgDays);   // 재실 가중 kg·일 (2026-10-07~)
     const bw = iaCageBW(r);
     const days = r.animalDays / (r.ratCount || 1);
     if (!bw || !(days > 0)) return null;
@@ -139,6 +140,7 @@ function iaMetDose(r) {
 function iaFoodDose(row, mgPerG) {
     if (typeof row.foodPerCapita !== 'number' || !row.ratCount) return null;
     const totalFood = row.foodPerCapita * row.animalDays;      // 구간 전체 사료 섭취(g)
+    if (Number(row.kgDays) > 0) return (totalFood * mgPerG) / Number(row.kgDays);   // 재실 가중 kg·일 (2026-10-07~)
     const days = row.animalDays / row.ratCount;
     const bw = iaCageBW(row);
     if (!bw || !days) return null;

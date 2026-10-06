@@ -547,6 +547,7 @@ async function loadDetailData(forceId = null) {
             infoBoxes.push(`<div class="info-row-item" style="background:var(--stock-pink-soft); border-color:var(--stock-pink);">
                 <b style="color:var(--stamp);">사망 (POD ${deathPod})</b><br>
                 <span class="mono" style="font-size:0.85rem; color:#7C2A30;">${rat.deathDate || '-'}</span><br>
+                ${rat.lastAliveDate ? `<span style="font-size:0.72rem; color:#7C2A30;">마지막 생존 확인 <span class="mono">${rat.lastAliveDate}</span>${rat.surgeryDate ? ` (POD ${Math.floor((new Date(rat.lastAliveDate) - new Date(rat.surgeryDate)) / 86400000)})` : ''}</span><br>` : ''}
                 <div style="font-size:0.75rem; color:#7C2A30; margin-top:5px; font-weight:bold; line-height:1.3; word-break:keep-all;">
                     COD: ${chEsc(codText)}<br>ARE: ${chEsc(displayAre)}
                 </div>

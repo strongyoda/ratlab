@@ -1806,7 +1806,12 @@ window.saveSimpleCod = async function() {
         // 사망 처리면 케이지 재실도 닫는다 (열려 있으면 섭취량 마리·일이 계속 잡힘)
         if (updateData.status === '사망') {
             const rdoc = await db.collection("rats").doc(activeCodRatId).get();
-            if (rdoc.exists && rdoc.data().ratId) await closeOpenHousing(rdoc.data().ratId, '사망');
+            if (rdoc.exists && rdoc.data().ratId) {
+                await closeOpenHousing(rdoc.data().ratId, '사망');
+                // 사망일 = 발견일. 마지막 생존 확인일을 같이 남긴다 (global.js lastAliveDateFor)
+                try { await db.collection("rats").doc(activeCodRatId).update({ lastAliveDate: await lastAliveDateFor(rdoc.data().ratId, updateData.deathDate) }); }
+                catch (e) { console.warn('lastAliveDate 저장 실패', e); }
+            }
         }
         alert("저장되었습니다.");
         document.getElementById('simple-cod-modal').style.display = 'none';

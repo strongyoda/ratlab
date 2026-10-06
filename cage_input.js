@@ -1223,7 +1223,10 @@ function ciComputeIntake() {
     // 그걸 변동으로 보면 사망 다음 구간이 통째로 '재실변동'으로 빠졌다
     // (2026-09-26 파일럿 04G0: 급여 11:22:10, 재실 종료 11:22:11 → 9/28 구간이 1초 겹쳐 제외됨).
     const EDGE_MS = 30 * 60000;
-    let animalHours = 0, changed = false;
+    // kg·일: 개체별 체중 × 그 개체의 재실 시간. 오늘 잰 체중이 있으면 그것, 없으면(오늘 죽었거나 안 잼) 최근 체중.
+    // 한 마리라도 체중을 모르면 kgDays 를 남기지 않는다 — 계산식이 옛 방식(총체중)으로 되돌아간다.
+    const wOf = id => { const f = ciForm.rats && ciForm.rats[id]; const w = Number(f && f.weight); return w > 0 ? w : (Number(ciLatestW[id]) || 0); };
+    let animalHours = 0, kgHours = 0, kgKnown = true, changed = false;
     ciAllHousing.forEach(h => {
         if (String(h.cageId) !== String(ciCurrent)) return;
         const from = h.from && h.from.toMillis ? h.from.toMillis() : 0;
@@ -1231,6 +1234,7 @@ function ciComputeIntake() {
         const ov = Math.min(t1, to) - Math.max(t0, from);
         if (ov > EDGE_MS) {
             animalHours += ov / 3600000;
+            const w = wOf(h.ratId); if (w > 0) kgHours += ov / 3600000 * w / 1000; else kgKnown = false;
             if (from > t0 + EDGE_MS || to < t1 - EDGE_MS) changed = true;   // 구간 중간에 들어오거나 나감
         }
     });
@@ -1242,6 +1246,7 @@ function ciComputeIntake() {
         hours, days, loss, evapLoss, handLoss, handlings, autoHandlings,
         evapPerHour, lossPerHandling, bigBottle: lc.big, bigUnset: lc.unset,
         water, food, n, animalDays, housingChanged: changed,
+        kgDays: kgKnown && kgHours > 0 ? kgHours / 24 : null,
         spansWeekend: ciSpansWeekend(t0, t1),
         waterPc: animalDays > 0 ? water / animalDays : null,
         foodPc: (food !== null && animalDays > 0) ? food / animalDays : null,
@@ -1878,6 +1883,7 @@ async function ciSave() {
             feed.handlings = c.handlings;
             feed.lossTotal = Number(c.loss.toFixed(2));
             feed.intervalHours = Number(c.hours.toFixed(2));
+            if (c.kgDays > 0) feed.kgDays = Number(c.kgDays.toFixed(3));   // 도달량 분모 (global.js rowKgDays)
             feed.waterConsumed = Number(c.water.toFixed(1));
             feed.foodConsumed = c.food === null ? null : Number(c.food.toFixed(1));
             feed.animalDays = Number(c.animalDays.toFixed(3));
@@ -2009,6 +2015,13 @@ async function ciSave() {
         // 상태 기록·급여는 위 배치로 이미 원자적으로 저장됐고, 여기가 끊겨도
         // 다음 저장이나 케이지 현황에서 재실만 다시 정리하면 된다.
         for (const r of deadRats) await closeOpenHousing(r.ratId, '사망');
+        // 사망일 = 발견일(오늘). 마지막 생존 확인일을 같이 남긴다 (global.js lastAliveDateFor)
+        for (const r of deadRats) {
+            try {
+                const la = await lastAliveDateFor(r.ratId, dateStr);
+                if (ratRefs[r.ratId]) await ratRefs[r.ratId].update({ lastAliveDate: la || null });
+            } catch (e) { console.warn('lastAliveDate 저장 실패', r.ratId, e); }
+        }
 
         clearRatsCache();
         // 오늘 이전 기록은 재입력의 비교 기준으로 계속 필요하다 — 오늘 것으로 덮기 전에 보존

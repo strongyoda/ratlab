@@ -85,10 +85,11 @@ async function coRenderExposure(boxId, rats, sfx) {
         // ── ① BAPN · NaCl : 구간별 사료 속 약물 (mg/kg/일) ─────────────
         // 사료 속 약물 = 마리당 사료 × 마리수 × 사료 1 g 속 약물 ÷ 케이지 총체중
         const foodDoseOf = (row, pctRule) => {
-            if (!pctRule || typeof row.foodPerCapita !== 'number' || !(row.foodPerCapita > 0)
-                || !(row.sumBW > 0) || !row.ratCount) return null;
+            if (!pctRule || typeof row.foodPerCapita !== 'number' || !(row.foodPerCapita > 0)) return null;
             if ((row.flags || []).some(f => MET_DOSE_DROP.includes(f))) return null;
-            return row.foodPerCapita * row.ratCount * (Number(pctRule.value) * 10) / (row.sumBW / 1000);
+            const kgd = rowKgDays(row);   // 재실 가중 kg·일 (global.js) — 옛 기록은 총체중 × 마리당 일수
+            if (!(kgd > 0) || !(row.animalDays > 0)) return null;
+            return row.foodPerCapita * row.animalDays * (Number(pctRule.value) * 10) / kgd;
         };
         const cageFood = {};   // cageKey -> { bapn:[{pod,dose,days,end}], nacl:[...] }
         Object.values(cages).forEach(cg => {

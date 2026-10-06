@@ -40,6 +40,12 @@ function pcAgeW(r, date) {
     const d = pcDays(arr, date);
     return (d === '' || !r.arrivalAge) ? '' : (Number(r.arrivalAge) + d / 7).toFixed(1);
 }
+// 사망일 = 발견일. 마지막 생존 확인일과 그 중간값 POD — 주말 사망이 월요일로 몰리는 편향을 분석에서 다루기 위함
+function pcLastAlive(r, surg, death) {
+    const la = pcDate(r.lastAliveDate);
+    const p1 = pcDays(surg, la), p2 = pcDays(surg, death);
+    return [la, p1, (p1 !== '' && p2 !== '') ? ((p1 + p2) / 2).toFixed(1) : ''];
+}
 function pcCod(r) { return r.cod || (r.codFull && typeof extractLegacyCod === 'function' ? extractLegacyCod(r.codFull) : '') || ''; }
 function pcAreMain(r) { const a = String(r.are || '').trim(); return a.startsWith('O') ? 'O' : a.startsWith('X') ? 'X' : ''; }
 function pcAreCounts(r) {
@@ -53,7 +59,7 @@ function pcLoc(l) { return window.AreMap ? AreMap.locText(l) : `${l.side || ''} 
 // ---------- 표 4개 ----------
 function pcRatsTable(rats) {
     const head = ['cohort', 'group', 'ratId', 'num', 'status', 'sham_or_naive', 'arrival_date', 'arrival_age_w', 'ovx_date',
-        'surgery_date', 'age_at_surgery_w', 'dose_start_date', 'death_date', 'pod_at_death', 'age_at_death_w',
+        'surgery_date', 'age_at_surgery_w', 'dose_start_date', 'death_date', 'pod_at_death', 'last_alive_date', 'pod_last_alive', 'pod_death_mid', 'age_at_death_w',
         'cod', 'cod_secondary', 'are', 'are_lesions', 'are_macro', 'are_micro', 'are_unknown', 'are_sites',
         'sample_type', 'sample_date', 'sample_memo', 'memo'];
     const rows = rats.map(r => {
@@ -61,7 +67,7 @@ function pcRatsTable(rats) {
         const list = Array.isArray(r.areList) ? r.areList : [];
         return [r.cohort, r.group || 'G1', r.ratId, r.num || '', r.status || '', r.isNonInduction ? 1 : 0,
             pcDate(r.arrivalDate), r.arrivalAge || '', pcDate(r.ovxDate),
-            surg, pcAgeW(r, surg), pcDate(r.doseStartDate), death, pcDays(surg, death), pcAgeW(r, death),
+            surg, pcAgeW(r, surg), pcDate(r.doseStartDate), death, pcDays(surg, death), ...pcLastAlive(r, surg, death), pcAgeW(r, death),
             pcCod(r), (r.codSec || []).join('; '), pcAreMain(r), c.macro + c.micro + c.unk, c.macro, c.micro, c.unk,
             list.map(l => `${l.type} ${pcLoc(l)}`).join('; '),
             r.sampleType || '', pcDate(r.sampleDate), r.sampleMemo || '', r.generalMemo || ''];
@@ -158,7 +164,7 @@ function pcProtocol(r, configs) {
 // ARE type 과 ARE위치 는 같은 순서로 ';' 로 잇는다 (n번째 type = n번째 위치).
 // MRA = 찍은 MR 시점 목록 (경색이 있으면 괄호로).
 function pcSimpleTable(rats, configs) {
-    const head = ['동물코드명', '코호트', '코호트 타입', '수술 날짜', '수술 나이(주)', 'ARE 여부', 'ARE type', 'MRA', '얻은 샘플', '죽은 날짜', '죽은 나이(주)', 'ARE위치'];
+    const head = ['동물코드명', '코호트', '코호트 타입', '수술 날짜', '수술 나이(주)', 'ARE 여부', 'ARE type', 'MRA', '얻은 샘플', '죽은 날짜', '마지막 생존확인', '죽은 나이(주)', 'ARE위치'];
     const rows = rats.map(r => {
         const surg = pcDate(r.surgeryDate), death = pcDate(r.deathDate);
         const type = pcProtocol(r, configs);
@@ -174,7 +180,7 @@ function pcSimpleTable(rats, configs) {
             .map(m => m.infarctSize && m.infarctSize !== 'None' ? `${m.timepoint}(경색 ${m.infarctSize}${m.infarctLoc && m.infarctLoc !== '-' ? ' ' + m.infarctLoc : ''})` : m.timepoint)
             .join('; ');
         return [r.ratId, r.cohort, type, surg, pcAgeW(r, surg), are, are === 'O' ? types.join('; ') : '', mra,
-            r.sampleType === 'Fail' ? '못함' : (r.sampleType || ''), death, pcAgeW(r, death),
+            r.sampleType === 'Fail' ? '못함' : (r.sampleType || ''), death, pcDate(r.lastAliveDate), pcAgeW(r, death),
             are === 'O' ? list.map(pcLoc).join('; ') : ''];
     });
     return [head, ...rows];
