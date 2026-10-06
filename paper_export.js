@@ -59,7 +59,7 @@ function pcLoc(l) { return window.AreMap ? AreMap.locText(l) : `${l.side || ''} 
 // ---------- 표 4개 ----------
 function pcRatsTable(rats) {
     const head = ['cohort', 'group', 'ratId', 'num', 'status', 'sham_or_naive', 'arrival_date', 'arrival_age_w', 'ovx_date',
-        'surgery_date', 'age_at_surgery_w', 'dose_start_date', 'death_date', 'pod_at_death', 'last_alive_date', 'pod_last_alive', 'pod_death_mid', 'age_at_death_w',
+        'surgery_date', 'age_at_surgery_w', 'nacl_start_date', 'bapn_start_date', 'dose_start_date', 'death_date', 'pod_at_death', 'last_alive_date', 'pod_last_alive', 'pod_death_mid', 'age_at_death_w',
         'cod', 'cod_secondary', 'are', 'are_lesions', 'are_macro', 'are_micro', 'are_unknown', 'are_sites',
         'sample_type', 'sample_date', 'sample_memo', 'memo'];
     const rows = rats.map(r => {
@@ -67,7 +67,7 @@ function pcRatsTable(rats) {
         const list = Array.isArray(r.areList) ? r.areList : [];
         return [r.cohort, r.group || 'G1', r.ratId, r.num || '', r.status || '', r.isNonInduction ? 1 : 0,
             pcDate(r.arrivalDate), r.arrivalAge || '', pcDate(r.ovxDate),
-            surg, pcAgeW(r, surg), pcDate(r.doseStartDate), death, pcDays(surg, death), ...pcLastAlive(r, surg, death), pcAgeW(r, death),
+            surg, pcAgeW(r, surg), pcDate(r.naclStartDate), pcDate(r.bapnStartDate), pcDate(r.doseStartDate), death, pcDays(surg, death), ...pcLastAlive(r, surg, death), pcAgeW(r, death),
             pcCod(r), (r.codSec || []).join('; '), pcAreMain(r), c.macro + c.micro + c.unk, c.macro, c.micro, c.unk,
             list.map(l => `${l.type} ${pcLoc(l)}`).join('; '),
             r.sampleType || '', pcDate(r.sampleDate), r.sampleMemo || '', r.generalMemo || ''];

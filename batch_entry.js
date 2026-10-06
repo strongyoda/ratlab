@@ -14,6 +14,9 @@ let bePicked = new Set();
 const BE_TYPES = {
     ligation: { label: '수술 (Ligation)', field: 'surgeryDate' },
     ovx:      { label: 'OVX',             field: 'ovxDate' },
+    nacl:     { label: '고염식 시작',       field: 'naclStartDate' },
+    bapn:     { label: 'BAPN 시작',        field: 'bapnStartDate' },
+    dose:     { label: '투약(물) 시작',     field: 'doseStartDate' },
     mr:       { label: 'MR 촬영',          field: 'mrDates' },
     sacrifice:{ label: '희생 / 샘플 채취',  field: 'sampleDate' }
 };

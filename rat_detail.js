@@ -298,3 +298,44 @@ async function rdRenderCageInfo(ratId, containerId) {
 window.addEventListener('beforeunload', (e) => {
     if (rdDirtyCount()) { e.preventDefault(); e.returnValue = ''; }
 });
+
+
+// ==========================================
+//  기본 일정 패널 (랫드 상세) — 원장(ledger) 한 칸씩: 항목 | 입력 | 기준일로부터 며칠
+//  날짜를 고치면 오른쪽 힌트가 바로 다시 계산된다. 저장은 rdSave 가 한 번에 한다.
+// ==========================================
+const RD_IN = "width:auto; padding:6px 8px; border:1px solid var(--rule); border-radius:2px; font-size:0.85rem; background:var(--sheet); color:var(--ink); font-family:var(--font-mono);";
+const RD_SCHED = [
+    { id: 'ovx-d',        ref: 'surgery', fmt: d => d < 0 ? `수술 ${-d}일 전` : d === 0 ? '수술 당일' : `수술 ${d}일 후` },
+    { id: 'nacl-d',       ref: 'arrival', fmt: d => `반입 +${d}일` },
+    { id: 'surg-d',       ref: 'arrival', fmt: d => `반입 +${d}일` },
+    { id: 'bapn-d',       ref: 'surgery', fmt: d => `POD ${d}` },
+    { id: 'dose-start-d', ref: 'surgery', fmt: d => `POD ${d}` },
+];
+function rdDays(a, b) {
+    if (!a || !b) return null;
+    const x = new Date(String(a).slice(0, 10) + 'T00:00:00'), y = new Date(String(b).slice(0, 10) + 'T00:00:00');
+    return (isNaN(x) || isNaN(y)) ? null : Math.round((y - x) / 864e5);
+}
+function rdHintText(row) {
+    const v = document.getElementById(row.id)?.value;
+    if (!v) return '';
+    const surg = document.getElementById('surg-d')?.value || rdRat.surgeryDate;
+    const useSurg = row.ref === 'surgery' && surg;
+    const base = useSurg ? surg : rdRat.arrivalDate;
+    const d = rdDays(base, v);
+    if (d === null) return '';
+    const txt = useSurg ? row.fmt(d) : (row.ref === 'surgery' ? `반입 +${d}일` : row.fmt(d));
+    const age = (!useSurg && rdRat.arrivalAge) ? ` · ${(Number(rdRat.arrivalAge) + d / 7).toFixed(1)}주령` : '';
+    return txt + age;
+}
+function rdRefreshHints() {
+    RD_SCHED.forEach(row => { const el = document.getElementById('hint-' + row.id); if (el) el.textContent = rdHintText(row); });
+}
+function rdSchedRow(label, inner, hintId, extraStyle = '') {
+    return `<div style="display:grid; grid-template-columns:112px minmax(0,1fr) auto; align-items:center; gap:10px; padding:7px 12px; border-bottom:1px solid var(--rule); ${extraStyle}">
+        <span style="font-size:0.8rem; font-weight:700; color:var(--ink);">${label}</span>
+        <div style="display:flex; align-items:center; gap:8px; min-width:0; flex-wrap:wrap;">${inner}</div>
+        ${hintId ? `<span id="${hintId}" class="mono" style="font-size:0.75rem; color:var(--ink-soft); white-space:nowrap;"></span>` : '<span></span>'}
+    </div>`;
+}

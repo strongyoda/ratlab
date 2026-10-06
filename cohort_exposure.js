@@ -24,7 +24,13 @@ function ceAnchorDate(r, anchor) {
 }
 // 규칙 하나의 투여 시작 시각(ms). 기준일이 없으면 null
 function ceStartMs(r, rule) {
-    const base = rule ? ceAnchorDate(r, rule.startAnchor) : null;
+    if (!rule) return null;
+    // 개체에 직접 적은 시작일(랫드 상세 '기본 일정' · 일괄 입력)이 있으면 코호트 규칙보다 우선 (2026-10-07~)
+    const sub = String(rule.substance || '');
+    const own = /NaCl|염/i.test(sub) ? r.naclStartDate : /BAPN/i.test(sub) ? r.bapnStartDate : rule.medium === 'water' ? r.doseStartDate : null;
+    const ownD = doseDateOf(own);
+    if (ownD) return ceMs(ownD);
+    const base = ceAnchorDate(r, rule.startAnchor);
     return base ? ceMs(doseShift(base, Number(rule.startOffset) || 0)) : null;
 }
 function ceStat(vals) {

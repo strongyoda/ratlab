@@ -24,7 +24,7 @@ const syncCrosshairPlugin = {
 
             if (x >= chart.chartArea.left && x <= chart.chartArea.right &&
                 y >= chart.chartArea.top && y <= chart.chartArea.bottom) {
-                
+
                 // 마우스가 위치한 곳의 실제 데이터 값을 추출하여 공유
                 sharedXValue = chart.scales.x.getValueForPixel(x);
                 sharedYValue = chart.scales.y.getValueForPixel(y);
@@ -33,7 +33,7 @@ const syncCrosshairPlugin = {
 
                 // 모든 차트 인스턴스 갱신 ( v3+ 대응 Object.values 사용 )
                 Object.values(Chart.instances).forEach(instance => {
-                    instance.render({duration: 0}); 
+                    instance.render({duration: 0});
                 });
             }
         };
@@ -46,7 +46,7 @@ const syncCrosshairPlugin = {
         canvas.addEventListener('mousemove', moveHandler);
         canvas.addEventListener('mouseleave', leaveHandler);
     },
-    
+
     afterDraw: (chart) => {
         if (!isCrosshairEnabled || sharedXValue === null) return;
         const {ctx, chartArea, scales} = chart;
@@ -88,7 +88,7 @@ const syncCrosshairPlugin = {
                 const textWidth = ctx.measureText(label).width;
                 const boxWidth = textWidth + 14;
                 const boxX = chartArea.right - boxWidth - 5;
-                
+
                 ctx.fillStyle = '#FFB300';
                 ctx.fillRect(boxX, yPix - 11, boxWidth, 22);
                 ctx.fillStyle = '#000'; ctx.textAlign = 'center';
@@ -201,12 +201,12 @@ function toggleIndividual() {
     });
 }
 
-async function loadDashboard() { 
-    try { 
-        const ratsData = await getRatsWithCache(); 
-        
-        if(ratsData.length === 0) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; } 
-        
+async function loadDashboard() {
+    try {
+        const ratsData = await getRatsWithCache();
+
+        if(ratsData.length === 0) { document.getElementById('dash-container').innerHTML = "<p>데이터 없음</p>"; return; }
+
         const memoSnap = await db.collection("cohortNotes").get();
         const noteData = {};
         memoSnap.forEach(d => noteData[d.id] = d.data());
@@ -223,41 +223,41 @@ async function loadDashboard() {
         });
         // 👆 [추가 끝]
 
-        const grp = {}; 
-        
+        const grp = {};
+
         // 👇 그룹(G)별로 데이터를 한 단계 더 쪼갭니다.
-        ratsData.forEach(d => { 
+        ratsData.forEach(d => {
             const c = d.cohort;
             const g = d.group || 'G1'; // 그룹 정보가 없으면 G1으로 간주
-            
-            if(!grp[c]) grp[c] = { surg: d.surgeryDate || null, groups: {} }; 
+
+            if(!grp[c]) grp[c] = { surg: d.surgeryDate || null, groups: {} };
             if(!grp[c].groups[g]) grp[c].groups[g] = [];
-            
-            grp[c].groups[g].push(d); 
+
+            grp[c].groups[g].push(d);
             if(d.surgeryDate && !grp[c].surg) grp[c].surg = d.surgeryDate;
         });
-        
+
         let html = '<div style="width:100%; text-align:right; color:var(--ink-soft); font-size:0.85rem; margin-bottom:10px;"><i class="material-icons" aria-hidden="true" style="font-size:1rem; vertical-align:text-bottom;">touch_app</i> 랫드 번호를 누르면 상세보기로 이동합니다.</div>';
-        
+
         const sortedCohorts = Object.keys(grp).sort((a,b)=>Number(b)-Number(a));
         const allTimepoints = Object.keys(globalPodMap).sort((a,b) => globalPodMap[a] - globalPodMap[b]);
 
-        sortedCohorts.forEach(c => { 
+        sortedCohorts.forEach(c => {
             let podTag = `<span style="font-size:0.8rem; color:var(--ink-soft);">수술전</span>`;
-            if(grp[c].surg) { 
+            if(grp[c].surg) {
                 const pod = daysBetween(grp[c].surg);
-                const w = Math.floor(pod/7), d=pod%7; 
-                podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`; 
-            } 
-            
+                const w = Math.floor(pod/7), d=pod%7;
+                podTag = `<span class="d-day-badge">W${w}+${d} (POD ${pod})</span>`;
+            }
+
             const cData = noteData[c] || {};
             const currentMemo = cData.memo || "";
-            const mrChecks = cData.mrChecks || {}; 
+            const mrChecks = cData.mrChecks || {};
             const config = cData.mrConfig || ['D0','D2','W1','W4','W8','W12','W20'];
-            
+
             // 코호트 전체 메모
             const memoHtml = `<div class="co-memo-box"><i class="material-icons edit-icon" onclick="toggleCoMemo('${c}')">edit</i><span id="memo-txt-${c}" class="memo-text">${chEsc(currentMemo || '')}</span><div id="memo-edit-area-${c}" style="display:none;"><input type="text" id="memo-inp-${c}" class="co-memo-input" aria-label="코호트 ${c} 메모" value="${chEsc(currentMemo)}"><button class="btn-small btn-blue" style="padding:2px 8px; margin-left:5px;" onclick="saveCoMemo('${c}')">OK</button></div></div>`;
-            
+
             // MR 체크 영역
             let mrHtml = `<div class="mr-check-group" style="margin-left:0; margin-top:5px;"><span style="font-weight:bold; color:var(--navy); margin-right:4px;">MR:</span>`;
             mrHtml += `<button class="db-btn" onclick="toggleMrConfig('${c}')" title="MR 체크리스트 설정" aria-label="MR 체크리스트 설정" style="display:inline-flex; padding:2px; margin-right:5px;"><i class="material-icons" aria-hidden="true" style="font-size:1.1rem; color:var(--ink-soft); vertical-align:middle;">settings</i></button>`;
@@ -295,14 +295,14 @@ async function loadDashboard() {
                     <div style="width:100%;">${mrHtml}</div>
                 </div>
                 ${configPanel}
-                <div style="display:flex; flex-direction:column; gap:12px; margin-top:15px;">`; 
-            
+                <div style="display:flex; flex-direction:column; gap:12px; margin-top:15px;">`;
+
             // 👇 그룹별로 줄(Row)을 나누어 렌더링
             const sortedGroups = Object.keys(grp[c].groups).sort();
             sortedGroups.forEach(g => {
                 const gMemoKey = `memo_${g}`;
                 const gMemo = cData[gMemoKey] || "";
-                
+
                 // 그룹 메모장 생성
                 const gMemoHtml = `<div class="co-memo-box" style="margin-left:10px; display:inline-flex; align-items:center;">
                     <i class="material-icons edit-icon" onclick="toggleGrpMemo('${c}','${g}')" style="font-size:0.9rem; color:var(--ink-soft);">edit</i>
@@ -319,19 +319,19 @@ async function loadDashboard() {
                         <span class="mono">${g}</span> ${gMemoHtml}
                     </div>
                     <div class="rat-grid">`;
-                
+
                 grp[c].groups[g].sort((a,b) => Number(a.num) - Number(b.num)).forEach(r => {
-                    let statusClass = 'rat-badge'; 
-                    if(r.status === '사망') statusClass += ' status-dead'; 
-                    else if(r.lastScore) { 
-                        if(r.lastScore >= 13) statusClass += ' status-normal'; 
-                        else if(r.lastScore >= 9) statusClass += ' status-mild'; 
-                        else statusClass += ' status-severe'; 
-                    } 
+                    let statusClass = 'rat-badge';
+                    if(r.status === '사망') statusClass += ' status-dead';
+                    else if(r.lastScore) {
+                        if(r.lastScore >= 13) statusClass += ' status-normal';
+                        else if(r.lastScore >= 9) statusClass += ' status-mild';
+                        else statusClass += ' status-severe';
+                    }
 
                     // 👇 여기서부터 복사해서 덮어씌우세요!
                     let sampleMark = '';
-                    
+
                     if (r.status === '사망') {
                         // 죽은 애들은 기존처럼 H나 C 샘플 마크 표시.
                         // 샘플이 없으면 Surgical Failure 여부를 대신 표시한다 (분석 제외 대상 표식)
@@ -349,10 +349,10 @@ async function loadDashboard() {
                         if (myMeas.length >= 2) {
                             // 날짜순(과거->최신)으로 정렬
                             myMeas.sort((a, b) => new Date(a.date) - new Date(b.date));
-                            
+
                             const currentWt = myMeas[myMeas.length - 1].weight; // 가장 최근 체중
                             const prevWt = myMeas[myMeas.length - 2].weight;    // 그 직전 체중
-                            
+
                             // 둘 다 값이 있고, 전 측정 대비 10g 이상 줄었으면 빨간색 ▼ 마크 띄우기
                             if (currentWt && prevWt && (prevWt - currentWt >= 10)) {
                                 sampleMark = '<div class="sample-indicator" style="color: var(--red);">▼</div>';
@@ -367,17 +367,17 @@ async function loadDashboard() {
                             </div>`;
                     // 👆 여기까지 덮어씌우면 됩니다!
                 });
-                
+
                 html += `</div></div>`; // 그룹 끝
             });
-            
+
             html += `</div></div>`; // 코호트 끝
-        }); 
-        document.getElementById('dash-container').innerHTML = html; 
-    } catch(e) { 
+        });
+        document.getElementById('dash-container').innerHTML = html;
+    } catch(e) {
         console.error(e);
-        document.getElementById('dash-container').innerHTML = `<p style="color:red">${e.message}</p>`; 
-    } 
+        document.getElementById('dash-container').innerHTML = `<p style="color:red">${e.message}</p>`;
+    }
 }
 
 
@@ -385,16 +385,16 @@ async function initDetailSelectors(targetId) {
     try {
         // [변경] 캐시된 데이터 사용
         const ratsData = await getRatsWithCache();
-        
+
         // [변경] 이미 배열 형태이므로 forEach로 push할 필요 없이 바로 할당
-        allRatsForDetail = ratsData; 
-        
+        allRatsForDetail = ratsData;
+
         const cohorts = new Set(allRatsForDetail.map(r => r.cohort));
         const sortedCohorts = Array.from(cohorts).sort((a,b) => Number(b) - Number(a));
-        
+
         const cSel = document.getElementById('dt-cohort-sel');
         cSel.innerHTML = '<option value="">-- 코호트 선택 --</option>' + sortedCohorts.map(c => `<option value="${c}">Cohort ${c}</option>`).join('');
-        
+
         if(targetId) {
             const targetRat = allRatsForDetail.find(r => r.ratId === targetId);
             if(targetRat) {
@@ -449,21 +449,21 @@ async function loadDetailData(forceId = null) {
         if (sel) id = id || sel.value;
     }
 
-    if(!id || !view) return; 
+    if(!id || !view) return;
     view.innerHTML = '<div style="text-align:center; padding:50px; color:var(--ink-soft);"><div class="loader" style="margin:0 auto 15px;"></div> 데이터를 불러오는 중...</div>';
-    
+
     try {
         const rSnap = await db.collection("rats").where("ratId", "==", id).get();
         if(rSnap.empty) { view.innerHTML = "등록되지 않음"; return; }
         const rat = rSnap.docs[0].data();
         const docId = rSnap.docs[0].id;
-        
+
         // 살아있는 개체는 '오늘'을 기준으로 센다. '지금 시각'을 쓰면 오전에 하루가 모자라진다.
         const baseStr = (rat.status === '사망' && rat.deathDate) ? rat.deathDate : getTodayStr();
         let baseDate = parseDateLocal(baseStr);
         const dPlus = rat.arrivalDate ? daysBetween(rat.arrivalDate, baseStr) : '-';
         const pod = rat.surgeryDate ? daysBetween(rat.surgeryDate, baseStr) : '-';
-        
+
         const arrivalAgeNum = rat.arrivalAge ? Number(rat.arrivalAge) : 6;
         let ageAtSurgStr = '-';
         if(rat.arrivalDate && rat.surgeryDate) {
@@ -502,7 +502,7 @@ async function loadDetailData(forceId = null) {
                 if (p.rMark === 'bottom') posStyle = 'bottom:25px; left:50%; transform:translateX(-50%);';
                 rMarkHtml = `<div style="position:absolute; ${posStyle} font-weight:900; color:#ffeb3b; text-shadow:1px 1px 3px #000; font-size:1.1rem; pointer-events:none;">R</div>`;
             }
-            
+
             let tpBadgeText = '';
             if (p.photoDate) tpBadgeText += p.photoDate;
             if (p.timepoint && p.timepoint !== 'none') tpBadgeText += (tpBadgeText ? ' ' : '') + `[${p.timepoint}]`;
@@ -535,7 +535,7 @@ async function loadDetailData(forceId = null) {
         const infoBoxes = [];
         infoBoxes.push(`<div class="info-row-item"><b>D+${dPlus}</b><br><span style="font-size:0.85rem; color:var(--ink-soft);">반입 후</span><br><span style="font-size:0.8rem; color:var(--ink-soft);">${rat.arrivalDate||'-'}</span></div>`);
         infoBoxes.push(`<div class="info-row-item"><b>POD ${pod}</b><br><span style="font-size:0.85rem; color:var(--ink-soft);">수술 후</span><br><span style="font-size:0.8rem; color:var(--ink-soft);">약 ${ageAtSurgStr}주령</span></div>`);
-        
+
         if (rat.status === '사망') {
             const deathPod = rat.surgeryDate && rat.deathDate ? Math.floor((new Date(rat.deathDate) - new Date(rat.surgeryDate))/(1000*60*60*24)) : '-';
             const displayCod = rat.cod || (rat.codFull ? extractLegacyCod(rat.codFull) : '미기록');
@@ -573,7 +573,7 @@ async function loadDetailData(forceId = null) {
                         <i class="material-icons" aria-hidden="true" style="font-size:18px;">${rat.status==='생존'?'check_circle':'edit'}</i> ${rat.status === '생존' ? '생존' : '사망 (수정)'}
                     </button>
                 </div>
-                
+
                 <div class="info-row-container">${infoBoxes.join('')}</div>
 
                 <div style="background:var(--paper); padding:12px 15px; border-radius:2px; border:1px solid var(--rule); margin-bottom:15px;">
@@ -584,64 +584,53 @@ async function loadDetailData(forceId = null) {
                 </div>
 
                 <div style="display:flex; gap:20px; align-items: stretch; flex-wrap:wrap;">
-                    
+
                     <div style="flex:6; min-width:300px; display:flex; flex-direction:column; gap:15px;">
-                        
-                        <div style="background:var(--paper); padding:15px; border-radius:2px; border:1px solid var(--rule); display:flex; flex-wrap:wrap; gap:10px;">
-                            <div style="background:var(--sheet); padding:8px 12px; border-radius:2px; border:1px solid var(--rule); display:flex; align-items:center; gap:8px;">
-                                <span style="font-size:0.85rem; font-weight:bold;">반입주령</span>
-                                <select id="arr-age" aria-label="반입주령" onchange="rdSet('arrivalAge', this.value)" style="border:none; background:none; font-weight:bold; outline:none;">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}</select>
-                            </div>
-                            <div style="background:var(--sheet); padding:8px 12px; border-radius:2px; border:1px solid var(--rule); display:flex; align-items:center; gap:8px;">
-                                <span style="font-size:0.85rem; font-weight:bold;">OVX일자</span>
-                                <input type="date" id="ovx-d" value="${rat.ovxDate||''}" aria-label="OVX 일자" onchange="rdSet('ovxDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
-                            </div>
-                            <div style="background:var(--sheet); padding:8px 12px; border-radius:2px; border:1px solid var(--rule); display:flex; align-items:center; gap:8px;">
-                                <span style="font-size:0.85rem; font-weight:bold;">투약시작</span>
-                                <input type="date" id="dose-start-d" value="${rat.doseStartDate||''}" aria-label="투약 시작일" onchange="rdSet('doseStartDate', this.value)" style="border:none; font-size:0.85rem; outline:none;">
-                            </div>
-                            
-                            <div style="width:100%; display:flex; align-items:center; gap:15px; background:var(--stock-canary-soft); padding:10px 12px; border-radius:2px; border:1px solid #E3C55C; flex-wrap:wrap;">
-                                <label style="cursor:pointer; font-size:0.85rem; color:var(--red); font-weight:bold; display:flex; align-items:center;">
-                                    <input type="checkbox" id="chk-sham" ${rat.isNonInduction ? 'checked' : ''} 
-                                        onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none'; rdSet('isNonInduction', this.checked);" style="transform:scale(1.2); margin-right:6px;">
+
+                        <div style="background:var(--sheet); border:1px solid var(--rule); border-radius:2px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 12px; border-bottom:2px solid var(--ink);">
+                                <span style="font-size:0.72rem; font-weight:700; letter-spacing:0.14em; color:var(--ink);">기본 일정</span>
+                                <label style="cursor:pointer; font-size:0.78rem; color:#7C2A30; font-weight:bold; display:flex; align-items:center; gap:5px; background:var(--stock-pink-soft); border:1px solid var(--stock-pink); padding:3px 8px; border-radius:2px;">
+                                    <input type="checkbox" id="chk-sham" ${rat.isNonInduction ? 'checked' : ''}
+                                        onchange="document.getElementById('surg-date-wrapper').style.display = this.checked ? 'none' : 'flex'; document.getElementById('sham-ref-wrapper').style.display = this.checked ? 'flex' : 'none'; rdSet('isNonInduction', this.checked); rdRefreshHints();" style="margin:0; width:auto;">
                                     Ligation 안 함 (Sham/Naïve)
                                 </label>
+                            </div>
+                            ${rdSchedRow('반입', `<span class="mono" style="font-size:0.85rem;">${chEsc(rat.arrivalDate || '-')}</span>
+                                <select id="arr-age" aria-label="반입주령" onchange="rdSet('arrivalAge', this.value); rdRefreshHints();" style="${RD_IN}">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주령</option>`).join('')}</select>`, null)}
+                            ${rdSchedRow('OVX', `<input type="date" id="ovx-d" value="${chEsc(rat.ovxDate||'')}" aria-label="OVX 일자" onchange="rdSet('ovxDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-ovx-d')}
+                            ${rdSchedRow('고염식 시작', `<input type="date" id="nacl-d" value="${chEsc(rat.naclStartDate||'')}" aria-label="고염식 시작일" onchange="rdSet('naclStartDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-nacl-d')}
+                            ${rdSchedRow('수술 (Ligation)', `
                                 <div id="surg-date-wrapper" style="display:${rat.isNonInduction ? 'none' : 'flex'}; align-items:center; gap:6px;">
-                                    <span style="font-size:0.85rem; font-weight:bold;">수술일자</span>
-                                    <input type="date" id="surg-d" value="${rat.surgeryDate||''}" aria-label="수술 일자" onchange="rdSet('surgeryDate', this.value)" style="border:1px solid #C9C5B8; border-radius:2px; padding:4px;">
+                                    <input type="date" id="surg-d" value="${chEsc(rat.surgeryDate||'')}" aria-label="수술 일자" onchange="rdSet('surgeryDate', this.value); rdRefreshHints();" style="${RD_IN}">
                                 </div>
                                 <div id="sham-ref-wrapper" style="display:${rat.isNonInduction ? 'flex' : 'none'}; align-items:center; gap:6px;">
-                                    <span style="font-size:0.85rem; font-weight:bold; color:var(--red);">비교 기준 주령</span>
-                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" aria-label="비교 기준 주령" onchange="rdSet('refAge', this.value)" style="width:60px; padding:4px; border:1px solid #C9C5B8; border-radius:2px;"> <span style="font-size:0.85rem; color:var(--red); font-weight:bold;">주</span>
-                                </div>
-                                
-                            </div>
-
-                            <div style="width:100%; display:flex; align-items:center; gap:6px; background:var(--stock-blue-soft); padding:10px 12px; border-radius:2px; border:1px solid var(--ink-blue); flex-wrap:wrap;">
-                                <span style="font-size:0.85rem; font-weight:bold; color:var(--navy);">얻은 샘플</span>
-                                <select id="sample-tp" aria-label="샘플 종류" onchange="rdSet('sampleType', this.value)" style="padding:4px; border-radius:2px; border:1px solid #C9C5B8;">
+                                    <span style="font-size:0.78rem; color:#7C2A30; font-weight:bold;">비교 기준 주령</span>
+                                    <input type="number" id="sham-ref-age" value="${rat.refAge || 9}" step="0.1" aria-label="비교 기준 주령" onchange="rdSet('refAge', this.value)" style="${RD_IN} width:72px;"> <span style="font-size:0.78rem; color:#7C2A30;">주</span>
+                                </div>`, 'hint-surg-d')}
+                            ${rdSchedRow('BAPN 시작', `<input type="date" id="bapn-d" value="${chEsc(rat.bapnStartDate||'')}" aria-label="BAPN 시작일" onchange="rdSet('bapnStartDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-bapn-d')}
+                            ${rdSchedRow('투약(물) 시작', `<input type="date" id="dose-start-d" value="${chEsc(rat.doseStartDate||'')}" aria-label="투약 시작일" onchange="rdSet('doseStartDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-dose-start-d')}
+                            ${rdSchedRow('얻은 샘플', `
+                                <select id="sample-tp" aria-label="샘플 종류" onchange="rdSet('sampleType', this.value)" style="${RD_IN}">
                                     <option value="">-</option>
                                     <option value="Histology" ${rat.sampleType==='Histology'?'selected':''}>Histology</option>
                                     <option value="Cast" ${rat.sampleType==='Cast'?'selected':''}>Cast</option>
                                     <option value="Fail" ${rat.sampleType==='Fail'?'selected':''}>못함</option>
                                 </select>
-                                <input type="date" id="sample-d" value="${rat.sampleDate||''}" aria-label="샘플 채취일" onchange="rdSet('sampleDate', this.value)" style="padding:4px; border:1px solid #C9C5B8; border-radius:2px;">
-                                <input type="text" id="sample-memo" value="${chEsc(rat.sampleMemo||'')}" placeholder="메모" aria-label="샘플 메모" oninput="rdSet('sampleMemo', this.value)" style="flex:1; min-width:120px; padding:4px; border:1px solid #C9C5B8; border-radius:2px;">
-                                
-                            </div>
+                                <input type="date" id="sample-d" value="${chEsc(rat.sampleDate||'')}" aria-label="샘플 채취일" onchange="rdSet('sampleDate', this.value)" style="${RD_IN}">
+                                <input type="text" id="sample-memo" value="${chEsc(rat.sampleMemo||'')}" placeholder="메모" aria-label="샘플 메모" oninput="rdSet('sampleMemo', this.value)" style="${RD_IN} font-family:inherit; flex:1; min-width:110px;">`, null, 'background:var(--stock-blue-soft); border-bottom:none;')}
                         </div>
 
                         <div style="background:var(--paper); padding:15px; border-radius:2px; border:1px solid var(--rule);">
                             <h4 style="margin:0 0 10px 0; font-size:0.9rem; color:var(--navy);"><i class="material-icons" style="font-size:18px; vertical-align:middle;">biotech</i> MR 촬영 이력 (Infarction 관찰)</h4>
-                            
+
                             <div id="mr-list-area" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
                                 ${(() => {
                                     const mrArr = rat.mrDates || [];
                                     if(mrArr.length === 0) return '<span style="font-size:0.85rem; color:var(--ink-soft);">기록된 MR이 없습니다.</span>';
-                                    
+
                                     const tpWeightMap = { 'D00':-1, 'D0':0, 'D2':2, 'W1':7, 'W2':14, 'W3':21, 'W4':28, 'W5':35, 'W6':42, 'W7':49, 'W8':56, 'W12':84, 'Death':9999 };
-                                    
+
                                     return mrArr.map((mr, idx) => ({ ...mr, originalIdx: idx }))
                                         .sort((a, b) => {
                                             const wA = tpWeightMap[a.timepoint] !== undefined ? tpWeightMap[a.timepoint] : 9999;
@@ -665,7 +654,7 @@ async function loadDetailData(forceId = null) {
                                         }).join('');
                                 })()}
                             </div>
-                            
+
                             <div style="display:flex; gap:6px; align-items:center; border-top:1px dashed var(--rule); padding-top:10px;">
                                 ${rat.isNonInduction ?
                                     `<input type="hidden" id="new-mr-tp" value="-">
@@ -690,23 +679,26 @@ async function loadDetailData(forceId = null) {
                     <div style="flex:1; display:flex; flex-direction:column; background:var(--stock-canary-soft); border:1px solid #E3C55C; border-radius:2px; padding:15px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                             <span style="font-weight:bold; color:#7A5C00; display:flex; align-items:center; gap:5px;"><i class="material-icons" aria-hidden="true" style="font-size:18px;">note</i> 개체 자유 메모</span>
-                            
+
                         </div>
                         <textarea id="general-memo-area" aria-label="개체 자유 메모" oninput="rdSet('generalMemo', this.value)" style="flex:1; min-height:140px; width:100%; border:1px solid #E3C55C; border-radius:2px; padding:12px; font-size:0.95rem; line-height:1.6; resize:none; outline:none; font-family:inherit;" placeholder="실험 중 발생하는 특이사항을 시계열 순으로 자유롭게 기록하세요...">${chEsc(rat.generalMemo || '')}</textarea>
                     </div>
                     </div>
                 </div>
             </div>
-        
+
             <div class="card">
                 <h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">개체 라이프사이클 타임라인 (주령 기준)</h4>
                 <div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px; display:flex; gap:12px; flex-wrap:wrap; background:var(--paper); border:1px solid var(--rule); padding:8px; border-radius:2px;">
-                    <span>🟩 <b>반입</b></span> 
-                    <span>🔺 <b style="color:#9C27B0;">OVX</b></span> 
-                    <span>♦️ <b style="color:#E91E63;">수술(Ligation)</b></span> 
-                    <span>🔵 <b>MR</b></span> 
-                    <span>🚨 <b style="color:#d32f2f;">Infarction 발생</b></span> 
-                    <span>🟦 <b style="color:#009688;">샘플</b></span> 
+                    <span>🟩 <b>반입</b></span>
+                    <span>🔺 <b style="color:#9C27B0;">OVX</b></span>
+                    <span>♦️ <b style="color:#E91E63;">수술(Ligation)</b></span>
+                    <span>🟠 <b style="color:#B45309;">고염식</b></span>
+                    <span>✴️ <b style="color:#7A5C00;">BAPN</b></span>
+                    <span>➕ <b style="color:#7B1FA2;">투약(물)</b></span>
+                    <span>🔵 <b>MR</b></span>
+                    <span>🚨 <b style="color:#d32f2f;">Infarction 발생</b></span>
+                    <span>🟦 <b style="color:#009688;">샘플</b></span>
                     <span>❌ <b style="color:#d32f2f;">사망</b></span>
                 </div>
                 <div style="height:150px; width:100%;"><canvas id="indiv-timeline-${docId}"></canvas></div>
@@ -743,19 +735,19 @@ async function loadDetailData(forceId = null) {
 
             <div class="card">
                 <h4 style="color:var(--ink); margin-top:0; border-bottom:3px double var(--ink); padding-bottom:6px;">사진 및 결과 기록</h4>
-                
+
                 <div id="photo-dropzone-${docId}"
                         style="border: 2px dashed var(--ink); border-radius: 2px; padding: 20px; text-align: center; background: var(--paper); cursor: pointer; margin-bottom:15px; transition: 0.2s;"
                         ondragover="event.preventDefault(); this.style.background='var(--stock-green-soft)'; this.style.borderColor='var(--approve)';"
                         ondragleave="this.style.background='var(--paper)'; this.style.borderColor='var(--ink)';"
-                        ondrop="handlePhotoDrop(event, '${docId}')" 
+                        ondrop="handlePhotoDrop(event, '${docId}')"
                         onclick="document.getElementById('photo-upload-input-${docId}').click()">
                     <i class="material-icons" aria-hidden="true" style="font-size:2rem; margin-bottom:10px; color:var(--ink);">photo_camera</i>
                     <div style="font-weight:bold; color:#333;">여기로 사진을 드래그하거나 클릭하여 선택하세요</div>
                     <div style="font-size:0.85rem; color:var(--ink-soft); margin-top:5px;">(Ctrl+V 복사/붙여넣기도 지원합니다. <b>여러 장 선택 가능</b>)</div>
                     <input type="file" id="photo-upload-input-${docId}" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect(event, '${docId}')">
                 </div>
-                
+
                 <div id="photo-staging-area-${docId}" style="display:none; margin-bottom:15px; background:var(--sheet); border:1px solid var(--rule); border-radius:2px; padding:15px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--navy); padding-bottom:8px; margin-bottom:10px;">
                         <h5 style="margin:0; color:var(--navy);">📤 업로드 대기 목록 (개별 설정 후 업로드)</h5>
@@ -772,7 +764,7 @@ async function loadDetailData(forceId = null) {
             <div class="card"><h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">데일리</h4><div class="chart-area"><canvas id="dailyChart"></canvas></div>
             <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleDailyLog()">Detail ▼</button></div>
             <div id="daily-detail-table" style="display:none; margin-top:10px;"></div></div>
-            
+
             <div class="card">
                 <h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">혈압/체중</h4>
                 <div style="display:flex; justify-content:center; align-items:center; gap:15px; margin-bottom:10px; background:var(--paper); border:1px solid var(--rule); padding:8px; border-radius:2px;">
@@ -795,6 +787,7 @@ async function loadDetailData(forceId = null) {
 
         // 항목별 저장 버튼 대신, 고친 것을 모아뒀다가 한 번에 저장한다
         rdInit(docId, rat);
+        rdRefreshHints();
         rdRenderCageInfo(id, 'rd-cage-info');
 
         // 기존 차트 그리기 로직 등등 (생략 없이 유지)
@@ -808,15 +801,15 @@ async function loadDetailData(forceId = null) {
             processedLogs.push(v);
         });
         processedLogs.sort((a, b) => new Date(a.cleanDate) - new Date(b.cleanDate));
-        
+
         const uniqueMap = {};
         processedLogs.forEach(log => { uniqueMap[log.cleanDate] = log; });
         const finalLogs = Object.values(uniqueMap).sort((a, b) => new Date(a.cleanDate) - new Date(b.cleanDate));
         const dLab=[], dVal=[], dNotes=[], pStyles=[], pSizes=[], pColors=[];
         let tableHtml = `<table><tr><th>날짜</th><th>시간</th><th>Act</th><th>Fur</th><th>Eye</th><th>총점</th><th>메모</th></tr>`;
-        finalLogs.forEach(v => { 
-            dLab.push(v.cleanDate); dVal.push(v.totalScore); 
-            if(v.note && v.note.trim()) { dNotes.push(v.note); pStyles.push('rectRot'); pSizes.push(8); pColors.push('#fdd835'); } 
+        finalLogs.forEach(v => {
+            dLab.push(v.cleanDate); dVal.push(v.totalScore);
+            if(v.note && v.note.trim()) { dNotes.push(v.note); pStyles.push('rectRot'); pSizes.push(8); pColors.push('#fdd835'); }
             else { dNotes.push(null); pStyles.push('circle'); pSizes.push(3); pColors.push('#1a237e'); }
             const actScore = (v.scores.activity !== undefined) ? v.scores.activity : (v.scores.act || 0);
             tableHtml += `<tr><td>${v.cleanDate}</td><td>${v.timestamp || '-'}</td><td>${actScore}</td><td>${v.scores.fur}</td><td>${v.scores.eye}</td><td>${v.totalScore}</td><td style="text-align:left; max-width:200px; white-space:normal;">${v.note || ''}</td></tr>`;
@@ -824,8 +817,8 @@ async function loadDetailData(forceId = null) {
         tableHtml += `</table>`;
         document.getElementById('daily-detail-table').innerHTML = tableHtml;
         if(dVal.length) chMakeChart('dailyChart', {
-            type:'line', data:{ labels: dLab, datasets:[{ label:'Score', data: dVal, borderColor:'#1a237e', pointStyle: pStyles, pointRadius: pSizes, pointBackgroundColor: pColors, pointBorderColor: pColors }] }, 
-            options:{ maintainAspectRatio:false, scales: { y: { min: 0, max: 17, ticks: { stepSize: 1 } } }, plugins:{ tooltip:{ callbacks:{ footer: (ti) => { const n = dNotes[ti[0].dataIndex]; if(!n) return ''; return ['📝 메모:', ...n.match(/.{1,20}/g)]; } } } } } 
+            type:'line', data:{ labels: dLab, datasets:[{ label:'Score', data: dVal, borderColor:'#1a237e', pointStyle: pStyles, pointRadius: pSizes, pointBackgroundColor: pColors, pointBorderColor: pColors }] },
+            options:{ maintainAspectRatio:false, scales: { y: { min: 0, max: 17, ticks: { stepSize: 1 } } }, plugins:{ tooltip:{ callbacks:{ footer: (ti) => { const n = dNotes[ti[0].dataIndex]; if(!n) return ''; return ['📝 메모:', ...n.match(/.{1,20}/g)]; } } } } }
         });
 
         const ms = await db.collection("measurements").where("ratId", "==", id).get();
@@ -839,7 +832,7 @@ async function loadDetailData(forceId = null) {
             if (v.dbp) dataMap[date].dbp = v.dbp;
             if (v.mean) dataMap[date].mean = v.mean;
             if (v.weight) dataMap[date].wt = v.weight;
-            if (v.timepoint && !dataMap[date].label.includes('W') && v.timepoint.includes('W')) dataMap[date].label = v.timepoint; 
+            if (v.timepoint && !dataMap[date].label.includes('W') && v.timepoint.includes('W')) dataMap[date].label = v.timepoint;
         });
         ds.forEach(doc => {
             const v = doc.data();
@@ -874,7 +867,7 @@ async function loadDetailData(forceId = null) {
         // ==========================================
         const tlData = [];
         const arrDateObj = rat.arrivalDate ? new Date(rat.arrivalDate) : null;
-        
+
         if (arrDateObj) {
             tlData.push({ x: arrivalAgeNum, y: 0, event: 'Arrival', type: 'Arrival' });
 
@@ -882,6 +875,12 @@ async function loadDetailData(forceId = null) {
                 const age = arrivalAgeNum + (new Date(rat.ovxDate) - arrDateObj) / (1000*60*60*24*7);
                 tlData.push({ x: age, y: 0, event: 'OVX', type: 'OVX' });
             }
+            // 개체에 직접 적은 처치 시작일 (랫드 상세 '기본 일정' · 일괄 입력)
+            [['naclStartDate', '고염식 시작', 'NaCl'], ['bapnStartDate', 'BAPN 시작', 'BAPN'], ['doseStartDate', '투약(물) 시작', 'Dose']].forEach(([k, ev, tp]) => {
+                if (!rat[k]) return;
+                const age = arrivalAgeNum + (new Date(rat[k]) - arrDateObj) / (1000*60*60*24*7);
+                if (!isNaN(age)) tlData.push({ x: age, y: 0, event: ev, type: tp });
+            });
             if (rat.surgeryDate) {
                 const age = arrivalAgeNum + (new Date(rat.surgeryDate) - arrDateObj) / (1000*60*60*24*7);
                 tlData.push({ x: age, y: 0, event: rat.isNonInduction ? 'Ref.Day' : 'Surgery', type: 'Surgery' });
@@ -947,23 +946,29 @@ async function loadDetailData(forceId = null) {
                         backgroundColor: (ctx) => {
                             const raw = ctx.raw;
                             if(!raw) return '#1a237e';
-                            if(raw.type === 'Arrival') return '#4CAF50'; 
-                            if(raw.type === 'OVX') return '#9C27B0'; 
-                            if(raw.type === 'Surgery') return '#E91E63'; 
+                            if(raw.type === 'Arrival') return '#4CAF50';
+                            if(raw.type === 'OVX') return '#9C27B0';
+                            if(raw.type === 'Surgery') return '#E91E63';
                             if(raw.type === 'MR') return '#2196F3'; // MR은 무조건 파란색 유지
-                            if(raw.type === 'Sample') return '#009688'; 
-                            if(raw.type === 'Death') return '#d32f2f'; 
+                            if(raw.type === 'Sample') return '#009688';
+                            if(raw.type === 'Death') return '#d32f2f';
+                            if(raw.type === 'NaCl') return '#B45309';
+                            if(raw.type === 'BAPN') return '#7A5C00';
+                            if(raw.type === 'Dose') return '#7B1FA2';
                             return '#1a237e';
                         },
                         pointStyle: (ctx) => {
                             const raw = ctx.raw;
                             if(!raw) return 'circle';
-                            if(raw.type === 'Arrival') return 'rect'; 
-                            if(raw.type === 'OVX') return 'triangle'; 
-                            if(raw.type === 'Surgery') return 'rectRot'; 
+                            if(raw.type === 'Arrival') return 'rect';
+                            if(raw.type === 'OVX') return 'triangle';
+                            if(raw.type === 'Surgery') return 'rectRot';
                             if(raw.type === 'MR') return 'circle'; // MR은 무조건 동그라미 유지
-                            if(raw.type === 'Sample') return 'rectRounded'; 
-                            if(raw.type === 'Death') return 'crossRot'; 
+                            if(raw.type === 'Sample') return 'rectRounded';
+                            if(raw.type === 'Death') return 'crossRot';
+                            if(raw.type === 'NaCl') return 'circle';
+                            if(raw.type === 'BAPN') return 'star';
+                            if(raw.type === 'Dose') return 'cross';
                             return 'circle';
                         },
                         pointRadius: (ctx) => {
@@ -979,11 +984,11 @@ async function loadDetailData(forceId = null) {
                 plugins: [sirenPlugin], // 👈 방금 만든 싸이렌 플러그인 장착
                 options: {
                     maintainAspectRatio: false,
-                    interaction: { mode: 'x', intersect: false }, 
+                    interaction: { mode: 'x', intersect: false },
                     scales: {
                         y: { display: false, min: -1, max: 1 },
-                        x: { 
-                            type: 'linear', 
+                        x: {
+                            type: 'linear',
                             title: { display: true, text: 'Age (Weeks / 주령)', font: {weight: 'bold'} },
                             grid: { color: '#eee' },
                             ticks: { stepSize: 1 }
@@ -1105,10 +1110,10 @@ if (!window.__chDelegationBound) {
 async function loadCohortDetail() {
     // 정의된 변수 이름을 selectedGroups로 통일합니다.
     const selectedGroups = getExpandedSelectedGroups('co-check-list');
-    
+
     // 이 부분에서 checkboxes.length를 쓰면 에러가 납니다. selectedGroups로 고칩니다.
     if(selectedGroups.length === 0) return alert("분석할 코호트 그룹을 하나 이상 선택하세요.");
-    
+
     await runCohortAnalysis(selectedGroups, 'cohort-res', '_main');
 }
 
@@ -1122,7 +1127,7 @@ let globalMaxAge = 0; // 👈 이거 추가!
 async function analyzeTrend() {
     const selectedGroups = getExpandedSelectedGroups('trend-cohort-list');
     if (selectedGroups.length === 0) return alert("코호트 그룹을 하나 이상 선택하세요.");
-    
+
     const mode = document.querySelector('input[name="trend-mode"]:checked').value;
 
     const getCriteria = (grp) => ({
@@ -1166,7 +1171,7 @@ async function analyzeTrend() {
         const measByRat = await chFetchMeasByRatIds(allRatIds);
 
         let globalMaxSbp = 0, globalMaxWt = 0, globalMaxPod = 0;
-        let globalMinSbp = 9999, globalMinWt = 9999; 
+        let globalMinSbp = 9999, globalMinWt = 9999;
         const stdPodMap = globalPodMap, tempColumns = [], labelSet = new Set();
         const measMap = {}; let globalMaxAge = 0, globalMinAge = 999;
 
@@ -1185,7 +1190,7 @@ async function analyzeTrend() {
 
             (measByRat[rid] || []).forEach(d => {
                 if(d.timepoint) measMap[rid][d.timepoint] = d.weight;
-                measMap[rid][d.date] = d.weight; 
+                measMap[rid][d.date] = d.weight;
                 if(d.sbp) { const s = Number(d.sbp); if(s > globalMaxSbp) globalMaxSbp = s; if(s < globalMinSbp) globalMinSbp = s; }
                 if(d.weight) { const w = Number(d.weight); if(w > globalMaxWt) globalMaxWt = w; if(w < globalMinWt) globalMinWt = w; }
                 if(surgDate && d.date) { const p = Math.floor((new Date(d.date) - new Date(surgDate))/86400000); if(p > globalMaxPod) globalMaxPod = p; }
@@ -1224,7 +1229,7 @@ async function analyzeTrend() {
         let groupTarget = [], groupControl = [];
         allRats.forEach(r => {
             const resA = evaluateRat(r, critA);
-            if (mode === 'single') { if (resA === 'target') groupTarget.push(r); else if(resA === 'control') groupControl.push(r); } 
+            if (mode === 'single') { if (resA === 'target') groupTarget.push(r); else if(resA === 'control') groupControl.push(r); }
             else { if (resA === 'target') groupTarget.push(r); else { const resB = evaluateRat(r, critB); if (resB === 'target') groupControl.push(r); } }
         });
 
@@ -1301,7 +1306,7 @@ async function loadGroupComparison() {
 
         const ratPromises = targetCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
         const ratSnaps = await Promise.all(ratPromises);
-        
+
         ratSnaps.forEach(snap => {
             snap.forEach(d => {
                 const r = d.data(); const key = `${r.cohort}||${r.group || 'G1'}`;
@@ -1344,7 +1349,7 @@ async function loadGroupComparison() {
 
         const fixedOptions = { minX: -avgGap - 2, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), avgGap: avgGap };
 
-        container.innerHTML = ''; 
+        container.innerHTML = '';
         const grpColors = ['#E6194B', '#3CB44B', '#4363D8'];
         const groupsData = activeGroups.map((g, i) => ({ name: g.name + ' (' + g.selectedVals.map(v => v.replace('||', '(') + ')').join(', ') + ')', color: grpColors[i % grpColors.length], rats: allRatsObj.filter(r => g.selectedVals.includes(`${r.cohort}||${r.group || 'G1'}`)) }));
         renderUnifiedTimeline(groupsData, container);
@@ -1415,7 +1420,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 
             (measByRat[rid] || []).forEach(d => {
                 let labelText = d.timepoint; if (!labelText || labelText === 'Manual') labelText = d.date;
-                
+
                 let xVal = null;
                 if (window.isAgeMode) {
                     if (arrDt && d.date) xVal = arrAge + (new Date(d.date) - arrDt) / (1000 * 60 * 60 * 24 * 7);
@@ -1449,7 +1454,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 
         const standardKeys = Object.keys(globalPodMap).filter(k => k === 'D0' || k === 'D2' || k.startsWith('W'));
         standardKeys.forEach(k => { tickLabelMap[globalPodMap[k]] = k; });
-        
+
         const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (val < 0 ? `D${val}` : (tickLabelMap[val] || `D${val}`)));
         const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (pod < 0 ? `D${pod}` : (tickLabelMap[pod] || `D${pod}`));
 
@@ -1468,7 +1473,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
         const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
 
-        let surgAgeSum = 0, surgAgeCnt = 0; let smpHist = 0, smpCast = 0, smpFail = 0; const mrStats = {}; 
+        let surgAgeSum = 0, surgAgeCnt = 0; let smpHist = 0, smpCast = 0, smpFail = 0; const mrStats = {};
         const podDaysMap = { 'D00': -1, 'D0': 0, 'D2': 2, 'W1': 7, 'W2': 14, 'W3': 21, 'W4': 28, 'W5': 35, 'W6': 42, 'W7': 49, 'W8': 56, 'W9': 63, 'W10': 70, 'W11': 77, 'W12': 84 };
         let sampleModalRows = '';
 
@@ -1514,16 +1519,16 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             if (r.mrDates && Array.isArray(r.mrDates)) { r.mrDates.forEach(mr => { if (infTps.includes(mr.timepoint) && mr.date) { infStats[mr.timepoint].hasData++; if (mr.infarctSize === 'Small') infStats[mr.timepoint].small++; else if (mr.infarctSize === 'Large') infStats[mr.timepoint].large++; else infStats[mr.timepoint].none++; if (mr.infarctLoc === 'R') infStats[mr.timepoint].locR++; else if (mr.infarctLoc === 'L') infStats[mr.timepoint].locL++; else if (mr.infarctLoc === 'Both') infStats[mr.timepoint].locBoth++; } }); }
         });
 
-        let surgFailN = 0, areO = 0, areX = 0, totalMicro = 0, totalMacro = 0, totalUnk = 0, areDetailRows = ''; const areLocStats = {}; 
+        let surgFailN = 0, areO = 0, areX = 0, totalMicro = 0, totalMacro = 0, totalUnk = 0, areDetailRows = ''; const areLocStats = {};
 
-        rats.forEach(r => { 
+        rats.forEach(r => {
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
             let myMicro = 0, myMacro = 0, myUnk = 0, hasAre = false;
             if (r.are) {
                 if (r.are.startsWith('O')) {
                     areO++; hasAre = true;
-                    if (r.areCounts) { myMicro = Number(r.areCounts.micro) || 0; myMacro = Number(r.areCounts.macro) || 0; myUnk = Number(r.areCounts.unk) || 0; } 
+                    if (r.areCounts) { myMicro = Number(r.areCounts.micro) || 0; myMacro = Number(r.areCounts.macro) || 0; myUnk = Number(r.areCounts.unk) || 0; }
                     else { if(r.are.includes('micro')) myMicro = 1; else if(r.are.includes('macro')) myMacro = 1; else myUnk = 1; }
                     totalMicro += myMicro; totalMacro += myMacro; totalUnk += myUnk;
                     if (r.areList && Array.isArray(r.areList)) { r.areList.forEach(loc => { let locStr = loc.side; if (loc.side !== 'BA' && loc.art && loc.art !== '-') locStr += ' ' + loc.art; if (!areLocStats[locStr]) areLocStats[locStr] = { micro: 0, macro: 0, unk: 0 }; if (loc.type === 'micro') areLocStats[locStr].micro++; else if (loc.type === 'macro') areLocStats[locStr].macro++; else areLocStats[locStr].unk++; }); }
@@ -1531,8 +1536,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             }
             if (hasAre) { areDetailRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center;"><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td style="padding:8px; text-align:center;">${myMicro}</td><td style="padding:8px; text-align:center;">${myMacro}</td><td style="padding:8px; text-align:center;">${myUnk}</td><td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${myMicro + myMacro + myUnk}개</td></tr>`; }
         });
-        
-        const totalN = rats.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`; 
+
+        const totalN = rats.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`;
 
         let finalHtml = headerHtml;
         finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:var(--sheet); padding:20px; border-radius:2px; border:1px solid var(--ink); width:95%; max-width:700px; max-height:85vh; overflow-y:auto;"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px double var(--ink); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--ink);">샘플 획득 상세 내역 (총 <span class="mono">${rats.length}</span>마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
@@ -1552,8 +1557,8 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             deadRats.sort((a, b) => { const cA = Number(a.cohort) || 0; const cB = Number(b.cohort) || 0; if (cA !== cB) return cA - cB; return a.ratId.localeCompare(b.ratId); });
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
             deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:var(--ink-soft)">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
-            survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
-            
+            survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-';
+
             // 🔥 체크박스 UI 삽입
             const survHeaderHtml = `
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:6px;">
@@ -1564,7 +1569,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                     </div>
                 </div>
             `;
-            
+
             finalHtml += `<div class="card">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
@@ -1627,19 +1632,19 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 
         const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
         const buildLinearTicks = (minX, maxX, step) => { const ticks = []; const start = Math.ceil(minX); const end = Math.floor(maxX); for (let v = start; v <= end; v += step) ticks.push(v); return ticks; };
-        
+
         const createChartOptions = (minX, maxX, minY, maxY) => {
             if (window.isAgeMode) {
-                return { 
-                    maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, 
-                    scales: { 
-                        x: { type: 'linear', title: { display: true, text: 'Age (Weeks / 주령)', font: {weight: 'bold'} }, min: Math.floor(globalMinX) - 0.5, max: Math.ceil(globalMaxX) + 0.5, ticks: { stepSize: 1, callback: function(value) { return value + 'w'; } }, grid: { color: '#eee' } }, 
-                        y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } 
-                    }, 
-                    plugins: { 
-                        zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: globalMinX - 2, max: globalMaxX + 5 }, y: { min: 0, max: maxY + 200 } } }, 
-                        tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; return (it.raw && it.raw.label) ? it.raw.label + ` (${it.raw.realX.toFixed(1)}w)` : it.parsed.x.toFixed(1) + 'w'; } } } 
-                    } 
+                return {
+                    maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } },
+                    scales: {
+                        x: { type: 'linear', title: { display: true, text: 'Age (Weeks / 주령)', font: {weight: 'bold'} }, min: Math.floor(globalMinX) - 0.5, max: Math.ceil(globalMaxX) + 0.5, ticks: { stepSize: 1, callback: function(value) { return value + 'w'; } }, grid: { color: '#eee' } },
+                        y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } }
+                    },
+                    plugins: {
+                        zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: globalMinX - 2, max: globalMaxX + 5 }, y: { min: 0, max: maxY + 200 } } },
+                        tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; return (it.raw && it.raw.label) ? it.raw.label + ` (${it.raw.realX.toFixed(1)}w)` : it.parsed.x.toFixed(1) + 'w'; } } }
+                    }
                 };
             } else {
                 return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t=>t.value===dynamicArrivalPod)) scale.ticks.push({value:dynamicArrivalPod}); if(dynamicD00Pod !== null && !scale.ticks.some(t=>t.value===dynamicD00Pod)) scale.ticks.push({value:dynamicD00Pod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); if(dynamicD00Pod !== null) ticks.push(dynamicD00Pod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod || ctx.tick.value === dynamicD00Pod) ? '#D8D4C6' : '#EFEDE6' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
@@ -1705,7 +1710,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
             (measByRat[rid] || []).forEach(d => {
                 let labelText = d.timepoint; if (!labelText || labelText === 'Manual') labelText = d.date;
-                
+
                 let xVal = null;
                 if (window.isAgeMode) {
                     if (arrDt && d.date) xVal = arrAge + (new Date(d.date) - arrDt) / (1000 * 60 * 60 * 24 * 7);
@@ -1739,7 +1744,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         const standardKeys = Object.keys(globalPodMap).filter(k => k === 'D0' || k === 'D2' || k.startsWith('W'));
         standardKeys.forEach(k => { tickLabelMap[globalPodMap[k]] = k; });
-        
+
         const getColLabel = (val) => window.isAgeMode ? `${val.toFixed(1)}w` : (val === dynamicArrivalPod ? "Arrival" : (val < 0 ? `D${val}` : (tickLabelMap[val] || `D${val}`)));
         const podToLabel = (pod) => pod === dynamicArrivalPod ? "Arrival" : (pod < 0 ? `D${pod}` : (tickLabelMap[pod] || `D${pod}`));
 
@@ -1755,7 +1760,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const avgLineWt = Object.keys(avgsWt).map(pod => ({ x: Number(pod), y: avgsWt[pod] })).sort((a, b) => a.x - b.x);
         const avgLineSbp = Object.keys(avgsSbp).map(pod => ({ x: Number(pod), y: avgsSbp[pod] })).sort((a, b) => a.x - b.x);
 
-        let surgAgeSum = 0, surgAgeCnt = 0; let smpHist = 0, smpCast = 0, smpFail = 0; const mrStats = {}; 
+        let surgAgeSum = 0, surgAgeCnt = 0; let smpHist = 0, smpCast = 0, smpFail = 0; const mrStats = {};
         const podDaysMap = { 'D00': -1, 'D0': 0, 'D2': 2, 'W1': 7, 'W2': 14, 'W3': 21, 'W4': 28, 'W5': 35, 'W6': 42, 'W7': 49, 'W8': 56, 'W9': 63, 'W10': 70, 'W11': 77, 'W12': 84 };
 
         let sampleModalRows = '';
@@ -1801,16 +1806,16 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             if (r.mrDates && Array.isArray(r.mrDates)) { r.mrDates.forEach(mr => { if (infTps.includes(mr.timepoint) && mr.date) { infStats[mr.timepoint].hasData++; if (mr.infarctSize === 'Small') infStats[mr.timepoint].small++; else if (mr.infarctSize === 'Large') infStats[mr.timepoint].large++; else infStats[mr.timepoint].none++; if (mr.infarctLoc === 'R') infStats[mr.timepoint].locR++; else if (mr.infarctLoc === 'L') infStats[mr.timepoint].locL++; else if (mr.infarctLoc === 'Both') infStats[mr.timepoint].locBoth++; } }); }
         });
 
-        let surgFailN = 0, areO = 0, areX = 0, totalMicro = 0, totalMacro = 0, totalUnk = 0, areDetailRows = ''; const areLocStats = {}; 
+        let surgFailN = 0, areO = 0, areX = 0, totalMicro = 0, totalMacro = 0, totalUnk = 0, areDetailRows = ''; const areLocStats = {};
 
-        ratDataList.forEach(r => { 
+        ratDataList.forEach(r => {
             const cod = r.cod || extractLegacyCod(r.codFull) || '';
             if (cod === 'Surgical Failure') surgFailN++;
             let myMicro = 0, myMacro = 0, myUnk = 0, hasAre = false;
             if (r.are) {
                 if (r.are.startsWith('O')) {
                     areO++; hasAre = true;
-                    if (r.areCounts) { myMicro = Number(r.areCounts.micro) || 0; myMacro = Number(r.areCounts.macro) || 0; myUnk = Number(r.areCounts.unk) || 0; } 
+                    if (r.areCounts) { myMicro = Number(r.areCounts.micro) || 0; myMacro = Number(r.areCounts.macro) || 0; myUnk = Number(r.areCounts.unk) || 0; }
                     else { if(r.are.includes('micro')) myMicro = 1; else if(r.are.includes('macro')) myMacro = 1; else myUnk = 1; }
                     totalMicro += myMicro; totalMacro += myMacro; totalUnk += myUnk;
                     if (r.areList && Array.isArray(r.areList)) { r.areList.forEach(loc => { let locStr = loc.side; if (loc.side !== 'BA' && loc.art && loc.art !== '-') locStr += ' ' + loc.art; if (!areLocStats[locStr]) areLocStats[locStr] = { micro: 0, macro: 0, unk: 0 }; if (loc.type === 'micro') areLocStats[locStr].micro++; else if (loc.type === 'macro') areLocStats[locStr].macro++; else areLocStats[locStr].unk++; }); }
@@ -1818,8 +1823,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             }
             if (hasAre) { areDetailRows += `<tr style="border-bottom:1px solid #eee;"><td style="padding:8px; text-align:center;"><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td style="padding:8px; text-align:center;">${myMicro}</td><td style="padding:8px; text-align:center;">${myMacro}</td><td style="padding:8px; text-align:center;">${myUnk}</td><td style="padding:8px; text-align:center; font-weight:bold; color:var(--red);">총 ${myMicro + myMacro + myUnk}개</td></tr>`; }
         });
-        
-        const totalN = ratDataList.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`; 
+
+        const totalN = ratDataList.length; const validN = totalN - surgFailN; const rateTotal = totalN > 0 ? ((areO / totalN) * 100).toFixed(1) : 0; const rateValid = validN > 0 ? ((areO / validN) * 100).toFixed(1) : 0; const totalAreCount = totalMicro + totalMacro + totalUnk; const areTableId = `areTable${uniqueSuffix}`; const areLocChartId = `areLocChart${uniqueSuffix}`;
 
         let finalHtml = headerHtml;
         finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:var(--sheet); padding:20px; border-radius:2px; border:1px solid var(--ink); width:95%; max-width:700px; max-height:85vh; overflow-y:auto;"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px double var(--ink); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--ink);">샘플 획득 상세 내역 (총 <span class="mono">${ratDataList.length}</span>마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
@@ -1839,8 +1844,8 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
             deadRats.sort((a, b) => { const cA = Number(a.cohort) || 0; const cB = Number(b.cohort) || 0; if (cA !== cB) return cA - cB; return a.ratId.localeCompare(b.ratId); });
             let survTable = `<table><tr><th>ID</th><th>사망일</th><th>시점</th></tr>`; let totalPod = 0, validPodCnt = 0;
             deadRats.forEach(r => { const pod = r.surgeryDate && r.deathDate ? Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000) : '?'; if (pod !== '?') { totalPod += pod; validPodCnt++; } const displayCod = r.cod || extractLegacyCod(r.codFull) || '미기록'; const secCodStr = (r.codSec && r.codSec.length > 0) ? ` <span style="color:#b45309; font-weight:bold;">(+${r.codSec.map(chEsc).join(', ')})</span>` : ''; survTable += `<tr><td><button class="ch-rat-link" data-rat-modal="${chEsc(r.ratId)}">${chEsc(r.ratId)}</button></td><td>${r.deathDate || '-'}</td><td>POD ${pod}<br><span style="font-size:0.8em; color:var(--ink-soft)">${chEsc(displayCod)}${secCodStr}</span></td></tr>`; });
-            survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-'; 
-            
+            survTable += `</table>`; const avgPodStr = validPodCnt > 0 ? (totalPod / validPodCnt).toFixed(1) + '일' : '-';
+
             // 🔥 체크박스 UI 삽입
             const survHeaderHtml = `
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:6px;">
@@ -1851,7 +1856,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                     </div>
                 </div>
             `;
-            
+
             finalHtml += `<div class="card">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
@@ -1912,19 +1917,19 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         const getStandardPodsInRange = (minX, maxX) => { const pods = []; ["D0", "D2"].forEach(k => { const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); }); for (let i = 1; i <= 12; i++) { const k = `W${i}`; const v = globalPodMap[k]; if (v >= minX && v <= maxX) pods.push(v); } pods.sort((a, b) => a - b); return Array.from(new Set(pods)); };
         const buildLinearTicks = (minX, maxX, step) => { const ticks = []; const start = Math.ceil(minX); const end = Math.floor(maxX); for (let v = start; v <= end; v += step) ticks.push(v); return ticks; };
-        
+
         const createChartOptions = (minX, maxX, minY, maxY) => {
             if (window.isAgeMode) {
-                return { 
-                    maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, 
-                    scales: { 
-                        x: { type: 'linear', title: { display: true, text: 'Age (Weeks / 주령)', font: {weight: 'bold'} }, min: Math.floor(globalMinX) - 0.5, max: Math.ceil(globalMaxX) + 0.5, ticks: { stepSize: 1, callback: function(value) { return value + 'w'; } }, grid: { color: '#eee' } }, 
-                        y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } 
-                    }, 
-                    plugins: { 
-                        zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: globalMinX - 2, max: globalMaxX + 5 }, y: { min: 0, max: maxY + 200 } } }, 
-                        tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; return (it.raw && it.raw.label) ? it.raw.label + ` (${it.raw.realX.toFixed(1)}w)` : it.parsed.x.toFixed(1) + 'w'; } } } 
-                    } 
+                return {
+                    maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } },
+                    scales: {
+                        x: { type: 'linear', title: { display: true, text: 'Age (Weeks / 주령)', font: {weight: 'bold'} }, min: Math.floor(globalMinX) - 0.5, max: Math.ceil(globalMaxX) + 0.5, ticks: { stepSize: 1, callback: function(value) { return value + 'w'; } }, grid: { color: '#eee' } },
+                        y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } }
+                    },
+                    plugins: {
+                        zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: globalMinX - 2, max: globalMaxX + 5 }, y: { min: 0, max: maxY + 200 } } },
+                        tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; return (it.raw && it.raw.label) ? it.raw.label + ` (${it.raw.realX.toFixed(1)}w)` : it.parsed.x.toFixed(1) + 'w'; } } }
+                    }
                 };
             } else {
                 return { maintainAspectRatio: false, layout: { padding: { right: 10, bottom: 28 } }, scales: { x: { type: 'linear', min: actualMinX, max: maxX, afterBuildTicks: (scale) => { const range = scale.max - scale.min; if (range > 70) { scale.ticks = getStandardPodsInRange(scale.min, scale.max).map(v => ({ value: v })); if(!scale.ticks.some(t=>t.value===dynamicArrivalPod)) scale.ticks.push({value:dynamicArrivalPod}); if(dynamicD00Pod !== null && !scale.ticks.some(t=>t.value===dynamicD00Pod)) scale.ticks.push({value:dynamicD00Pod}); return; } const ticks = buildLinearTicks(scale.min, scale.max, range > 30 ? 2 : 1); getStandardPodsInRange(scale.min, scale.max).forEach(v => ticks.push(v)); ticks.push(dynamicArrivalPod); if(dynamicD00Pod !== null) ticks.push(dynamicD00Pod); ticks.sort((a, b) => a - b); scale.ticks = Array.from(new Set(ticks)).map(v => ({ value: v })); }, ticks: { minRotation: 90, maxRotation: 90, autoSkip: false, callback: function (value) { return podToLabel(value); } }, grid: { color: (ctx) => (tickLabelMap[ctx.tick.value] || ctx.tick.value === dynamicArrivalPod || ctx.tick.value === dynamicD00Pod) ? '#D8D4C6' : '#EFEDE6' } }, y: { min: minY, max: maxY, ticks: { maxTicksLimit: 16 } } }, plugins: { zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }, pan: { enabled: true, mode: 'xy', threshold: 10 }, limits: { x: { min: actualMinX, max: maxX + 50 }, y: { min: 0, max: maxY + 200 } } }, tooltip: { enabled: true, callbacks: { title: (items) => { if (!items || !items.length) return ''; const it = items[0]; const pod = Math.round(it.parsed.x); if (it.dataset && it.dataset.label === 'Average') return podToLabel(pod); return (it.raw && it.raw.label) ? it.raw.label : podToLabel(pod); } } } } };
@@ -1958,7 +1963,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 window.updateSurvivalChart = function(suffix, chartId) {
     const cache = window.survDataCache[suffix];
     if(!cache) return;
-    
+
     const excSurgFail = document.getElementById(`chk-exc-surgfail${suffix}`).checked;
     const excSac = document.getElementById(`chk-exc-sac${suffix}`).checked;
 
@@ -1970,19 +1975,19 @@ window.updateSurvivalChart = function(suffix, chartId) {
         return true;
     });
 
-    let minAge = 999, maxAge = 0; 
+    let minAge = 999, maxAge = 0;
     const deathByAge = {};
     let totalPod = 0, validPodCnt = 0;
 
     validRats.forEach(r => {
         const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
         let endAge = arrAge;
-        
+
         if (r.status === '사망' && r.deathDate) {
             if(r.arrivalDate) endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
             const w = Math.floor(endAge);
             deathByAge[w] = (deathByAge[w] || 0) + 1;
-            
+
             if (r.surgeryDate) {
                 const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000);
                 totalPod += pod;
@@ -1991,7 +1996,7 @@ window.updateSurvivalChart = function(suffix, chartId) {
         } else if (r.arrivalDate) {
             endAge = arrAge + (daysBetween(r.arrivalDate) / 7);
         }
-        
+
         if(endAge < minAge) minAge = Math.floor(endAge);
         if(endAge > maxAge) maxAge = Math.ceil(endAge);
     });
@@ -2017,7 +2022,7 @@ window.updateSurvivalChart = function(suffix, chartId) {
 
     // 차트 업데이트 로직
     let chartInstance = Chart.getChart(chartId);
-    
+
     if (chartInstance) {
         chartInstance.data.labels = survLabels;
         chartInstance.data.datasets[0].data = survData;
@@ -2071,7 +2076,7 @@ function toggleRatVisibility(chartId, ratId, isChecked) {
 
     // 숨겨진 랫드 목록 관리
     if (!chart._hiddenRats) chart._hiddenRats = new Set();
-    
+
     if (isChecked) {
         chart._hiddenRats.delete(ratId);
     } else {
@@ -2123,20 +2128,20 @@ if(activeBtn) {
 
 Object.keys(compScatterDataCache).forEach(key => {
     const cache = compScatterDataCache[key];
-    const currentFilter = compFilterState[key] || 'All'; 
+    const currentFilter = compFilterState[key] || 'All';
     const filtered = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
     combinedData = combinedData.concat(filtered);
 });
 
 
 if (combinedData.length > 0) {
-    combinedData.forEach(p => { 
-        if (p.y > maxW) maxW = p.y; 
-        if (p.y < minW) minW = p.y; 
+    combinedData.forEach(p => {
+        if (p.y > maxW) maxW = p.y;
+        if (p.y < minW) minW = p.y;
     });
 } else { maxW = 500; minW = 0; }
 
-const yMax = Math.ceil((maxW + 10) / 5) * 5; 
+const yMax = Math.ceil((maxW + 10) / 5) * 5;
 const yMin = Math.max(0, Math.floor((minW - 10) / 5) * 5);
 
 // 4. 차트 업데이트 (기존 로직 동일)
@@ -2162,7 +2167,7 @@ Object.keys(compScatterCharts).forEach(key => {
                 const idx = labels.indexOf(currentFilter);
                 const minX = idx - 0.5;
                 const maxX = idx + 0.5;
-                
+
                 chart.data.datasets[1].data = [{ x: minX, y: avg }, { x: maxX, y: avg }];
                 chart.options.scales.x.min = minX;
                 chart.options.scales.x.max = maxX;
@@ -2173,7 +2178,7 @@ Object.keys(compScatterCharts).forEach(key => {
 
     chart.options.scales.y.max = yMax;
     chart.options.scales.y.min = yMin;
-    chart.options.scales.y.ticks.stepSize = 5; 
+    chart.options.scales.y.ticks.stepSize = 5;
 
     chart.update();
 });
@@ -2201,7 +2206,7 @@ function updateTrendScatter(filterTp, groupKey) {
 
     // 3. 축 통일을 위해 Low와 High 양쪽의 현재 표시 데이터(필터 적용됨)를 모두 가져와서 Min/Max 계산
     let combinedData = [];
-    
+
     ['low', 'high'].forEach(key => {
         const currentFilter = trendFilterState[key];
         const cache = trendScatterDataCache[key];
@@ -2215,9 +2220,9 @@ function updateTrendScatter(filterTp, groupKey) {
     let maxW = 0;
     let minW = 9999;
     if (combinedData.length > 0) {
-        combinedData.forEach(p => { 
-            if (p.y > maxW) maxW = p.y; 
-            if (p.y < minW) minW = p.y; 
+        combinedData.forEach(p => {
+            if (p.y > maxW) maxW = p.y;
+            if (p.y < minW) minW = p.y;
         });
     } else { maxW = 500; minW = 0; }
 
@@ -2229,11 +2234,11 @@ function updateTrendScatter(filterTp, groupKey) {
         const chart = trendScatterCharts[key];
         const cache = trendScatterDataCache[key];
         const currentFilter = trendFilterState[key];
-        
+
         if(!chart || !cache) return;
 
         const filteredData = (currentFilter === 'All') ? cache : cache.filter(pt => pt.tp === currentFilter);
-        
+
         // 데이터 업데이트
         chart.data.datasets[0].data = filteredData;
 
@@ -2269,11 +2274,11 @@ function updateTrendScatter(filterTp, groupKey) {
 function updateAreBarMulti(suffix) {
     const wrap = document.getElementById(`are-data-wrap-${suffix}`);
     if (!wrap) return;
-    
+
     const totalN = Number(wrap.dataset.total);
     const validN = Number(wrap.dataset.valid);
     const chks = wrap.querySelectorAll('input[type="checkbox"]:checked');
-    
+
     let targetCount = 0;
     chks.forEach(chk => {
         if(chk.value === 'micro') targetCount += Number(wrap.dataset.micro);
@@ -2294,7 +2299,7 @@ function renderSankeyChart(ctxId, deadRats, colorsMap) {
     const ctx = document.getElementById(ctxId);
     if (!ctx) return;
 
-    const flows = {}; 
+    const flows = {};
 
     deadRats.forEach(r => {
         const cod = r.cod || extractLegacyCod(r.codFull) || "Unknown";
@@ -2303,7 +2308,7 @@ function renderSankeyChart(ctxId, deadRats, colorsMap) {
 
         // 1차 연결: All Dead -> COD (사망원인)
         flows[`Dead|${cod}`] = (flows[`Dead|${cod}`] || 0) + 1;
-        
+
         // 2차 연결: COD -> ARE 여부
         // Surgical Failure 나 Sacrifice 는 보통 ARE와 무관하므로 제외합니다.
         if(cod !== "Surgical Failure" && cod !== "Sacrifice" && cod !== "Unknown") {
@@ -2447,7 +2452,7 @@ function renderBpChart() {
 
 async function renderGroupSelectors() {
     const ratsData = await getRatsWithCache();
-    
+
     const cohortMap = {};
     ratsData.forEach(d => {
         const c = d.cohort;
@@ -2456,11 +2461,11 @@ async function renderGroupSelectors() {
         cohortMap[c].add(g);
     });
     const sorted = Object.keys(cohortMap).sort((a,b)=>Number(b)-Number(a));
-    
+
     const createList = (id) => {
         const con = document.getElementById(id);
         con.innerHTML = '';
-        
+
         // 상하 간격 줄이기
         con.style.display = 'flex';
         con.style.flexDirection = 'column';
@@ -2504,7 +2509,7 @@ async function renderGroupSelectors() {
 
 async function renderCohortCheckboxes(containerId) {
     const ratsData = await getRatsWithCache();
-    
+
     // 코호트별 그룹(G1, G2 등) 매핑
     const cohortMap = {};
     ratsData.forEach(d => {
@@ -2513,21 +2518,21 @@ async function renderCohortCheckboxes(containerId) {
         if (!cohortMap[c]) cohortMap[c] = new Set();
         cohortMap[c].add(g);
     });
-    
+
     const sortedCohorts = Object.keys(cohortMap).sort((a,b)=>Number(b)-Number(a));
     const container = document.getElementById(containerId);
     container.innerHTML = '';
-    
+
     if(sortedCohorts.length === 0) {
         container.innerHTML = '<div style="padding:10px; font-size:0.85rem; color:var(--ink-soft);">데이터가 없습니다.</div>';
         return;
     }
-    
+
     // 컨테이너 간격 최소화
     container.style.display = 'flex';
     container.style.flexWrap = 'wrap';
     container.style.gap = '6px';
-    
+
     sortedCohorts.forEach(c => {
         const sortedGroups = Array.from(cohortMap[c]).sort();
         const wrapper = document.createElement('div');
@@ -2551,14 +2556,14 @@ async function renderCohortCheckboxes(containerId) {
         sortedGroups.forEach(g => {
             const lbl = document.createElement('label');
             lbl.style.cssText = "cursor:pointer; font-size:0.8rem; color:var(--ink-soft); display:flex; align-items:center; background:var(--paper); padding:6px 9px; border-radius:2px; border:1px solid var(--rule); white-space:nowrap; min-height:24px;";
-            
+
             // 👇 문제의 원인이었던 자동 체크 로직 제거 및 독립 작동으로 변경
             lbl.innerHTML = `<input type="checkbox" class="grp-checkbox" value="${c}||${g}" style="margin:0 4px 0 0; transform:scale(1.1);" onchange="
                 const wrap = this.closest('.cohort-wrapper');
                 const mainCb = wrap.querySelector('.co-main-cb');
                 if(this.checked) { mainCb.checked = false; }
             ">${g}`;
-            
+
             grpContainer.appendChild(lbl);
         });
 
@@ -2571,7 +2576,7 @@ async function loadCohortComparison() {
     compScatterCharts = {};
     compScatterDataCache = {};
     compFilterState = {};
-    
+
     syncChartsSbp = []; syncChartsWt = [];
     activeCrosshairValSbp = null; activeCrosshairValWt = null;
 
@@ -2582,7 +2587,7 @@ async function loadCohortComparison() {
     wrappers.forEach(wrap => {
         const mainCb = wrap.querySelector('.co-main-cb');
         const grpCbs = Array.from(wrap.querySelectorAll('.grp-checkbox'));
-        
+
         if (mainCb && mainCb.checked) {
             comparisonUnits.push({ type: 'cohort', val: mainCb.value, expanded: grpCbs.map(cb => cb.value) });
         } else {
@@ -2602,9 +2607,9 @@ async function loadCohortComparison() {
         const targetCohorts = [...new Set(allTargetVals.map(v => v.split('||')[0]))];
         const ratPromises = targetCohorts.map(c => db.collection("rats").where("cohort", "==", c).get());
         const ratSnaps = await Promise.all(ratPromises);
-        
+
         let allRats = [];
-        let globalMaxAge = 0, globalMinAge = 999; 
+        let globalMaxAge = 0, globalMinAge = 999;
 
         ratSnaps.forEach(snap => snap.forEach(d => {
             const r = d.data();
@@ -2673,9 +2678,9 @@ async function loadCohortComparison() {
         });
 
         const fixedOptions = { minX: actualMinX, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt, minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), maxAreLoc: globalMaxAreLoc, maxInfLoc: globalMaxInfLoc, avgGap: avgGap };
-        container.innerHTML = ''; 
+        container.innerHTML = '';
         const colors = ['#E6194B', '#3CB44B', '#4363D8', '#F58231', '#911EB4', '#46F0F0'];
-        
+
         const groupsData = comparisonUnits.map((unit, i) => {
             return {
                 name: unit.type === 'cohort' ? `Cohort ${unit.val} (통합)` : `Cohort ${unit.val.replace('||', ' ')}`,
@@ -2684,7 +2689,7 @@ async function loadCohortComparison() {
             };
         });
         renderUnifiedTimeline(groupsData, container);
-        
+
         for(let i=0; i<comparisonUnits.length; i++) {
             const unit = comparisonUnits[i];
             const divId = `comp-res-${i}`;
@@ -2692,7 +2697,7 @@ async function loadCohortComparison() {
             colDiv.className = 'comp-col';
             colDiv.id = divId;
             container.appendChild(colDiv);
-            
+
             const title = unit.type === 'cohort' ? `Cohort ${unit.val} (전체 통합 비교)` : `Cohort ${unit.val.replace('||', ' ')}`;
             await runCohortAnalysis(unit.expanded, divId, `_comp_${i}`, fixedOptions, title);
         }
@@ -2730,7 +2735,7 @@ window.switchTrendTab = function(grp) {
     if(grp === 'a') {
         document.getElementById('trend-panel-a').style.display = 'block';
         document.getElementById('trend-panel-b').style.display = 'none';
-        
+
         btnA.style.cssText = `flex:1; padding:12px; font-size:1.05rem; font-weight:bold; border:2px solid var(--ink); background:var(--stock-blue-soft); color:var(--ink); border-radius:2px; ${mode === 'single' ? 'cursor:default;' : 'cursor:pointer;'}`;
 
         if(mode !== 'single') {
@@ -2764,10 +2769,10 @@ window.toggleTrendInputs = function(grp) {
 
 async function loadTrendCodList() {
     const selectedGroups = getExpandedSelectedGroups('trend-cohort-list');
-    
+
     // checkboxes -> selectedGroups로 변경
     if (selectedGroups.length === 0) return alert("코호트 그룹을 먼저 선택해주세요.");
-    
+
 
     const areas = ['inc-a', 'exc-a', 'inc-b', 'exc-b'];
     areas.forEach(a => {
@@ -2825,17 +2830,17 @@ function renderUnifiedTimeline(groupsData, container) {
     const wrapper = document.createElement('div');
     wrapper.id = 'unified-timeline-wrapper';
     wrapper.style.width = '98%';
-    wrapper.style.gridColumn = '1 / -1'; 
-    wrapper.style.flex = '0 0 100%';     
+    wrapper.style.gridColumn = '1 / -1';
+    wrapper.style.flex = '0 0 100%';
     wrapper.style.marginBottom = '25px';
     wrapper.style.background = '#fff';
     wrapper.style.border = '1px solid var(--rule)';
     wrapper.style.borderRadius = '2px';
     wrapper.style.padding = '15px';
     wrapper.style.boxShadow = '0 4px 10px rgba(0,0,0,0.05)';
-    
+
     const canvasId = 'unified-timeline-' + Date.now();
-    
+
     wrapper.innerHTML = `
         <h4 style="margin:0 0 5px 0; color:var(--navy); text-align:center;">⏳ 비교군 통합 이벤트 타임라인</h4>
         <div style="text-align:center; font-size:0.85rem; color:var(--ink-soft); margin-bottom:10px; background:var(--paper); border:1px solid var(--rule); padding:5px; border-radius:2px;">
@@ -2846,7 +2851,7 @@ function renderUnifiedTimeline(groupsData, container) {
             <canvas id="${canvasId}"></canvas>
         </div>
     `;
-    
+
     container.parentNode.insertBefore(wrapper, container);
 
     // 비교군 ARE 위치 지도 (타임라인 바로 아래, 군 색깔 그대로)
@@ -2868,7 +2873,7 @@ function renderUnifiedTimeline(groupsData, container) {
 
     groupsData.forEach((g, groupIndex) => {
         const dataPoints = [];
-        const laneY = groupNames.length - 1 - groupIndex; 
+        const laneY = groupNames.length - 1 - groupIndex;
 
         g.rats.forEach(r => {
             const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
@@ -2898,7 +2903,7 @@ function renderUnifiedTimeline(groupsData, container) {
         datasets.push({
             label: g.name,
             data: dataPoints,
-            backgroundColor: g.color + '90', 
+            backgroundColor: g.color + '90',
             borderColor: g.color,
             pointStyle: (ctx) => {
                 const type = ctx.raw?.type;
@@ -2951,18 +2956,18 @@ function renderUnifiedTimeline(groupsData, container) {
         beforeDatasetsDraw: (chart) => {
             const ctx = chart.ctx;
             const metaList = chart.data.datasets.map((ds, i) => chart.getDatasetMeta(i));
-            
-            const eventMap = {}; 
+
+            const eventMap = {};
             chart.data.datasets.forEach((ds, i) => {
                 ds.data.forEach((pt, j) => {
                     const raw = chart.data.datasets[i].data[j];
                     // 🌟 [수정됨] isShamMr(시점 무관)인 데이터는 노란 점선 연결에서 완벽하게 패스!
-                    if (!raw || raw.type !== 'MR' || raw.isShamMr) return; 
+                    if (!raw || raw.type !== 'MR' || raw.isShamMr) return;
 
-                    const ev = raw.event; 
+                    const ev = raw.event;
                     if (!ev || ev.includes('None')) return;
                     if (!eventMap[ev]) eventMap[ev] = [];
-                    
+
                     const chartPt = metaList[i].data[j];
                     if(chartPt) {
                         eventMap[ev].push({ x: chartPt.x, y: chartPt.y, rawX: raw.x, dsIndex: i });
@@ -2978,7 +2983,7 @@ function renderUnifiedTimeline(groupsData, container) {
             Object.keys(eventMap).forEach(ev => {
                 const pts = eventMap[ev];
                 const minPtsByGroup = {};
-                
+
                 pts.forEach(p => {
                     if (!minPtsByGroup[p.dsIndex] || p.rawX < minPtsByGroup[p.dsIndex].rawX) {
                         minPtsByGroup[p.dsIndex] = p;
@@ -2986,7 +2991,7 @@ function renderUnifiedTimeline(groupsData, container) {
                 });
 
                 const connectPts = Object.values(minPtsByGroup).sort((a, b) => a.y - b.y);
-                
+
                 if (connectPts.length > 1) {
                     ctx.beginPath();
                     ctx.moveTo(connectPts[0].x, connectPts[0].y);
@@ -3008,21 +3013,21 @@ function renderUnifiedTimeline(groupsData, container) {
             options: {
                 maintainAspectRatio: false,
                 scales: {
-                    y: { 
+                    y: {
                         min: -0.5, max: groupsData.length - 0.5,
                         ticks: { stepSize: 1, callback: function(value) { return groupNames[groupNames.length - 1 - value] || ''; }, font: { weight: 'bold', size: 12 }, color: '#23282E' },
-                        grid: { display: false, drawBorder: false } 
+                        grid: { display: false, drawBorder: false }
                     },
-                    x: { 
+                    x: {
                         title: { display: true, text: 'Age (Weeks / 주령)', color: '#333', font: { weight: 'bold', size: 14 } },
                         min: finalMinX, max: finalMaxX,
-                        grid: { color: '#e0e0e0', tickLength: 10 }, 
+                        grid: { color: '#e0e0e0', tickLength: 10 },
                         ticks: { stepSize: 1, font: { size: 12 } }
                     }
                 },
                 plugins: {
                     tooltip: { callbacks: { label: (ctx) => ` [${ctx.raw.rId}] ${ctx.raw.event} : ${ctx.raw.x.toFixed(1)}주령` } },
-                    legend: { 
+                    legend: {
                         display: true,
                         position: 'top',
                         align: 'end',
@@ -3047,17 +3052,17 @@ async function addMrDate(did) {
     const tp = document.getElementById('new-mr-tp').value;
     const dt = document.getElementById('new-mr-d').value;
     if(!dt) return alert("날짜를 선택하세요.");
-    
+
     try {
         const docRef = db.collection("rats").doc(did);
         const doc = await docRef.get();
         const arr = doc.data().mrDates || [];
         arr.push({ timepoint: tp, date: dt }); // 기본 추가 시에는 사이즈/위치 없음
-        
+
         arr.sort((a,b) => new Date(a.date) - new Date(b.date));
-        
+
         await docRef.update({ mrDates: arr });
-        clearRatsCache(); 
+        clearRatsCache();
         loadDetailData();
     } catch(e) { console.error(e); alert("오류: " + e.message); }
 }
@@ -3068,7 +3073,7 @@ function openInfarctModal(docId, mrIdx, currentSize, currentLoc) {
     document.getElementById('infarct-mr-idx').value = mrIdx;
     document.getElementById('infarct-size-sel').value = currentSize || 'None';
     document.getElementById('infarct-loc-sel').value = currentLoc || '-';
-    
+
     document.getElementById('infarct-modal').style.display = 'flex';
 }
 
@@ -3091,9 +3096,9 @@ async function saveInfarctData() {
         }
 
         await docRef.update({ mrDates: arr });
-        
+
         document.getElementById('infarct-modal').style.display = 'none';
-        clearRatsCache(); 
+        clearRatsCache();
         loadDetailData(); // 화면 새로고침 (타임라인 즉시 업데이트)
     } catch(e) {
         console.error(e);
@@ -3109,7 +3114,7 @@ function openRatModal(ratId) {
         modal = document.createElement('div');
         modal.id = 'rat-detail-modal-overlay';
         modal.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:99999; display:flex; justify-content:center; align-items:center;';
-        
+
         modal.innerHTML = `
             <div style="background:var(--paper); width:95%; max-width:1100px; height:90%; border-radius:2px; border:1px solid var(--ink); display:flex; flex-direction:column; overflow:hidden;">
                 <div style="background:var(--ink); color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
@@ -3146,7 +3151,7 @@ function openRatModal(ratId) {
 window.updateSurvivalChart = function(suffix, chartId) {
     const cache = window.survDataCache[suffix];
     if(!cache) return;
-    
+
     const excSurgFail = document.getElementById(`chk-exc-surgfail${suffix}`).checked;
     const excSac = document.getElementById(`chk-exc-sac${suffix}`).checked;
 
@@ -3158,19 +3163,19 @@ window.updateSurvivalChart = function(suffix, chartId) {
         return true;
     });
 
-    let minAge = 999, maxAge = 0; 
+    let minAge = 999, maxAge = 0;
     const deathByAge = {};
     let totalPod = 0, validPodCnt = 0;
 
     validRats.forEach(r => {
         const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
         let endAge = arrAge;
-        
+
         if (r.status === '사망' && r.deathDate) {
             if(r.arrivalDate) endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
             const w = Math.floor(endAge);
             deathByAge[w] = (deathByAge[w] || 0) + 1;
-            
+
             if (r.surgeryDate) {
                 const pod = Math.floor((new Date(r.deathDate) - new Date(r.surgeryDate)) / 86400000);
                 totalPod += pod;
@@ -3179,7 +3184,7 @@ window.updateSurvivalChart = function(suffix, chartId) {
         } else if (r.arrivalDate) {
             endAge = arrAge + (daysBetween(r.arrivalDate) / 7);
         }
-        
+
         if(endAge < minAge) minAge = Math.floor(endAge);
         if(endAge > maxAge) maxAge = Math.ceil(endAge);
     });
@@ -3205,7 +3210,7 @@ window.updateSurvivalChart = function(suffix, chartId) {
 
     // 차트 업데이트 로직
     let chartInstance = Chart.getChart(chartId);
-    
+
     if (chartInstance) {
         chartInstance.data.labels = survLabels;
         chartInstance.data.datasets[0].data = survData;
