@@ -783,6 +783,11 @@ async function loadDetailData(forceId = null) {
                 <div id="bp-detail-table" style="display:none; margin-top:10px;"></div>
             </div>
 
+            <div class="card" id="rd-intake-card">
+                <h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">음수 · 사료 섭취</h4>
+                <div id="rd-intake-body" style="color:var(--ink-soft); font-size:0.85rem;">불러오는 중...</div>
+            </div>
+
             <div class="card"><h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">투약 이력</h4><div id="dose-logs"></div></div>
             <div class="card"><h4 style="border-bottom:3px double var(--ink); padding-bottom:6px;">기록 로그</h4><div id="rec-logs"></div></div>`
             + rdSaveBarHtml();
@@ -842,7 +847,8 @@ async function loadDetailData(forceId = null) {
             if (v.weight) dataMap[date].wt = v.weight;
         });
         globalBpData = Object.values(dataMap).sort((a,b) => new Date(a.date) - new Date(b.date));
-        renderBpChart(); 
+        renderBpChart();
+        rdRenderIntake(rat);   // 기다리지 않는다 — 섭취 기록이 늦게 와도 나머지 화면은 먼저 뜬다
 
         let bpTable = '<table><tr><th>날짜</th><th>시점</th><th>SBP</th><th>DBP</th><th>Mean</th><th>WT</th></tr>';
         [...globalBpData].reverse().forEach(v => { bpTable += `<tr><td>${v.date}</td><td>${v.label}</td><td>${v.sbp||'-'}</td><td>${v.dbp||'-'}</td><td>${v.mean||'-'}</td><td>${v.wt||'-'}</td></tr>`; });
@@ -2333,6 +2339,92 @@ function renderSankeyChart(ctxId, deadRats, colorsMap) {
             }]
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+    });
+}
+
+// ==========================================
+// 랫드 상세 — 음수 · 사료 섭취 (+ 메트포민 도달량)
+//  · 섭취는 케이지 단위로만 잰다. 그 개체가 들어 있던 구간(cageFeeding.ratIds)의 '마리당' 값이다
+//  · 메트포민 도달량은 섭취량 화면과 같은 규칙(metDoseIntervals) — 물 안 간 날은 직전 농도가 이어진다
+//  · 이상·처치일·재실변동·사망발생·주말 구간은 속 빈 점으로 그리고, 상세 표에 사유를 적는다
+// ==========================================
+let rdIntakeRows = [];
+async function rdRenderIntake(rat) {
+    const body = document.getElementById('rd-intake-body');
+    if (!body) return;
+    try {
+        const snap = await db.collection('cageFeeding').where('cohort', '==', String(rat.cohort)).get();
+        const all = snap.docs.map(d => d.data());
+        const mine = all.filter(r => (r.ratIds || []).includes(rat.ratId));
+        if (!mine.length) { body.innerHTML = '케이지 섭취 기록이 없습니다. (케이지별 입력을 쓰기 전 코호트)'; return; }
+
+        // 메트포민 도달량: 케이지의 모든 기록으로 농도를 이어 계산한 뒤 이 개체 구간만 고른다
+        const doseOf = new Map();
+        [...new Set(mine.map(r => String(r.cageId)))].forEach(cid => {
+            metDoseIntervals(all.filter(r => String(r.cageId) === cid)).forEach(iv => doseOf.set(iv.row, iv.dose));
+        });
+        const at = r => r.at?.toMillis?.() || new Date(r.dateStr + 'T12:00:00').getTime();
+        rdIntakeRows = mine.slice().sort((a, b) => at(a) - at(b)).map(r => {
+            const why = [...(r.flags || [])];
+            if (typeof rowSpansWeekend === 'function' && rowSpansWeekend(r)) why.push('주말');
+            return { date: r.dateStr, cage: r.cageId, n: r.ratCount, hours: Number(r.intervalHours) || null,
+                     water: typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0 ? r.waterPerCapita : null,
+                     food: typeof r.foodPerCapita === 'number' && r.foodPerCapita > 0 ? r.foodPerCapita : null,
+                     dose: doseOf.has(r) ? doseOf.get(r) : null, why };
+        });
+        const hasDose = rdIntakeRows.some(x => x.dose > 0);
+        const chk = (id, label, color, on) => `<label style="cursor:pointer; display:flex; align-items:center; font-weight:bold; color:${color};"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} onchange="rdDrawIntake()" style="margin-right:5px; width:auto; transform:scale(1.2);"> ${label}</label>`;
+        body.innerHTML = `
+            <div style="display:flex; justify-content:center; align-items:center; gap:15px; flex-wrap:wrap; margin-bottom:10px; background:var(--paper); border:1px solid var(--rule); padding:8px; border-radius:2px; color:var(--ink);">
+                ${chk('chk-in-water', '물 (mL/마리·일)', '#1565C0', true)}
+                ${chk('chk-in-food', '사료 (g/마리·일)', '#B45309', true)}
+                ${hasDose ? chk('chk-in-dose', '메트포민 (mg/kg/일)', '#7B1FA2', false) : ''}
+            </div>
+            <div class="chart-area"><canvas id="rdIntakeChart"></canvas></div>
+            <div style="font-size:0.78rem; color:var(--ink-soft); margin-top:6px;">케이지 단위로 잰 값을 마리 수로 나눈 것입니다(합사 중엔 같은 케이지 개체와 같은 값). 속 빈 점 = 이상·처치일·재실변동·사망발생·주말 구간.</div>
+            <div style="margin-top:10px; text-align:center;"><button class="btn btn-blue btn-small" onclick="toggleDisplay('rd-intake-table')">Detail ▼</button></div>
+            <div id="rd-intake-table" style="display:none; margin-top:10px;">
+                <table><tr><th>날짜</th><th>케이지</th><th>마리</th><th>구간(h)</th><th>물</th><th>사료</th>${hasDose ? '<th>메트포민</th>' : ''}<th>제외 사유</th></tr>
+                ${rdIntakeRows.slice().reverse().map(x => `<tr><td>${x.date}</td><td>${chEsc(x.cage)}번</td><td>${x.n ?? '-'}</td><td>${x.hours ? x.hours.toFixed(0) : '-'}</td>
+                    <td>${x.water !== null ? x.water.toFixed(1) : '-'}</td><td>${x.food !== null ? x.food.toFixed(1) : '-'}</td>
+                    ${hasDose ? `<td>${x.dose > 0 ? x.dose.toFixed(0) : '-'}</td>` : ''}<td>${chEsc(x.why.join(', '))}</td></tr>`).join('')}
+                </table>
+            </div>`;
+        rdDrawIntake();
+    } catch (e) {
+        console.error(e);
+        body.innerHTML = `<span style="color:var(--stamp);">섭취 기록을 불러오지 못했습니다: ${chEsc(e.message)}</span>`;
+    }
+}
+
+function rdDrawIntake() {
+    const rows = rdIntakeRows;
+    const on = id => { const el = document.getElementById(id); return !!(el && el.checked); };
+    const style = (color, key) => ({
+        borderColor: color, backgroundColor: color, spanGaps: true, tension: 0.15,
+        pointRadius: rows.map(x => x[key] !== null ? (x.why.length ? 4 : 3) : 0),
+        pointBackgroundColor: rows.map(x => x.why.length ? '#fff' : color), pointBorderColor: color, pointBorderWidth: 1.5
+    });
+    const datasets = [];
+    if (on('chk-in-water')) datasets.push({ label: '물 (mL/마리·일)', data: rows.map(x => x.water), yAxisID: 'yW', ...style('#1565C0', 'water') });
+    if (on('chk-in-food')) datasets.push({ label: '사료 (g/마리·일)', data: rows.map(x => x.food), yAxisID: 'yF', ...style('#B45309', 'food') });
+    if (on('chk-in-dose')) datasets.push({ label: '메트포민 (mg/kg/일)', data: rows.map(x => x.dose > 0 ? x.dose : null), yAxisID: 'yD', borderDash: [5, 3], ...style('#7B1FA2', 'dose') });
+    chMakeChart('rdIntakeChart', {
+        type: 'line',
+        // 케이지를 옮긴 날은 같은 날짜가 두 번 나온다 — 뒤의 것에 케이지 번호를 붙여 구분
+        data: { labels: rows.map((x, i) => (i > 0 && rows[i - 1].date === x.date) ? `${x.date} (${x.cage}번)` : x.date), datasets },
+        options: {
+            maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            scales: {
+                yW: { position: 'left', display: on('chk-in-water'), beginAtZero: true, title: { display: true, text: '물 mL' } },
+                yF: { position: 'right', display: on('chk-in-food'), beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: '사료 g' } },
+                yD: { position: 'right', display: on('chk-in-dose'), beginAtZero: true, grid: { drawOnChartArea: false }, title: { display: true, text: 'mg/kg/일' } }
+            },
+            plugins: { tooltip: { callbacks: { footer: (items) => {
+                const x = rows[items[0].dataIndex]; if (!x) return '';
+                return [`${x.cage}번 · ${x.n ?? '?'}마리${x.hours ? ` · ${x.hours.toFixed(0)}시간` : ''}`, ...(x.why.length ? [`제외: ${x.why.join(', ')}`] : [])];
+            } } } }
+        }
     });
 }
 
