@@ -871,7 +871,7 @@ async function saveBatchToDB() {
 
     if (rows.length === 0) return alert("저장할 데이터가 없습니다.");
 
-    if (!confirm(`${rows.length}건의 데이터를 데이터베이스에 저장하시겠습니까?\n(기존 시점에 데이터가 있다면 혈압 값만 합쳐집니다.)`)) return;
+    if (!confirm(`${rows.length}건의 데이터를 데이터베이스에 저장하시겠습니까?\n(같은 날짜 · 같은 시점 기록이 있으면 그 기록에 혈압 값만 합쳐지고, 없으면 새로 만들어집니다.)`)) return;
 
     for (const row of rows) {
         const idInput = row.querySelector('input[id^="save_id_"]');
@@ -891,29 +891,32 @@ async function saveBatchToDB() {
 
         if (!ratId) { alert(`Rat ID가 비어있는 행이 있습니다.`); return; }
         if (!timepoint) { alert(`[${ratId}]의 시점(Timepoint)을 선택해주세요.`); return; }
+        if (!inputDate) { alert(`[${ratId}]의 측정 날짜를 넣어주세요.`); return; }
 
         // ---------------------------------------------------------
-        // [핵심 변경] 기존 데이터 확인 후 병합(Merge) 로직
+        // 기존 데이터 확인 후 병합(Merge) 로직
+        // 같은 개체 · 같은 시점 · **같은 날짜**의 기록에만 합친다.
+        // 예전엔 날짜를 안 봐서, 일일 체중 기록이 전부 'Manual'인 개체에 Manual로 올리면
+        // 문서 ID 순 첫 기록(아무 날짜)에 붙었다 (2026-10-16 C13.5 03·11·12 → 8/24·9/29·9/28).
+        // 같은 날 기록이 없으면 새로 만든다.
         // ---------------------------------------------------------
         const docRef = db.collection("measurements").where("ratId", "==", ratId).where("timepoint", "==", timepoint);
-        
+
         const promise = docRef.get().then(async (snapshot) => {
-            if (!snapshot.empty) {
-                // [Case A] 이미 해당 시점(timepoint)의 데이터가 존재함 -> 업데이트 (Merge)
-                // 날짜(date)는 건드리지 않고, 혈압 데이터만 덮어씌움
-                const existingDoc = snapshot.docs[0]; // 첫 번째 일치 문서 가져옴
+            const sameDay = snapshot.docs.filter(d => d.data().date === inputDate);
+            if (sameDay.length) {
+                // [Case A] 같은 날 · 같은 시점 데이터가 있음 -> 혈압만 덮어씀 (체중 · 메모 유지)
+                const existingDoc = sameDay[0];
                 await db.collection("measurements").doc(existingDoc.id).update({
                     sbp: Number(sourceData.sbp),
                     dbp: Number(sourceData.dbp),
                     mean: Number(sourceData.mean),
                     // 기존에 있던 weight, memo 등은 그대로 유지됨
-                    // date도 업데이트하지 않음 (기존 날짜 유지)
                     timestamp: firebase.firestore.FieldValue.serverTimestamp() // 수정 시간 갱신
                 });
                 console.log(`[Update] ${ratId} - ${timepoint} 병합 완료`);
             } else {
-                // [Case B] 해당 시점 데이터가 없음 -> 새로 생성
-                // 이때는 기준이 될 날짜가 필요하므로 입력받은 측정일을 사용
+                // [Case B] 그날 · 그 시점 데이터가 없음 -> 입력받은 측정일로 새로 생성
                 await db.collection("measurements").add({
                     ratId: ratId,
                     timepoint: timepoint,
