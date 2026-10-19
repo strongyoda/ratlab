@@ -18,6 +18,7 @@ const EV_TYPES = {
     ligation:  { label: '결찰',          kind: 'save',  field: 'surgeryDate' },
     nacl:      { label: '고염식 시작',    kind: 'save',  field: 'naclStartDate' },
     bapn:      { label: 'BAPN 시작',     kind: 'save',  field: 'bapnStartDate' },
+    assign:    { label: '군 배정 (전환일)', kind: 'assign' },
     bp:        { label: 'BP 측정',       kind: 'route', view: 'bp',    note: 'BP 계산 & 입력에서 CSV를 올립니다. 그날 케이지별 입력에는 「BP일」 표시를 켜세요 — 반동 구간이 농도 기준에서 빠집니다.' },
     mr:        { label: 'MR 촬영',       kind: 'save',  field: 'mrDates' },
     move:      { label: '이동 · 합사',    kind: 'route', view: 'cages', note: '케이지 현황에서 끌어다 옮깁니다. 오늘 그 케이지의 급여 입력을 먼저 끝내고 옮기세요 — 입력 전에 옮기면 체중·마리수가 어긋난 채 조제됩니다.' },
@@ -53,6 +54,7 @@ function evCheck(type, r) {
         if (st.key !== 'dead') return { block: true, text: '생존' };
         return st.judged ? { block: true, text: '판정 완료' } : null;
     }
+    if (type === 'assign') return null;
     if (st.key === 'dead') return { block: true, text: '사망' };
     if (type === 'death') return evHousing[r.ratId] ? null : { block: true, text: '케이지 배정 없음 — 케이지 현황에서 먼저' };
     if (type === 'mr') return r.surgeryDate ? null : { text: '결찰 기록 없음 (POD 계산 불가)' };
@@ -172,6 +174,7 @@ function evRender() {
         </div>
     </div>
     ${evType ? evTypeCard() : `<div class="card" style="color:var(--ink-soft); font-size:0.88rem;">위에서 사건을 고르세요.</div>`}`;
+    if (evType === 'assign' && typeof raMount === 'function') raMount();
 }
 
 function evTypeCard() {
@@ -184,6 +187,7 @@ function evTypeCard() {
     </div>`;
     if (t.kind === 'judge') return evJudgeCard();
     if (t.kind === 'death') return evDeathCard();
+    if (t.kind === 'assign') return `<div id="ra-box"></div>`;   // assign.js raMount 가 채운다
     return evSaveCard();
 }
 
