@@ -317,6 +317,12 @@ async function saveTotalEdit(ratDocId, ratIdArg) {
         mrDates: mrDatesArr
     };
 
+    // 케이지에 살아 있는 개체를 '사망'으로 바꾸는 수정은 여기서 막는다 — 케이지별 입력으로 (global.js deathBlocked)
+    if (ratUpdate.status === '사망') {
+        const cur = await ratRef.get();
+        if (cur.exists && cur.data().status !== '사망' && await deathBlocked(cur.data().ratId)) return;
+    }
+
     const tables = ['meas-tbody', 'daily-tbody'];
     // 목록 선택 방식으로 바뀌면서 edit-id 입력창이 사라졌다 → 인자로 받은 값을 우선 사용
     const idInp = document.getElementById('edit-id');
@@ -1186,6 +1192,9 @@ async function saveCodFinal() {
         closeCod();
     } else if(codTargetDocId) {
         try {
+            // 케이지에 살아 있는 개체의 사망은 여기서 저장하지 않는다 — 케이지별 입력으로 (global.js deathBlocked)
+            const cur = await db.collection("rats").doc(codTargetDocId).get();
+            if (cur.exists && cur.data().status !== '사망' && await deathBlocked(cur.data().ratId)) { closeCod(); return; }
             await db.collection("rats").doc(codTargetDocId).update({
                 codFull: finalStr,
                 status: '사망',
@@ -1800,6 +1809,12 @@ window.saveSimpleCod = async function() {
     };
     
     if (deathDateEl && deathDateEl.value) {
+        // 케이지에 살아 있는 개체의 사망은 여기서 저장하지 않는다 — 케이지별 입력으로 (global.js deathBlocked)
+        const cur = await db.collection("rats").doc(activeCodRatId).get();
+        if (cur.exists && cur.data().status !== '사망' && await deathBlocked(cur.data().ratId)) {
+            document.getElementById('simple-cod-modal').style.display = 'none';   // 케이지 입력으로 넘어갔으니 창은 닫는다
+            return;
+        }
         updateData.deathDate = deathDateEl.value;
         updateData.status = '사망';
     }

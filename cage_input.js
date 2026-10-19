@@ -31,6 +31,9 @@ let ciForm = {};         // 입력 중인 값
 let ciLastSaved = null;  // 방금 저장한 케이지의 조제 지시 (다음 케이지로 넘어가도 계속 보이게)
 let ciDate = null;       // 작업일. 기본은 오늘이고, 어제 것을 오늘 넣을 때 바꾼다
 let ciViewToken = 0;     // 화면을 다시 연 횟수. 전역 상태를 공유하므로 옛 화면의 저장을 막는다
+// 다른 화면(사건 기록 · 미처리)이 "이 코호트의 이 케이지를 열고, 이 개체를 사망으로 체크해 둬라"고
+// 부탁할 때 쓴다. 화면이 새로 그려질 때 한 번 소비된다. (global.js 가 아니라 여기 두는 이유: 이 화면 전용)
+let ciPending = null;    // { cohort, cageId, dead: [ratId] }
 
 // 작업일 기준 시각(ms). 오늘이면 지금, 과거 날짜면 '그날의 지금 시각'.
 // 구간 길이와 기록 순서가 여기서 나온다.
@@ -104,6 +107,30 @@ async function renderCageInputView(main) {
             .sort((a, b) => Number(b) - Number(a));
         sel.innerHTML = nums.map(n => `<option value="${n}">코호트 ${n}</option>`).join('');
     } catch (e) { sel.innerHTML = '<option value="">불러오기 실패</option>'; }
+
+    // 다른 화면이 특정 케이지를 열어 달라고 했으면 바로 거기로
+    if (ciPending) { const p = ciPending; ciPending = null; await ciJumpTo(p.cohort, p.cageId, p.dead, myToken); }
+}
+
+// 특정 케이지로 바로 들어간다. 코호트가 다르면 목록부터 다시 읽는다.
+// 사망 개체(dead)를 넘기면 그 개체의 사망 체크를 미리 켜 둔다 — 「사건 기록」의 사망은 이 길로만 온다.
+// 사망을 잔량·체중과 같은 저장에 묶어야 마지막 구간이 남고 재실이 제때 닫힌다.
+async function ciJumpTo(cohort, cageId, dead, token) {
+    const sel = document.getElementById('ci-cohort-sel');
+    if (!sel) return;
+    if (String(ciCohort) !== String(cohort) || !ciCages.length) {
+        sel.value = String(cohort);
+        if (sel.value !== String(cohort)) return alert(`코호트 ${cohort}를 찾을 수 없습니다.`);
+        await ciLoad(token !== undefined ? token : ciViewToken);
+    }
+    if (!cageId) return;
+    if (!ciCages.some(c => String(c.id) === String(cageId))) {
+        return alert('그 케이지는 지금 이 코호트 목록에 없습니다. (이미 비었거나 재실이 닫혔을 수 있습니다)');
+    }
+    ciOpen(cageId);
+    (dead || []).forEach(id => { if (ciForm.rats && ciForm.rats[id]) ciForm.rats[id].dead = true; });
+    if ((dead || []).length) ciRenderForm();
+    window.scrollTo(0, 0);
 }
 
 // 작업일 변경. 이미 목록을 불러왔으면 그 날짜 기준으로 다시 읽는다.
@@ -321,6 +348,9 @@ function ciRenderList() {
                 const isDone = ciDoneToday.has(String(c.id));
                 const n = ciOccupants(c.id).length;
                 const st = states[c.id];
+                // 오늘 특이사항 (사료 교체·투약 시작·BP/MR·주말 물). 참고용(ink)은 목록에선 뺀다
+                const todays = cageTodayItems(c, ciOccupants(c.id), ciConfig, ciCageRows[c.id] || [], ciDate || getTodayStr())
+                    .filter(i => i.face !== 'ink');
                 // 오늘 시작이거나 날짜가 비어 있으면 테두리로 눈에 띄게 한다
                 const urgent = st && (st.key === 'nodate' || st.today);
                 return `<button data-ci-open="${ciEsc(c.id)}" class="db-tap"
@@ -332,6 +362,9 @@ function ciRenderList() {
                     ${st ? `<br><span style="display:inline-block; margin-top:3px;
                                  font-size:0.68rem; font-weight:bold; color:${st.color};">
                         ${st.label}${st.partial ? ' ⚠' : ''}</span>` : ''}
+                    ${todays.length ? `<br><span style="display:inline-block; margin-top:3px; font-size:0.68rem; font-weight:bold;
+                                 color:${todays.some(i => i.face === 'pink') ? 'var(--stamp)' : todays.some(i => i.face === 'green') ? 'var(--approve)' : '#7A5C00'};">
+                        ${todays.map(i => ciEsc(i.text.split(' — ')[0])).join(' · ')}</span>` : ''}
                 </button>`;
             }).join('')}
         </div>
@@ -524,6 +557,17 @@ function ciOpen(cageId) {
     };
     ciOccupants(cageId).forEach(r => ciEnsureRatForm(r.ratId));
 
+    // 오늘 이 케이지의 특이사항 (global.js cageTodayItems). 처치 예정일이면 표시를 미리 켠다 —
+    // 빼먹으면 반동값이 농도 기준 최댓값에 걸쇠로 걸린다. 오늘 저장한 기록을 다시 여는 경우는 그때 표시를 따른다.
+    const todayStr = ciDate || getTodayStr();
+    ciForm._today = cageTodayItems(cage, ciOccupants(cageId), ciConfig, ciCageRows[ciCurrent] || [], todayStr);
+    ciForm._autoFlags = [];
+    if (!(last && last.dateStr === todayStr)) {
+        const kinds = new Set(ciForm._today.map(i => i.kind));
+        const auto = kinds.has('mr') ? '처치일' : kinds.has('bp') ? 'BP일' : kinds.has('surgery') ? '수술일' : null;
+        if (auto) { ciForm.flags.push(auto); ciForm._autoFlags.push(auto); }
+    }
+
     // 오늘 이미 저장한 케이지면 그때 넣은 값을 그대로 되살린다.
     // '입력 완료'만 뜨고 값을 다시 볼 수 없어, 물·사료처럼 개체 상세로도 확인이
     // 안 되는 항목은 제대로 들어갔는지 확인할 길이 아예 없었다.
@@ -575,6 +619,30 @@ function ciRestoreToday(row) {
         }
     });
     ciForm._restored = true;
+}
+
+// 오늘 이 케이지에서 할 일 (ciOpen 에서 계산). 스톡 컬러는 칩이 아니라 면 — soft 배경 + 진한 테두리 + 그 면의 어두운 잉크
+const CI_TODAY_FACE = {
+    green:  'background:var(--stock-green-soft); border:1px solid var(--approve); color:var(--approve);',
+    canary: 'background:var(--stock-canary-soft); border:1px solid #E3C55C; color:#6B571C;',
+    pink:   'background:var(--stock-pink-soft); border:1px solid var(--stock-pink); color:#7C2A30;',
+    ink:    'background:var(--sheet); border:1px solid var(--rule); color:var(--ink-soft);'
+};
+function ciTodayCard() {
+    const items = ciForm._today || [];
+    if (!items.length) return '';
+    const auto = ciForm._autoFlags || [];
+    // 사료 교체일에 「물 안 감」이면 투약 시작이 사료와 어긋난다 — 저장 때도 한 번 더 묻는다
+    const foodNoWater = items.some(i => i.kind === 'food') && ciForm.noWater;
+    return `
+    <div class="card" style="padding-top:10px; padding-bottom:10px;">
+        <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:6px;">오늘 이 케이지</div>
+        ${items.map(i => `<span style="display:inline-block; padding:2px 8px; margin:2px 4px 2px 0; border-radius:2px; font-size:0.8rem; font-weight:600; ${CI_TODAY_FACE[i.face] || CI_TODAY_FACE.ink}">${ciEsc(i.text)}</span>`).join('')}
+        ${auto.length ? `<div style="font-size:0.77rem; color:var(--ink-soft); margin-top:4px;">
+            「${auto.map(ciEsc).join('·')}」 표시를 미리 켜 두었습니다. 실제로 안 했으면 아래 1단계에서 끄세요.</div>` : ''}
+        ${foodNoWater ? `<div style="margin-top:6px; padding:6px 9px; border-radius:2px; background:var(--stock-pink-soft); border:1px solid var(--stock-pink); color:#7C2A30; font-size:0.8rem;">
+            <b>사료를 바꾸는 날은 물도 같이 갈아야 합니다.</b> 투약 시작이 사료 시작과 같은 날이어야 하는 규칙입니다 — 「물 안 감」을 끄세요.</div>` : ''}
+    </div>`;
 }
 
 function ciRenderForm() {
@@ -634,6 +702,7 @@ function ciRenderForm() {
             ${ciPrevFeed[ciCurrent] ? ciPrevFeed[ciCurrent].dateStr + ' 기록' : '직전 기록'}과 비교해 다시 계산됩니다.
         </div>` : ''}
     </div>
+    ${ciTodayCard()}
 
     <div class="card">
         <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">1 · 꺼내서 무게 재기</div>
@@ -1796,6 +1865,13 @@ async function ciSave() {
         }
     }
 
+    // 사료 교체일(= 투약 시작일)에 물을 안 갈면 투약 시작이 사료와 어긋난다 (global.js cageTodayItems)
+    if ((ciForm._today || []).some(i => i.kind === 'food') && ciForm.noWater &&
+        !confirm('오늘은 사료 교체일이라 물도 같이 갈아야 합니다 (투약 시작이 사료 시작과 같은 날이어야 합니다).\n\n그래도 물을 안 갈고 저장할까요?')) {
+        ciSaving = false; ciBusy(false);
+        return;
+    }
+
     const now = firebase.firestore.Timestamp.fromDate(new Date(ciWorkMs()));
     const dateStr = ciDate || getTodayStr();
     const by = (firebase.auth().currentUser && firebase.auth().currentUser.email) || null;
@@ -2052,6 +2128,14 @@ async function ciSave() {
 
         if (next) { ciOpen(next.id); window.scrollTo(0, 0); }
         else { ciBackToList(); window.scrollTo(0, 0); }
+
+        // 사망 저장 → 사인 입력으로 이어준다. 라운드는 이 탭에 그대로 두고 상세는 새 탭에 연다.
+        // 미루면 「미처리」 목록에 '사인 없음'으로 남아 잊히지 않는다.
+        if (deadRats.length && typeof createNewTab === 'function'
+            && confirm(`${deadRats.map(r => r.ratId).join(', ')} 사망으로 저장했습니다.\n\n지금 사인(COD)을 입력할까요?\n취소하면 「미처리」 목록에 남습니다.`)) {
+            createNewTab('blank');
+            go('detail', deadRats[0].ratId, activeTabId);
+        }
     }
     } catch (e) {
         console.error(e);

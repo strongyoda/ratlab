@@ -54,11 +54,13 @@ async function saveDaily() {
     const wt = wtInput ? wtInput.value : '';
     const tp = tpInput ? tpInput.value : '';
 
-    if (!dead && total === 0 && !note && !wt) { 
-        alert("상태 점수, 메모, 체중 중 최소 하나 이상을 입력해주세요."); 
-        return; 
+    if (!dead && total === 0 && !note && !wt) {
+        alert("상태 점수, 메모, 체중 중 최소 하나 이상을 입력해주세요.");
+        return;
     }
-    
+    // 케이지에 살아 있는 개체의 사망은 여기서 저장하지 않는다 — 케이지별 입력으로 (global.js deathBlocked)
+    if (dead && await deathBlocked(id)) return;
+
     try {
         let savedCount = 0;
 

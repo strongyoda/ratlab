@@ -657,8 +657,11 @@ function prepCoefFor(ctx) {
     const ceilSince = (sinces.length && sinces.length === n) ? sinces.sort().pop() : null;
     const ceilRef = ceilDose > 0 ? doseCeilingRef(rows, { since: ceilSince, today }) : null;
 
-    const opts = fillOptions(h);
-    const maxFill = Math.max(...(opts.length ? opts : [700]));
+    // '7일치' 판정은 평소 통(500·700) 기준으로 한다. 1000 통까지 넣으면 2마리가 마리당 70 mL 아래일 때
+    // 전부 '비정상'으로 빠져 라운드 전 원액 추정이 통째로 사라진다 (C14 램프 구간, 상한 기준이 아직 없을 때).
+    // 실제 조제(ciUpdateDose)는 그날 채우는 양으로 판정하므로 여기만 맞춘다.
+    const stdOpts = fillOptions({ waterFill: h.waterFill, waterFillLong: h.waterFillLong });
+    const maxFill = Math.max(...(stdOpts.length ? stdOpts : fillOptions(h).length ? fillOptions(h) : [700]));
     const out = { pc, bw, n, gain: gi.gain, k: null, capped: false };
     // 농도 상한이 걸리면 7일치 판정을 건너뛴다 — 한 마리 남은 케이지가 '비정상'으로 빠지지 않게 (케이지별 입력과 같은 판정)
     if (pc && bw && n && (pcUsableForPrep(pc, n, maxFill) || (ceilDose > 0 && ceilRef > 0))) {
@@ -756,6 +759,123 @@ function metDoseIntervals(rows) {
                            && !(r.flags || []).some(f => MET_DOSE_DROP.includes(f)) });
     });
     return out;
+}
+
+// ============================================================
+//  오늘 이 케이지의 특이사항 — 설정(투약 규칙·처치 시점)과 개체 날짜에서 계산한다.
+//  케이지별 입력의 목록·폼에 뜨고, 처치 예정일에는 「BP일/처치일」 표시를 미리 켜는 근거가 된다.
+//  사료 교체일에 물을 안 갈아 투약 시작이 어긋나거나, BP일 표시를 빼먹어 반동값이 농도 기준에
+//  걸리는 사고는 전부 '그 케이지를 열 때 몰라서' 난다. 없으면 [] = 평소대로.
+//  face: green(오늘 시작) · canary(표시할 것) · pink(막힘·부족) · ink(참고)
+// ============================================================
+function doseAnchorDate(rule, r) {
+    return doseDateOf(rule.startAnchor === 'ovx' ? r.ovxDate : rule.startAnchor === 'arrival' ? r.arrivalDate : r.surgeryDate);
+}
+function cageTodayItems(cage, occ, cfg, rows, today) {
+    const out = [];
+    if (!cfg || !occ || !occ.length || !today) return out;
+    const gkey = cageGroupKey(occ, cage);
+    const dow = new Date(today + 'T00:00:00').getDay();
+    const diff = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
+
+    (cfg.dosing || []).forEach(rule => {
+        if (!(rule.groups || []).includes(gkey) || !(Number(rule.value) > 0)) return;
+        let start = null, missing = 0;
+        occ.forEach(r => {
+            const b = doseAnchorDate(rule, r);
+            if (!b) { missing++; return; }
+            const d = doseShift(b, Number(rule.startOffset) || 0);
+            if (!start || d < start) start = d;
+        });
+        if (!start) {
+            if (missing) out.push({ kind: 'nodate', face: 'pink', text: `${rule.substance} 시작일 판정 불가 — ${
+                { ovx: 'OVX일', arrival: '반입일' }[rule.startAnchor] || '수술일'} 비어 있음` });
+            return;
+        }
+        const dd = diff(today, start);
+        if (dd === 0) {
+            // 사료 교체일은 물까지 통째로 가는 날 — 메트포민은 "BAPN과 같은 날 시작"이 군 정의라(2026-08-14)
+            // 사료만 바꾸고 물을 다음 정규일에 갈면 투약 시작이 어긋난다.
+            out.push(rule.medium === 'food'
+                ? { kind: 'food', face: 'green', text: `${rule.substance} 사료 시작 — 사료 교체 · 물까지 통째로 간다` }
+                : { kind: 'dose', face: 'green', text: `${rule.substance} 투약 시작 — 오늘 채우는 물부터 조제` });
+        } else if (dd > 0 && dd <= 3) {
+            out.push({ kind: 'soon', face: 'canary', text: `${rule.substance} D-${dd}` });
+        }
+    });
+
+    if (occ.some(r => doseDateOf(r.surgeryDate) === today || doseDateOf(r.ovxDate) === today))
+        out.push({ kind: 'surgery', face: 'canary', text: '오늘 수술 — 「수술일」 표시' });
+
+    // 처치 시점(BP·MR) = 수술일 + 설정 시점. 그날 표시를 켜야 반동 구간이 농도 기준에서 빠진다.
+    const tps = cfg.timepoints || {};
+    const ev = {};
+    occ.forEach(r => {
+        const surg = doseDateOf(r.surgeryDate);
+        if (!surg) return;
+        ['bp', 'mr'].forEach(kind => (tps[kind] || []).forEach(tp => {
+            const d = doseTpDays(tp);
+            if (d !== null && doseShift(surg, d) === today) (ev[kind] = ev[kind] || new Set()).add(tp);
+        }));
+    });
+    if (ev.bp) out.push({ kind: 'bp', face: 'canary', text: `BP ${[...ev.bp].join('·')} — 「BP일」 표시` });
+    if (ev.mr) out.push({ kind: 'mr', face: 'canary', text: `MR ${[...ev.mr].join('·')} — 「처치일」 표시` });
+
+    // 주말 물: 목·금에만. 제일 큰 통으로도 3일을 못 넘기면 주말 보충이 필요하다.
+    if (dow === 4 || dow === 5) {
+        const o = weekendWaterOutlook(rows, occ.length, cfg.housing);
+        if (o && o.short) out.push({ kind: 'weekend', face: 'pink', text: `주말 물 ${o.days.toFixed(1)}일치 — ${o.fill} mL로도 부족, 주말 보충 필요` });
+        else if (dow === 5 && o) out.push({ kind: 'friday', face: 'ink', text: `금요일 — 큰 통 (${o.fill} mL면 ${o.days.toFixed(1)}일)` });
+    }
+    if (occ.length === 1) out.push({ kind: 'single', face: 'ink', text: '1마리 케이지' });
+    return out;
+}
+
+// ============================================================
+//  화면 사이 이동 (사건 기록 · 예외 · 사망 가드 공용)
+// ============================================================
+// 케이지별 입력을 새 탭에 열고 그 케이지로 바로 들어간다. 사망 개체를 넘기면 체크까지 켜 둔다.
+// 이미 열린 케이지별 입력 탭이 있으면 그 탭을 쓴다 — 전역 상태(ciForm)를 두 탭이 나눠 쓰면 서로 덮어쓴다.
+async function wfOpenCage(cohort, cageId, dead) {
+    const existing = appTabs.find(t => t.view === 'cageinput');
+    if (existing) {
+        switchTab(existing.id);
+        await ciJumpTo(cohort, cageId, dead || []);
+    } else {
+        ciPending = { cohort: String(cohort), cageId: String(cageId), dead: dead || [] };
+        createNewTab('blank');
+        await go('cageinput', null, activeTabId);
+    }
+}
+// 개체 상세를 새 탭에 연다 (지금 보던 화면은 그대로 둔다)
+function wfOpenDetail(ratId) {
+    createNewTab('blank');
+    go('detail', ratId, activeTabId);
+}
+const wfDow = ['일', '월', '화', '수', '목', '금', '토'];
+
+// 사망은 케이지별 입력에서만 저장한다 — 물·사료 잔량, 체중과 같은 저장에 묶여야 마지막 구간이 남고
+// 재실이 제때 닫힌다. 다른 화면(개체 상세 사인 창 · 상태&체중 · 데이터 수정)이 케이지에 살아 있는
+// 개체의 사망을 저장하려 하면 막고 그 케이지 입력으로 보낸다. 소급 입력은 현실적으로 불가능하다
+// (파일럿 02G0 10/2 · 06G0 9/29가 이 길로 마지막 잔량을 잃었다, 2026-10-19).
+// 이미 사망 상태(정정)거나 케이지 배정이 없는 개체는 막지 않는다. true = 막았음 → 호출자는 저장을 중단.
+async function deathBlocked(ratId) {
+    if (!ratId) return false;
+    const hs = await db.collection('ratHousing').where('ratId', '==', ratId).where('to', '==', null).get();
+    if (hs.empty) return false;
+    const h = hs.docs[0].data();
+    let cohort = h.cohort;
+    if (!cohort) {
+        const rs = await db.collection('rats').where('ratId', '==', ratId).get();
+        rs.forEach(d => { cohort = d.data().cohort; });
+    }
+    const cg = await db.collection('cages').doc(String(h.cageId)).get();
+    const number = cg.exists ? cg.data().number : h.cageId;
+    const ok = confirm(`${ratId}은(는) ${number}번 케이지에 살아 있는 개체입니다.\n\n` +
+        `사망은 「케이지별 입력」에서 물·사료 잔량, 체중과 함께 저장합니다 — 그래야 마지막 구간이 남고 재실이 제때 닫힙니다. ` +
+        `여기서는 저장하지 않습니다.\n\n${number}번 케이지 입력을 지금 열까요?`);
+    if (ok && typeof wfOpenCage === 'function') wfOpenCage(cohort || '', h.cageId, [ratId]);
+    return true;
 }
 
 // 채울 수 있는 물의 양 후보. 평일 구간과 긴 구간(주말·연휴 앞)의 두 가지다.

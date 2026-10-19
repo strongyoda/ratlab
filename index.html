@@ -19,25 +19,27 @@
     <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
-    <script src="global.js?v=20261007a"></script>
-    <script src="router.js?v=20260929c"></script>
-    <script src="input.js?v=20260910a"></script>
+    <script src="global.js?v=20261019b"></script>
+    <script src="router.js?v=20261019b"></script>
+    <script src="input.js?v=20261019a"></script>
     <script src="are_map.js?v=20260930d"></script>
     <script src="chart.js?v=20261007d"></script>
     <script src="cohort_config.js?v=20260930a"></script>
     <script src="cage_manager.js?v=20260910a"></script>
     <script src="dashboard.js?v=20261002a"></script>
-    <script src="cage_input.js?v=20261007a"></script>
+    <script src="cage_input.js?v=20261019c"></script>
+    <script src="events.js?v=20261019a"></script>
+    <script src="inbox.js?v=20261019b"></script>
     <script src="cohort_exposure.js?v=20261007b"></script>
     <script src="intake_analysis.js?v=20261007a"></script>
     <script src="rat_detail.js?v=20261007b"></script>
     <script src="data_edit.js?v=20260910a"></script>
     <script src="batch_entry.js?v=20261007a"></script>
     <script src="media.js?v=20260903a"></script>
-    <script src="admin.js?v=20261016a"></script>
+    <script src="admin.js?v=20261019b"></script>
     <script src="paper_export.js?v=20261007b"></script>
     
-    <link rel="stylesheet" href="style.css?v=20260904e">
+    <link rel="stylesheet" href="style.css?v=20261019a">
 </head>
 <body>
 
@@ -60,7 +62,8 @@
         
         /* 2. 헤더는 최상단(1000) 유지, 사이드바(900)와 어두운 배경(800)은 헤더 아래에서만 동작 */
         header { z-index: 1000 !important; height: 60px !important; position: fixed !important; width: 100% !important; top: 0 !important; left: 0 !important; }
-        #sidebar { z-index: 900 !important; top: 60px !important; height: calc(100vh - 60px) !important; padding-top: 0 !important; position: fixed !important; }
+        /* 메뉴는 화면 높이에 비례해 들어간다(style.css nav). 그래도 못 들어가는 극단적으로 낮은 화면에서만 스크롤 */
+        #sidebar { z-index: 900 !important; top: 60px !important; height: calc(100vh - 60px) !important; padding-top: 0 !important; position: fixed !important; overflow-y: auto; box-sizing: border-box; }
         #overlay { z-index: 800 !important; top: 60px !important; height: calc(100vh - 60px) !important; position: fixed !important; }
         
         /* 3. 각 탭 내부 여백 설정 */
@@ -89,15 +92,20 @@
         <nav id="sidebar">
             <div class="nav-section">기록</div>
             <div class="nav-item" onclick="go('cageinput')"><i class="material-icons">assignment_turned_in</i>케이지별 입력</div>
+            <div class="nav-item" onclick="go('events')"><i class="material-icons">event_note</i>사건 기록</div>
             <div class="nav-item" onclick="go('batch')"><i class="material-icons">bolt</i>일괄 입력 (수술·MR)</div>
             <div class="nav-item" onclick="go('daily')"><i class="material-icons">edit_note</i>상태 &amp; 체중 기록</div>
             <div class="nav-item" onclick="go('bp')"><i class="material-icons">analytics</i>BP 계산 &amp; 입력</div>
 
-            <div class="nav-section">현황</div>
-            <div class="nav-item" onclick="go('home')"><i class="material-icons">dashboard</i>대시보드</div>
+            <div class="nav-section">동물</div>
             <div class="nav-item" onclick="go('dash')"><i class="material-icons">pets</i>랫드 명부</div>
             <div class="nav-item" onclick="go('cages')"><i class="material-icons">grid_view</i>케이지 현황</div>
             <div class="nav-item" onclick="go('detail')"><i class="material-icons">search</i>랫드 상세보기</div>
+
+            <div class="nav-section">점검</div>
+            <div class="nav-item" onclick="go('home')"><i class="material-icons">dashboard</i>대시보드</div>
+            <div class="nav-item" onclick="go('inbox')"><i class="material-icons">inbox</i>미처리</div>
+            <div class="nav-item" onclick="go('admin')"><i class="material-icons">admin_panel_settings</i>데이터 관리</div>
 
             <div class="nav-section">분석</div>
             <div class="nav-item" onclick="go('intake')"><i class="material-icons">local_drink</i>섭취량 · 투여량</div>
@@ -108,7 +116,6 @@
             <div class="nav-section">설정</div>
             <div class="nav-item" onclick="go('cohortcfg')"><i class="material-icons">settings</i>코호트 설정</div>
             <div class="nav-item" onclick="go('add')"><i class="material-icons">add_circle</i>신규 등록</div>
-            <div class="nav-item" onclick="go('admin')"><i class="material-icons">admin_panel_settings</i>데이터 관리</div>
 
             <div class="nav-item" onclick="logout()" style="margin-top:auto"><i class="material-icons">logout</i>로그아웃</div>
         </nav>

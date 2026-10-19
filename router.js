@@ -80,10 +80,10 @@ function switchTab(tId) {
     const tab = appTabs.find(t => t.id === tId);
     if (targetView && targetView.innerHTML.trim() === '') {
         go(tab.view, null, tId);
-    } else if (targetView && tab && tab.view === 'home' && typeof renderDashboardView === 'function') {
-        // 대시보드는 다른 탭에서 입력한 내용이 바로 반영돼야 한다. 처음 열 때 한 번만 계산하면
+    } else if (targetView && tab && LIVE_VIEWS[tab.view] && typeof window[LIVE_VIEWS[tab.view]] === 'function') {
+        // 대시보드·오늘·예외는 다른 탭에서 입력한 내용이 바로 반영돼야 한다. 처음 열 때 한 번만 계산하면
         // 케이지별 입력을 마치고 돌아와도 아침 숫자가 그대로 남아 두 화면의 조제 지시가 갈려 보였다.
-        renderDashboardView(targetView);
+        window[LIVE_VIEWS[tab.view]](targetView);
     }
 }
 
@@ -105,8 +105,11 @@ function closeTab(tId, event) {
     }
 }
 
+// 탭으로 돌아올 때마다 다시 그리는 화면 (기록에서 계산한 '지금' 상태를 보여주는 것들)
+const LIVE_VIEWS = { home: 'renderDashboardView', inbox: 'renderInboxView' };
+
 function getTitleForView(view) {
-    const map = { 'home':'대시보드', 'dash':'랫드 명부', 'detail':'랫드 상세', 'cohort':'코호트 분석', 'compare':'코호트 비교', 'trend':'조건분석', 'daily':'데일리', 'add':'신규등록', 'rec':'혈압/체중', 'bp':'BP계산기', 'admin':'데이터관리', 'cohortcfg':'코호트 설정', 'cages':'케이지 현황', 'cageinput':'케이지별 입력', 'intake':'섭취량·투여량', 'batch':'일괄 입력' };
+    const map = { 'events':'사건 기록', 'inbox':'미처리', 'home':'대시보드', 'dash':'랫드 명부', 'detail':'랫드 상세', 'cohort':'코호트 분석', 'compare':'코호트 비교', 'trend':'조건분석', 'daily':'데일리', 'add':'신규등록', 'rec':'혈압/체중', 'bp':'BP계산기', 'admin':'데이터관리', 'cohortcfg':'코호트 설정', 'cages':'케이지 현황', 'cageinput':'케이지별 입력', 'intake':'섭취량·투여량', 'batch':'일괄 입력' };
     return map[view] || '새 탭';
 }
 // ==========================================
@@ -502,6 +505,10 @@ async function go(view, targetId = null, specificTabId = null) {
         await renderCageStatusView(main);
         return;
     }
+
+    // 사건 기록 · 예외
+    if (view === 'events') { await renderEventsView(main); return; }
+    if (view === 'inbox')  { await renderInboxView(main);  return; }
 
     // 대시보드 (사이트를 열면 처음 보이는 화면)
     if (view === 'home') {
