@@ -638,7 +638,13 @@ function prepCoefFor(ctx) {
     const h = (cfg && cfg.housing) || {};
     const n = (occ || []).length;
     const winOpt = { windowDays: Number(h.doseWindowDays) || 0, today };
-    const pc = recentWaterPc(rows, winOpt) ?? recentWaterPc(rows, Object.assign({ includeWeekend: true }, winOpt));
+    // 고염식을 끊은 케이지는 끊은 뒤 구간만 기준으로 (doseBaseRows). 부족분 장부는 그대로 rows.
+    const base = doseBaseRows(rows, cfg, occ, today);
+    let pc = recentWaterPc(base.rows, winOpt) ?? recentWaterPc(base.rows, Object.assign({ includeWeekend: true }, winOpt));
+    // 끊은 다음 날 아침: 라운드에서 잴 첫 구간(끊은 뒤)은 아직 모르고, 옛 기준(고염식)으로 추정하면 원액이 모자란다.
+    // 원액 미리보기만 고염식 전 수준(옛 기준의 1/4, 파일럿 고염식 전 17~24 vs 고염식 75~90 mL)으로 넉넉히 잡는다 — 남는 쪽으로만 틀린다.
+    const dietGuess = base.weak && base.since && today > base.since && pc > 0;
+    if (dietGuess) pc = pc / 4;
 
     const rampDays = Number(rule.rampDays) || 0;
     const surgs = occ.map(r => doseDateOf(r.surgeryDate));
@@ -655,7 +661,7 @@ function prepCoefFor(ctx) {
     const ceilDose = Number(rule.ceilingDose) || 0;
     const sinces = surgs.filter(Boolean).map(s => doseShift(s, rampDays));
     const ceilSince = (sinces.length && sinces.length === n) ? sinces.sort().pop() : null;
-    const ceilRef = ceilDose > 0 ? doseCeilingRef(rows, { since: ceilSince, today }) : null;
+    const ceilRef = ceilDose > 0 ? doseCeilingRef(doseRowsAfterDiet(rows, base.since), { since: ceilSince, today }) : null;
 
     // '7일치' 판정은 평소 통(500·700) 기준으로 한다. 1000 통까지 넣으면 2마리가 마리당 70 mL 아래일 때
     // 전부 '비정상'으로 빠져 라운드 전 원액 추정이 통째로 사라진다 (C14 램프 구간, 상한 기준이 아직 없을 때).
@@ -664,7 +670,7 @@ function prepCoefFor(ctx) {
     const maxFill = Math.max(...(stdOpts.length ? stdOpts : fillOptions(h).length ? fillOptions(h) : [700]));
     const out = { pc, bw, n, gain: gi.gain, k: null, capped: false };
     // 농도 상한이 걸리면 7일치 판정을 건너뛴다 — 한 마리 남은 케이지가 '비정상'으로 빠지지 않게 (케이지별 입력과 같은 판정)
-    if (pc && bw && n && (pcUsableForPrep(pc, n, maxFill) || (ceilDose > 0 && ceilRef > 0))) {
+    if (pc && bw && n && (pcUsableForPrep(pc, n, maxFill) || (ceilDose > 0 && ceilRef > 0) || dietGuess)) {
         out.k = Number(rule.value) * gi.gain * (bw / 1000) / (pc * n);
         if (ceilRef > 0) {
             const kCap = ceilDose * (bw / 1000) / (ceilRef * n);
@@ -771,38 +777,137 @@ function metDoseIntervals(rows) {
 function doseAnchorDate(rule, r) {
     return doseDateOf(rule.startAnchor === 'ovx' ? r.ovxDate : rule.startAnchor === 'arrival' ? r.arrivalDate : r.surgeryDate);
 }
+function doseAnchorOf(anchor, r) {
+    return doseDateOf(anchor === 'ovx' ? r.ovxDate : anchor === 'arrival' ? r.arrivalDate
+                    : anchor === 'ligation' ? r.surgeryDate : null);
+}
+
+// 규칙 하나가 이 케이지에 들어가는 기간. start = 첫날, end = 빠지는 첫날(그날부터 안 들어감), 끝까지면 null.
+// 사료·물은 케이지 공용이라 한 마리라도 시작하면 시작이고, 전부 끝나야 끝이다.
+// endAnchor 가 'end' 가 아니면 '기준 + endOffset' 일까지 들어간다 (cage_input.js ciDoseWindow 와 같은 판정).
+function doseRuleWindow(rule, occ) {
+    let start = null, end = null, missing = 0, endMissing = 0;
+    const ends = rule.endAnchor && rule.endAnchor !== 'end';
+    (occ || []).forEach(r => {
+        const b = doseAnchorOf(rule.startAnchor || 'ligation', r);
+        if (!b) { missing++; return; }
+        const s = doseShift(b, Number(rule.startOffset) || 0);
+        if (!start || s < start) start = s;
+        if (!ends) return;
+        const e = doseAnchorOf(rule.endAnchor, r);
+        if (!e) { endMissing++; return; }
+        const off = doseShift(e, (Number(rule.endOffset) || 0) + 1);
+        if (!end || off > end) end = off;
+    });
+    if (ends && endMissing) end = null;     // 끝 기준일이 빈 개체가 있으면 끝을 모른다 → 계속 들어가는 것으로
+    return { start, end, missing };
+}
+function doseRuleOnDate(rule, occ, day) {
+    const w = doseRuleWindow(rule, occ);
+    return !!w.start && w.start <= day && !(w.end && day >= w.end);
+}
+// 사료 1 g 속 약물 (mg). 8% = 80 mg/g. 염 형태로 넣은 것(BAPN fumarate 0.12% → free base 0.066%)은
+// rule.freeBaseFraction 으로 free base 환산 — 전환 전후 BAPN 노출을 같은 단위로 잇기 위해서다.
+function foodRuleMgPerG(rule) {
+    return Number(rule.value) * 10 * (Number(rule.freeBaseFraction) || 1);
+}
+// 급여 구간의 가운데 날짜 (YYYY-MM-DD). 사료 규칙이 그 구간에 들어가 있었는지 판정한다.
+// 사료는 라운드에서 바뀌므로 전환일 아침에 끝나는 구간(금→월)은 가운데가 주말 → 옛 사료, 다음 구간부터 새 사료.
+function feedRowMidDate(row) {
+    const end = row.at?.toMillis?.() || (row.dateStr ? new Date(row.dateStr + 'T12:00:00').getTime() : null);
+    if (!end) return null;
+    const h = Number(row.intervalHours) || 24;
+    const d = new Date(end - h * 1800000);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+// 고염식이 끝나는 날 (C14 G3 = 고염식 중단 + 메트포민, 2026-10-20 교수님 결정).
+// 고염식을 끊으면 물 섭취가 고염식 전 수준(마리당 17~24 mL)으로 1/3~1/4이 된다. 그 전 기록(75~90 mL)이
+// 메트포민 농도 기준값·농도 상한에 남아 있으면 끊은 뒤 2주 가까이 목표의 1/3~1/2만 들어간다
+// (10/08 시뮬: 리셋 없으면 전환 후 2주 70~110 mg/kg/일, 누적 129~146 — G2와 용량 차가 비교에 섞인다).
+// 이 날 이후에 끝난 구간만 기준으로 쓴다(doseRowsAfterDiet). 오늘 이전에 끝난 경우만 돌려준다.
+function doseDietResetDate(cfg, occ, today) {
+    const gkey = cageGroupKey(occ);
+    let out = null;
+    ((cfg && cfg.dosing) || []).forEach(rule => {
+        if (rule.medium !== 'food' || !/NaCl|염/i.test(rule.substance || '')) return;
+        if (!rule.endAnchor || rule.endAnchor === 'end' || !(rule.groups || []).includes(gkey)) return;
+        const w = doseRuleWindow(rule, occ);
+        if (w.end && w.end <= today && (!out || w.end > out)) out = w.end;
+    });
+    return out;
+}
+// 식이가 바뀐 날(since) 이후에 끝난 구간만. since 당일 기록은 그 전 구간(고염식 시절)이라 뺀다.
+function doseRowsAfterDiet(rows, since) {
+    if (!since) return rows || [];
+    return (rows || []).filter(r => r.dateStr && r.dateStr > since);
+}
+// 농도 기준값(recentWaterPc)에 쓸 기록. 전환 뒤 구간이 아직 없으면(전환 당일 채움) 옛 기록으로 간다 —
+// 옛 기준이 더 커서 농도가 낮게 잡히는 쪽이라 안전하다. 다음 날부터는 전환 뒤 구간만 본다.
+// 반환: { rows, since, weak } — weak = 리셋할 날인데 전환 뒤 구간이 없어 옛 기록을 쓰는 중
+function doseBaseRows(rows, cfg, occ, today) {
+    const since = doseDietResetDate(cfg, occ, today);
+    if (!since) return { rows: rows || [], since: null, weak: false };
+    const post = doseRowsAfterDiet(rows, since);
+    const usable = post.some(r => !(r.flags || []).length && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0);
+    return usable ? { rows: post, since, weak: false } : { rows: rows || [], since, weak: true };
+}
+
 function cageTodayItems(cage, occ, cfg, rows, today) {
     const out = [];
     if (!cfg || !occ || !occ.length || !today) return out;
     const gkey = cageGroupKey(occ, cage);
     const dow = new Date(today + 'T00:00:00').getDay();
     const diff = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
+    const rules = cfg.dosing || [];
 
-    (cfg.dosing || []).forEach(rule => {
+    // 군 배정 전(G0)인데 투약(물) 시작일이 왔다 — 전환일. 배정 → 라운드 순서가 깨지면 G3 케이지에 고염 사료가,
+    // 메트포민 군에 맨물이 들어간다. 이 케이지의 사료·투약 안내는 배정 뒤 군으로 다시 봐야 하므로 여기서 멈춘다.
+    if (gkey === 'G0') {
+        const sw = rules.filter(x => x.medium === 'water' && Number(x.value) > 0)
+            .map(x => doseRuleWindow(x, occ).start).filter(Boolean).sort()[0];
+        if (sw && sw <= today) {
+            out.push({ kind: 'unassigned', face: 'pink', text: sw === today
+                ? '군 배정 전 — 오늘이 전환일입니다. 「사건 기록 → 군 배정」을 먼저 하고 이 케이지를 다시 여세요'
+                : `군 배정 전 — 전환일(${sw})이 지났습니다. 「사건 기록 → 군 배정」부터` });
+            return out;
+        }
+    }
+
+    let foodToday = false;
+    rules.forEach(rule => {
         if (!(rule.groups || []).includes(gkey) || !(Number(rule.value) > 0)) return;
-        let start = null, missing = 0;
-        occ.forEach(r => {
-            const b = doseAnchorDate(rule, r);
-            if (!b) { missing++; return; }
-            const d = doseShift(b, Number(rule.startOffset) || 0);
-            if (!start || d < start) start = d;
-        });
+        const { start, missing } = doseRuleWindow(rule, occ);
         if (!start) {
-            if (missing) out.push({ kind: 'nodate', face: 'pink', text: `${rule.substance} 시작일 판정 불가 — ${
-                { ovx: 'OVX일', arrival: '반입일' }[rule.startAnchor] || '수술일'} 비어 있음` });
+            // 전원이 비어 있으면 아직 안 한 처치(결찰 전 BAPN 등) — 반입부터 3주 내내 빨간 칸이 뜨면 정작 누락을 못 본다.
+            // 참고(ink)로만 두고, 일부만 빈 확실한 누락은 아래에서 빨갛게 (대시보드 dbAlerts 와 같은 구분).
+            const an = { ovx: 'OVX', arrival: '반입' }[rule.startAnchor] || '결찰';
+            if (missing) out.push({ kind: 'nodate', face: 'ink', text: `${rule.substance} — ${an} 후 시작` });
             return;
         }
+        if (missing) out.push({ kind: 'nodate', face: 'pink', text: `${rule.substance} — ${missing}마리 ${{ ovx: 'OVX', arrival: '반입' }[rule.startAnchor] || '결찰'} 날짜 비어 있음 (입력 누락)` });
         const dd = diff(today, start);
         if (dd === 0) {
-            // 사료 교체일은 물까지 통째로 가는 날 — 메트포민은 "BAPN과 같은 날 시작"이 군 정의라(2026-08-14)
-            // 사료만 바꾸고 물을 다음 정규일에 갈면 투약 시작이 어긋난다.
-            out.push(rule.medium === 'food'
-                ? { kind: 'food', face: 'green', text: `${rule.substance} 사료 시작 — 사료 교체 · 물까지 통째로 간다` }
-                : { kind: 'dose', face: 'green', text: `${rule.substance} 투약 시작 — 오늘 채우는 물부터 조제` });
+            if (rule.medium === 'food') foodToday = true;
+            else out.push({ kind: 'dose', face: 'green', text: `${rule.substance} 투약 시작 — 오늘 채우는 물부터 조제` });
         } else if (dd > 0 && dd <= 3) {
             out.push({ kind: 'soon', face: 'canary', text: `${rule.substance} D-${dd}` });
         }
     });
+
+    // 사료가 바뀌는 날: 오늘부터 넣을 사료를 이름으로 적는다. 사료 전환일엔 군마다 넣을 포대가 다르다
+    // (C14: G1·G2 BAPN fumarate + 고염, G3 BAPN fumarate + 일반 염도). 고염식이 오늘 끝나는 케이지는 따로 빨갛게.
+    // 사료 교체일은 물까지 통째로 가는 날 — 투약 시작이 사료와 같은 날이어야 한다(2026-08-14).
+    const mine = rules.filter(x => x.medium === 'food' && (x.groups || []).includes(gkey) && Number(x.value) > 0);
+    const saltEnds = mine.some(x => /NaCl|염/i.test(x.substance || '') && doseRuleWindow(x, occ).end === today);
+    const anyEnds = mine.some(x => doseRuleWindow(x, occ).end === today);
+    if (foodToday || anyEnds) {
+        const on = mine.filter(x => doseRuleOnDate(x, occ, today));
+        const names = on.map(x => `${x.substance} ${x.value}%`);
+        if (!on.some(x => /NaCl|염/i.test(x.substance || '')) && mine.some(x => /NaCl|염/i.test(x.substance || ''))) names.push('일반 염도');
+        out.push({ kind: 'food', face: 'green', text: `사료 교체 → ${names.join(' + ') || '일반 사료'} — 물까지 통째로 간다` });
+    }
+    if (saltEnds) out.push({ kind: 'saltstop', face: 'pink', text: '고염식 중단 — 오늘부터 일반 염도 사료. 고염 포대 쓰지 말 것' });
 
     if (occ.some(r => doseDateOf(r.surgeryDate) === today || doseDateOf(r.ovxDate) === today))
         out.push({ kind: 'surgery', face: 'canary', text: '오늘 수술 — 「수술일」 표시' });

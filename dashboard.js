@@ -475,6 +475,22 @@ function dbAlerts() {
     const { alive, cages, configs, feeds, meas, today } = dbData;
     const out = [];
 
+    // 전환일이 왔는데 군 배정 전(G0)인 개체 — 아래 「오늘 만들 원액」도 배정 뒤 군을 봐야 맞다.
+    // 배정 → 원액 → 라운드 순서. 배정 전에 원액을 만들면 메트포민 케이지가 빠진 양이 나온다.
+    const unassigned = {};
+    alive.forEach(r => {
+        if (cageGroupKey([r]) !== 'G0') return;
+        const cfg = configs[String(r.cohort)];
+        const sw = ((cfg && cfg.dosing) || []).filter(x => x.medium === 'water' && Number(x.value) > 0)
+            .map(x => doseRuleWindow(x, [r]).start).filter(Boolean).sort()[0];
+        if (sw && sw <= today) (unassigned[sw] = unassigned[sw] || []).push(r.ratId);
+    });
+    Object.entries(unassigned).forEach(([sw, ids]) => out.push({
+        level: 'red',
+        head: `군 배정 전 ${ids.length}마리 — 전환일 ${sw}${sw === today ? ' (오늘)' : ''}`,
+        body: `「사건 기록 → 군 배정」을 먼저 하세요. 배정 전에는 사료(고염/일반 염도)·메트포민 안내와 오늘 만들 원액이 틀립니다. ${ids.slice(0, 12).map(dbEsc).join(', ')}${ids.length > 12 ? ' 외' : ''}`
+    }));
+
     // 기준일이 비어 있으면 투약 시작일을 판정할 수 없다.
     // 약물마다 따로 알리면 같은 사실이 여러 번 뜨므로 기준일 단위로 묶는다.
     // 전부 비어 있으면 아직 안 한 처치일 수 있고, 일부만 비어 있으면 확실한 누락이다.
@@ -854,6 +870,9 @@ function dbStages(cohort) {
                 return;
             }
             const diff = dbDiffDays(start, today);
+            // 끝이 있는 규칙(C14 BAPN free base · G3 고염식)은 끝난 뒤 '진행 중'이 계속 오르면 안 된다
+            const end = (rule.endAnchor && rule.endAnchor !== 'end') ? doseRuleWindow(rule, target).end : null;
+            if (end && today >= end) { out.push({ label, state: 'done', text: `종료 (${end}부터 빠짐)` }); return; }
             out.push(diff >= 0
                 ? { label, state: 'on',   text: `진행 중 D+${diff}` }
                 : { label, state: 'wait', text: `D${diff} (${start})` });

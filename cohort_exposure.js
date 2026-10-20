@@ -63,6 +63,9 @@ async function coRenderExposure(boxId, rats, sfx) {
             .find(d => pred(d) && (d.groups || []).includes(ceGkey(r)) && Number(d.value) > 0) || null;
         const waterRule = r => ruleOf(r, d => d.medium === 'water');
         const foodRule = (r, re) => ruleOf(r, d => d.medium === 'food' && re.test(d.substance || ''));
+        // 같은 물질의 사료 규칙이 기간을 나눠 여럿일 수 있다 (C14: BAPN free base → fumarate, G3 고염식은 전환일에 끝)
+        const foodRules = (r, re) => ((cfgBy[String(r.cohort)] || {}).dosing || [])
+            .filter(d => d.medium === 'food' && re.test(d.substance || '') && (d.groups || []).includes(ceGkey(r)) && Number(d.value) > 0);
 
         // ── 케이지 단위 ─────────────────────────────────────
         // 케이지의 군 · 결찰일은 그 케이지에 들어간 이 분석 대상 개체에서 가져온다
@@ -95,16 +98,16 @@ async function coRenderExposure(boxId, rats, sfx) {
             if ((row.flags || []).some(f => MET_DOSE_DROP.includes(f))) return null;
             const kgd = rowKgDays(row);   // 재실 가중 kg·일 (global.js) — 옛 기록은 총체중 × 마리당 일수
             if (!(kgd > 0) || !(row.animalDays > 0)) return null;
-            return row.foodPerCapita * row.animalDays * (Number(pctRule.value) * 10) / kgd;
+            return row.foodPerCapita * row.animalDays * foodRuleMgPerG(pctRule) / kgd;   // 염은 free base 환산
         };
         const cageFood = {};   // cageKey -> { bapn:[{pod,dose,days,end}], nacl:[...] }
         Object.values(cages).forEach(cg => {
             const ref = cg.rats[0];
             const out = { bapn: [], nacl: [] };
             [['bapn', /BAPN/i], ['nacl', /NaCl|염/i]].forEach(([k, re]) => {
-                const rule = foodRule(ref, re);
-                if (!rule) return;
-                const starts = cg.rats.map(r => ceStartMs(r, rule)).filter(v => v !== null);
+                const rules = foodRules(ref, re);
+                if (!rules.length) return;
+                const starts = cg.rats.map(r => ceStartMs(r, rules[0])).filter(v => v !== null);
                 if (!starts.length) return;
                 const st = Math.min(...starts);      // 사료는 케이지 공용 — 한 마리라도 시작하면 케이지 전체가 먹는다
                 cg.rows.forEach(row => {
@@ -112,6 +115,11 @@ async function coRenderExposure(boxId, rats, sfx) {
                     const days = row.animalDays / (row.ratCount || 1);
                     const start = end - (Number(row.intervalHours) || days * 24) * 3600000;
                     if (start < st) return;
+                    // 기간이 나뉜 규칙은 그 구간 가운데 날에 들어가 있던 것 (global.js doseRuleOnDate)
+                    const timed = rules.length > 1 || rules.some(d => d.endAnchor && d.endAnchor !== 'end');
+                    const mid = feedRowMidDate(row);
+                    const rule = !timed ? rules[0] : (mid ? rules.find(d => doseRuleOnDate(d, cg.rats, mid)) : null);
+                    if (!rule) return;
                     const dose = foodDoseOf(row, rule);
                     if (dose === null || !(days > 0)) return;
                     out[k].push({ pod: podOf(cg, end), dose, days, start, end, row });
@@ -289,13 +297,14 @@ function ceHtml(sfx, groups, gInfo, bapnAll, naclAll, metAll, ratRows) {
             군 사이 차이가 작아야 결론이 방어됩니다. <b>기준</b>은 메트포민이 없는 군입니다.
         </div>
         <div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:0.86rem;">
-            <thead><tr><th style="padding:7px; text-align:left;">군</th>${th('BAPN<br><span style="font-weight:normal;">mg/kg/일</span>')}${th('NaCl<br><span style="font-weight:normal;">mg/kg/일</span>')}${th('BAPN 기준 대비')}${th('케이지')}</tr></thead>
+            <thead><tr><th style="padding:7px; text-align:left;">군</th>${th('BAPN<br><span style="font-weight:normal;">mg/kg/일 (free base)</span>')}${th('NaCl<br><span style="font-weight:normal;">mg/kg/일</span>')}${th('BAPN 기준 대비')}${th('케이지')}</tr></thead>
             <tbody>${foodRows || '<tr><td colspan="5" style="padding:8px; color:var(--ink-soft);">사료 속 약물 기록이 있는 군이 없습니다.</td></tr>'}</tbody>
         </table></div>
         <div style="height:230px; margin-top:14px;"><canvas id="ceBapn${sfx}"></canvas></div>
         <div style="font-size:0.76rem; color:var(--ink-soft); margin-top:6px;">
             결찰 후 주(POD 7일) 단위 · 선은 케이지 평균, 옅은 띠는 ± 표준오차 · n = 케이지 수.
-            NaCl은 같은 사료에 들어 있어 BAPN과 군 간 비율이 같습니다. 10% 넘게 벌어지면 빨갛게 표시합니다.
+            BAPN은 free base 환산값입니다(fumarate는 × 0.547). 고염식을 유지하는 군끼리는 NaCl이 같은 사료에 들어 있어 BAPN과 비율이 같고,
+            고염식을 끊는 군(C14 G3)은 전환일부터 NaCl이 빠지는 것이 처치입니다. 교란 점검은 BAPN 열로 합니다. 10% 넘게 벌어지면 빨갛게 표시합니다.
         </div>
     </div>
 

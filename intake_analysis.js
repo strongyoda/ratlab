@@ -207,10 +207,15 @@ function iaRender() {
         // 메트포민: 실제로 마신 물 × 구간 시작 시점의 물통 농도 ÷ 케이지 총 체중
         const md = iaMetDose(r);
         if (md !== null) byGroup[g][c].met.push(md);
-        // 사료 속 물질
+        // 사료 속 물질 — 그 구간에 실제로 들어가 있던 규칙만 (global.js doseRuleOnDate).
+        // C14는 BAPN이 free base → fumarate로 바뀌고 G3는 고염식이 전환일에 끝난다. 예전엔 기간을 안 봐서
+        // 시작 전 구간에도 고염식을 곱했고, 두 BAPN 규칙이 한 구간에 겹쳐 들어갔다 (2026-10-20 수정).
+        const rowRats = iaRats.filter(x => (r.ratIds || []).includes(x.ratId));
+        const mid = feedRowMidDate(r);
         (iaConfig && iaConfig.dosing || []).filter(d => d.medium === 'food').forEach(d => {
             if (!(d.groups || []).includes(g)) return;
-            const v = iaFoodDose(r, Number(d.value) * 10);   // % → mg/g
+            if (rowRats.length && mid && !doseRuleOnDate(d, rowRats, mid)) return;
+            const v = iaFoodDose(r, foodRuleMgPerG(d));   // % → mg/g (염은 free base 환산)
             if (v === null) return;
             if (/BAPN/i.test(d.substance)) byGroup[g][c].bapn.push(v);
             else if (/NaCl|염/i.test(d.substance)) byGroup[g][c].nacl.push(v);
@@ -239,7 +244,7 @@ function iaRender() {
         </tr>`;
     }).join('');
 
-    // 목표 대비 도달률 — 물 투약 규칙이 군마다 따로 있으므로(G2 조기·G3 후기)
+    // 목표 대비 도달률 — 물 투약 규칙이 군마다 따로 있으므로(C14 G2 메트포민 · G3 고염식 중단 + 메트포민)
     // 규칙 하나만 찾으면 나머지 군의 도달률이 표시되지 않는다. 군별로 규칙을 매칭한다.
     const waterRules = ((iaConfig && iaConfig.dosing) || []).filter(d => d.medium === 'water');
     const metRule = waterRules[0] || null;   // 문장 생성 등에서 대표로 쓰는 규칙
@@ -283,7 +288,7 @@ function iaRender() {
                 <th style="padding:8px;">물<br><span style="font-weight:normal; font-size:0.75rem;">mL/day/마리</span></th>
                 <th style="padding:8px;">사료<br><span style="font-weight:normal; font-size:0.75rem;">g/day/마리</span></th>
                 <th style="padding:8px;">Metformin<br><span style="font-weight:normal; font-size:0.75rem;">mg/kg/day</span></th>
-                <th style="padding:8px;">BAPN<br><span style="font-weight:normal; font-size:0.75rem;">mg/kg/day</span></th>
+                <th style="padding:8px;">BAPN<br><span style="font-weight:normal; font-size:0.75rem;">mg/kg/day (free base)</span></th>
                 <th style="padding:8px;">NaCl<br><span style="font-weight:normal; font-size:0.75rem;">mg/kg/day</span></th>
             </tr></thead>
             <tbody>${rowsHtml}</tbody>
@@ -482,7 +487,7 @@ function iaCageTable(usable) {
     const opt = c => { const s = iaCageSum[c];
         return `<option value="${c}" ${c === iaCageSel ? 'selected' : ''}>${c}번${s.latest !== null
             ? ` · 메트포민 ${s.latest.toFixed(0)}` : ''} · 물 ${s.w ? s.w.mean.toFixed(0) : '-'}</option>`; };
-    // 군이 둘 이상이면 군별로 묶는다 (C14: G1 미투약 · G2 조기 · G3 후기)
+    // 군이 둘 이상이면 군별로 묶는다 (C14: G1 대조 · G2 메트포민 · G3 고염식 중단 + 메트포민)
     const groups = [...new Set(keys.map(c => iaCageSum[c].g))].sort();
     const options = groups.length > 1
         ? groups.map(g => `<optgroup label="${iaGroupName(g)}">${keys.filter(c => iaCageSum[c].g === g).map(opt).join('')}</optgroup>`).join('')

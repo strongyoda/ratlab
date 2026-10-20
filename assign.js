@@ -24,7 +24,7 @@ const RA_DEFAULT_SLOTS = {
     5: { mon: ['G3', 'G1', 'G2'], tue: ['G3', 'G3', 'G1'] },
     6: { mon: ['G1', 'G2', 'G3'], tue: ['G1', 'G1', 'G2'] }
 };
-const RA_SWITCH_OFFSET = 21;   // 결찰(월요일) + 21일 = 전환일
+const RA_SWITCH_OFFSET = 21;   // 결찰(월요일) + 21일 = 배정일. 배치 전체를 이날 배정하고, 화 결찰 케이지는 다음 날(자기 결찰 +21) 전환 (2026-10-20)
 const RA_BATCH_OPS = 400;      // Firestore 묶음 쓰기 한도(500) 아래로
 
 let raState = null;   // { cohort, batch, rats, housing, cageNo, cfg, strata, slots, plan, record, busy }
@@ -286,7 +286,10 @@ async function raRenderBatch(batchNo, binfo, today) {
     if (st.other.length) warn.push(`결찰 요일이 월·화가 아니거나 섞인 케이지 ${st.other.map(c => c.number + '번').join(', ')} — 층을 정할 수 없어 뺍니다.`);
     if (st.none.length) warn.push(`케이지 배정이 없는 개체 ${st.none.map(r => r.ratId).join(', ')} — 케이지 현황에서 먼저 넣으세요.`);
     const foodRules = ((raState.cfg.dosing) || []).filter(d => d.medium === 'food');
-    if (foodRules.length && foodRules.some(d => !(d.groups || []).includes('G0'))) warn.push('코호트 설정의 고염식·BAPN 규칙에 <b>G0</b>가 없습니다 — 배정 전 개체의 사료 노출이 계산되지 않습니다. 코호트 설정에서 G0를 추가하세요.');
+    // 물질마다 G0를 덮는 규칙이 하나라도 있으면 된다 — G3만의 고염식 규칙(전환일에 끝남)처럼 G0가 없는 규칙은 정상
+    const g0Missing = [/BAPN/i, /NaCl|염/i].some(re => foodRules.some(d => re.test(d.substance || ''))
+        && !foodRules.some(d => re.test(d.substance || '') && (d.groups || []).includes('G0')));
+    if (g0Missing) warn.push('코호트 설정의 고염식·BAPN 규칙에 <b>G0</b>가 없습니다 — 배정 전 개체의 사료 노출이 계산되지 않습니다. 코호트 설정에서 G0를 추가하세요.');
     const mixed = [...st.mon, ...st.tue].filter(c => c.groups.length > 1);
     if (mixed.length) warn.push(`한 케이지에 군이 섞여 있습니다: ${mixed.map(c => c.number + '번').join(', ')} — 케이지 현황에서 정리한 뒤 진행하세요.`);
     // 결찰 전(수술일 없음)이라 층이 없는 케이지도 G0 되돌리기 대상이다 — B1처럼 번호로 군이 붙은 채 등록된 배치

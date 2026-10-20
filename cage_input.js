@@ -21,6 +21,7 @@ let ciPrevFeed = {};     // cageId -> 오늘 이전의 마지막 기록 (오늘 
 let ciRecentPc = {};     // cageId -> 최근 마리당 섭취량(mL/day). 주말 낀 구간은 뺀 값
 let ciRecentPcAny = {};  // 위와 같되 주말 구간도 포함. 평일 기록이 아예 없을 때만 쓴다
 let ciCageRows = {};     // cageId -> 최근 기록(신→구). 직접 입력할 때 근거를 보여주려고 남긴다
+let ciDietBase = {};     // cageId -> doseBaseRows 결과 { rows, since, weak } — 고염식을 끊은 케이지의 기준 구간
 let ciWeighDates = {};   // cageId -> Set('YYYY-MM-DD'). 체중을 잰 날 = 그날 케이지를 열었다는 뜻
 let ciTodayMeas = {};    // ratId -> 오늘 저장된 체중 (다시 열었을 때 되살리기 위함)
 let ciTodayLogs = {};    // ratId -> 오늘 저장된 상태 점수·메모
@@ -241,7 +242,7 @@ function ciWaterPcSuspect(c) {
 const ciRowSpansWeekend = rowSpansWeekend;
 
 async function ciLoadHistory() {
-    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {}; ciWeighDates = {}; ciCageRows = {};
+    ciLastFeed = {}; ciPrevFeed = {}; ciRecentPc = {}; ciRecentPcAny = {}; ciWeighDates = {}; ciCageRows = {}; ciDietBase = {};
     ciTodayMeas = {}; ciTodayLogs = {};
     const todayStr = ciDate || getTodayStr();
 
@@ -310,8 +311,11 @@ async function ciLoadHistory() {
         // 대시보드와 같은 값을 써야 '오늘 만들 원액'이 두 곳에서 갈리지 않는다.
         const winOpt = { windowDays: (ciConfig && ciConfig.housing && Number(ciConfig.housing.doseWindowDays)) || 0,
                          today: todayStr };
-        const weekday = recentWaterPc(rows, winOpt);
-        const any = recentWaterPc(rows, Object.assign({ includeWeekend: true }, winOpt));
+        // 고염식을 끊은 케이지(C14 G3)는 끊은 뒤 구간만 기준으로 (global.js doseBaseRows)
+        const base = doseBaseRows(rows, ciConfig, ciOccupants(cage.id), todayStr);
+        ciDietBase[cage.id] = base;
+        const weekday = recentWaterPc(base.rows, winOpt);
+        const any = recentWaterPc(base.rows, Object.assign({ includeWeekend: true }, winOpt));
         if (weekday !== null) ciRecentPc[cage.id] = weekday;
         if (any !== null) ciRecentPcAny[cage.id] = any;
     });
@@ -1644,7 +1648,12 @@ function ciUpdateDose() {
     // 하한 : 아파서 덜 마신 값으로 농도를 잡으면 회복하는 순간 과다투여가 된다.
     // 대비책 경로뿐 아니라 '이번 구간' 값에도 걸어야 한다.
     // (파일럿에서 이번 구간 마리당 1.5 mL 가 그대로 쓰여 원액 194 cc 가 나온 적이 있다)
-    const floorPc = ciRecentPc[ciCurrent] || 0;
+    // 단, 고염식을 끊은 다음 날 처음 재는 구간(전환 뒤 첫 구간)은 하한을 옛 고염식 기준값으로 걸지 않는다 —
+    // 끊어서 줄어든 게 정상인데 옛 값(마리당 80)으로 하한을 걸면 하루 더 1/3만 들어간다.
+    const dietNow = ciDietBase[ciCurrent] || {};
+    const firstPost = dietNow.weak && dietNow.since && (ciDate || getTodayStr()) > dietNow.since && pcSource === '이번 구간';
+    const floorPc = firstPost ? 0 : (ciRecentPc[ciCurrent] || 0);
+    if (firstPost) pcSource = '이번 구간 (고염식 중단 뒤 첫 구간)';
     if (!(Number(ciForm.manualPc) > 0) && floorPc > expectedPc) {
         expectedPc = floorPc;
         pcSource = '최근 최대 (이번 구간이 그보다 낮아 하한 적용)';
@@ -1666,7 +1675,11 @@ function ciUpdateDose() {
         .map(s => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + rampDays);
                     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); });
     const ceilSince = sinceDates.length === alive.length ? sinceDates.sort().pop() : null;
-    let ceilRef = ceilDose > 0 ? doseCeilingRef(ciCageRows[ciCurrent], { since: ceilSince, today: todayStr }) : null;
+    const dietBase = ciDietBase[ciCurrent] || { since: null, weak: false };
+    if (dietBase.since && !(Number(ciForm.manualPc) > 0) && !firstPost) pcSource += dietBase.weak
+        ? ' · 고염식 중단 당일 — 끊은 뒤 구간이 아직 없어 고염식 시절 기록 기준(농도 낮은 쪽)'
+        : ` · 고염식 중단(${dietBase.since}) 뒤 구간만`;
+    let ceilRef = ceilDose > 0 ? doseCeilingRef(doseRowsAfterDiet(ciCageRows[ciCurrent], dietBase.since), { since: ceilSince, today: todayStr }) : null;
     if (ceilDose > 0 && ceilSince && todayStr >= ceilSince && c && c.waterPc > 0 && !c.spansWeekend && !flagged)
         ceilRef = Math.max(ceilRef || 0, c.waterPc);
 
@@ -1863,6 +1876,13 @@ async function ciSave() {
                 }
             }
         }
+    }
+
+    // 전환일인데 군 배정 전(G0) — 사료·투약이 배정 뒤 군을 봐야 한다 (global.js cageTodayItems)
+    if ((ciForm._today || []).some(i => i.kind === 'unassigned') &&
+        !confirm('이 케이지는 아직 군 배정 전(G0)인데 사료 전환일이 왔습니다.\n「사건 기록 → 군 배정」을 먼저 해야 이 케이지에 넣을 사료(고염/일반 염도)와 메트포민이 정해집니다.\n\n그래도 지금 저장할까요?')) {
+        ciSaving = false; ciBusy(false);
+        return;
     }
 
     // 사료 교체일(= 투약 시작일)에 물을 안 갈면 투약 시작이 사료와 어긋난다 (global.js cageTodayItems)
