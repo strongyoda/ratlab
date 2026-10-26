@@ -246,7 +246,9 @@ async function rdRenderCageInfo(ratId, containerId) {
         const fs = await db.collection('cageFeeding').where('dateStr', '>=', cutoff.toISOString().slice(0, 10)).get();
         const rows = [];
         fs.forEach(d => { const v = d.data();
-            if (String(v.cageId) === String(current.cageId) && typeof v.waterPerCapita === 'number') rows.push(v); });
+            // 같은 번호를 다른 코호트가 쓴 기록은 뺀다 (케이지 번호 재사용, 2026-10-26)
+            if (String(v.cageId) === String(current.cageId) && (!current.cohort || String(v.cohort) === String(current.cohort))
+                && typeof v.waterPerCapita === 'number') rows.push(v); });
         rows.sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
         const recent = rows.filter(r => !(r.flags || []).length).slice(0, 7);
 
@@ -256,7 +258,7 @@ async function rdRenderCageInfo(ratId, containerId) {
         };
         const w = avg('waterPerCapita'), f = avg('foodPerCapita');
         const last = rows[0];
-        const since = current.from?.toDate ? current.from.toDate().toISOString().slice(0, 10) : '-';
+        const since = doseDateOf(current.from) || '-';   // 한국 시각 날짜 (toISOString은 UTC라 오전 9시 전 입실이 전날로 보였다)
 
         box.innerHTML = doseHtml + `
         <div style="display:flex; gap:10px; flex-wrap:wrap;">

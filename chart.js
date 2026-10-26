@@ -563,10 +563,11 @@ async function loadDetailData(forceId = null) {
                         <h3 class="mono" style="margin:0; font-size:1.5rem; color:var(--ink); letter-spacing:-0.02em; white-space:nowrap;">${chEsc(id)}</h3>
                         ${typeof batchChipHtml === 'function' ? batchChipHtml(rat, null, { size: '0.8rem' }) : ''}
                         <select data-grp-change data-doc="${docId}" data-rat="${chEsc(id)}"
-                                title="그룹 변경 (선택 시 모든 연동 데이터가 새 ID로 자동 이동)" aria-label="그룹 변경"
+                                ${Number(rat.cohort) >= 14 ? 'disabled title="군은 「사건 기록 → 군 배정」에서만 바꿉니다"' : 'title="그룹 변경 (선택 시 모든 연동 데이터가 새 ID로 자동 이동)"'} aria-label="그룹 변경"
                                 style="background:var(--sheet); color:var(--ink); border:1px solid var(--ink); border-radius:2px; padding:2px 8px; font-weight:bold; font-size:0.85rem; font-family:var(--font-mono); cursor:pointer; outline:none; appearance:none; -webkit-appearance:none; -moz-appearance:none; padding-right:22px; background-image:url('data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'10\\' height=\\'10\\' viewBox=\\'0 0 24 24\\' fill=\\'%2323282E\\'><path d=\\'M7 10l5 5 5-5z\\'/></svg>'); background-repeat:no-repeat; background-position:right 6px center;">
                             ${[0,1,2,3,4,5].map(n => `<option value="${n}" ${currentGroupNum == n ? 'selected' : ''}>G${n}</option>`).join('')}
                         </select>
+                        ${Number(rat.cohort) >= 14 ? `<span style="font-size:0.72rem; color:var(--ink-soft); white-space:nowrap;">군은 「사건 기록 → 군 배정」에서만 바꿉니다</span>` : ''}
                     </div>
                     <button class="btn-small" data-simple-cod data-doc="${docId}" data-cod="${chEsc(rat.cod || '')}" data-are="${chEsc(rat.are || '')}" data-death="${rat.deathDate || getTodayStr()}"
                             style="background:${rat.status==='생존'?'var(--approve)':'var(--stamp)'}; color:white; padding:6px 15px; display:flex; align-items:center; gap:5px; border:none; border-radius:2px; cursor:pointer;" title="클릭하여 사망 정보 수정">

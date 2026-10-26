@@ -10,6 +10,20 @@
 // ============================================================
 
 let evCohort = null, evType = null, evRats = [], evHousing = {}, evCageNo = {}, evPicked = new Set(), evCfg = null;
+// 배치(반입 차수) 거르기 — 「가능한 전부」가 다른 배치까지 결찰일을 쓰던 것을 막는다 (2026-10-26 점검)
+let evBatch = '';
+const evBatchOf = r => typeof getBatchNo === 'function' ? getBatchNo(r, (evCfg && evCfg.housing && evCfg.housing.batchSize) || 12) : null;
+const evVisible = () => evBatch ? evRats.filter(r => evBatchOf(r) === evBatch) : evRats;
+function evBatchSummary(list) {
+    const m = {};
+    list.forEach(r => { const b = evBatchOf(r); if (b) m[b] = (m[b] || 0) + 1; });
+    return Object.keys(m).sort((a, b) => a - b).map(b => `B${b} ${m[b]}마리`).join(' · ');
+}
+function evSetBatch(v) {
+    evBatch = Number(v) || '';
+    if (evBatch) evPicked = new Set([...evPicked].filter(id => evVisible().some(r => r.ratId === id)));
+    evRender();
+}
 
 // 순서 = 개체의 생애 순서. kind: save(여기서 저장) · route(다른 화면으로 데려감) · judge(판정 대기 목록)
 const EV_TYPES = {
@@ -110,6 +124,7 @@ async function renderEventsView(main) {
 }
 
 async function evLoad(cohort) {
+    if (String(cohort) !== String(evCohort)) evBatch = '';
     evCohort = cohort; evPicked = new Set();
     const body = document.getElementById('ev-body');
     if (!cohort) { body.innerHTML = ''; return; }
@@ -146,7 +161,8 @@ function evPick(id) {
     evRender();
 }
 function evPickAll(on) {
-    evPicked = new Set(on ? evRats.filter(r => !evCheck(evType, r) || !evCheck(evType, r).block).map(r => r.ratId) : []);
+    // 고른 배치 안에서만 (배치를 안 골랐으면 전체)
+    evPicked = new Set(on ? evVisible().filter(r => !evCheck(evType, r) || !evCheck(evType, r).block).map(r => r.ratId) : []);
     evRender();
 }
 
@@ -194,7 +210,7 @@ function evTypeCard() {
 // 개체 칩. 케이지별 묶음은 라운드 단위로 고르기 쉽게 — 일괄 입력과 같다.
 function evGroups() {
     const g = {};
-    evRats.forEach(r => {
+    evVisible().forEach(r => {
         const cid = evHousing[r.ratId];
         const key = cid ? `${evCageNo[cid] ?? cid}번 케이지` : '미배정';
         (g[key] = g[key] || []).push(r);
@@ -220,12 +236,20 @@ function evChip(r) {
     </button>`;
 }
 function evPickerHtml(single) {
+    const bnos = [...new Set(evRats.map(evBatchOf).filter(Boolean))].sort((a, b) => a - b);
+    const bsum = evBatchSummary(evRats.filter(r => evPicked.has(r.ratId)));
+    const bsel = bnos.length ? `<label for="ev-batch" style="font-size:0.8rem; color:var(--ink-soft);">배치</label>
+            <select id="ev-batch" onchange="evSetBatch(this.value)" style="width:auto; min-width:90px; padding:5px; border:1px solid #C9C5B8; border-radius:2px;">
+                <option value="" ${!evBatch ? 'selected' : ''}>전체</option>
+                ${bnos.map(b => `<option value="${b}" ${evBatch === b ? 'selected' : ''}>B${b}</option>`).join('')}
+            </select>` : '';
     return `
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
         <h4 style="margin:0; color:var(--ink);">대상 ${single ? '(한 마리)' : ''}
-            <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); font-weight:normal;">${evPicked.size}마리 선택</span></h4>
-        ${single ? '' : `<div style="display:flex; gap:6px;">
-            <button class="btn-small db-tap" data-ev="pickall" data-on="1" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">가능한 전부</button>
+            <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); font-weight:normal;">${evPicked.size}마리 선택${evPicked.size && bsum ? ' · ' + bsum : ''}</span></h4>
+        ${single ? (bsel ? `<div style="display:flex; gap:6px; align-items:center;">${bsel}</div>` : '') : `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            ${bsel}
+            <button class="btn-small db-tap" data-ev="pickall" data-on="1" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">${evBatch ? `B${evBatch} 가능한 전부` : '가능한 전부'}</button>
             <button class="btn-small db-tap" data-ev="pickall" data-on="0" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">해제</button>
         </div>`}
     </div>
@@ -311,6 +335,27 @@ async function evSave() {
     const date = document.getElementById('ev-date').value;
     if (!date) return alert('날짜를 선택하세요.');
     const targets = evRats.filter(r => evPicked.has(r.ratId));
+
+    // 날짜 검사 (global.js checkRatDates) — 막을 것은 막고, 확인할 것은 묻는다
+    const today = getTodayStr();
+    const errs = [], warns = [];
+    if (date > today) errs.push(`날짜 ${date}가 오늘(${today})보다 뒤입니다`);
+    targets.forEach(r => {
+        const patch = evType === 'ligation' ? { surgeryDate: date } : evType === 'ovx' ? { ovxDate: date }
+            : evType === 'sacrifice' ? { sampleDate: date, deathDate: date } : null;
+        if (!patch || typeof checkRatDates !== 'function') return;
+        const c = checkRatDates(r, patch, today);
+        c.errors.forEach(x => errs.push(`${r.ratId}: ${x}`));
+        c.warns.forEach(x => warns.push(x));
+    });
+    if (errs.length) return alert('저장하지 않았습니다 — 날짜를 확인하세요:\n\n' + [...new Set(errs)].slice(0, 12).join('\n') + (errs.length > 12 ? `\n… 외 ${errs.length - 12}건` : ''));
+    if (warns.length && !confirm('확인해주세요:\n\n' + [...new Set(warns)].slice(0, 10).join('\n') + '\n\n계속할까요?')) return;
+
+    // 배치별 마리수를 보여주고, 둘 이상 섞였으면 한 번 더 묻는다
+    const bsum = evBatchSummary(targets);
+    const nBatch = new Set(targets.map(evBatchOf).filter(Boolean)).size;
+    if (!confirm(`${t.label} ${date}\n${targets.length}마리${bsum ? ` (${bsum})` : ''}\n\n기록할까요?`)) return;
+    if (nBatch > 1 && !confirm(`배치 ${nBatch}개가 섞여 있습니다 (${bsum}).\n\n같은 날 같은 처치를 받은 게 맞습니까? 다르면 취소하고 배치를 고르세요.`)) return;
 
     if (evType === 'ligation') {
         const shams = targets.filter(r => r.isNonInduction);

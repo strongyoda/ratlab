@@ -1,0 +1,5 @@
+{"note":"cages 26,28,29,30 (pilot 13.5, empty) before deletion 2026-10-26 (user: physical cages discarded; B5 will re-weigh bottles). Restore: db.collection('cages').doc(id).set(data). createdAt is {seconds,nanoseconds}.",
+"26":{"bottleTare":130.3,"active":true,"maxRats":2,"createdAt":{"seconds":1788934587,"nanoseconds":422000000},"number":26,"room":"A","group":null,"cohort":null},
+"28":{"cohort":null,"maxRats":3,"active":true,"createdAt":{"seconds":1786518369,"nanoseconds":903000000},"group":null,"room":"A","number":28,"bottleTare":129.1},
+"29":{"cohort":null,"createdAt":{"seconds":1786518372,"nanoseconds":603000000},"bottleTare":125.5,"maxRats":3,"active":true,"room":"A","group":null,"number":29},
+"30":{"cohort":null,"maxRats":3,"group":null,"bottleTare":126.9,"number":30,"room":"A","createdAt":{"seconds":1786511511,"nanoseconds":736000000},"active":true}}

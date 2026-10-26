@@ -9,6 +9,9 @@ let beRats = [];
 let beHousing = {};        // ratId -> cageId
 let beType = 'ligation';
 let bePicked = new Set();
+// 배치(반입 차수) 거르기. 전체 선택이 다른 배치까지 결찰일을 써버리던 것을 막는다 (2026-10-26 점검)
+let beBatch = '';
+let beBatchSize = 12;
 
 // 처치 종류별 색은 새 세계(강조=스탬프 레드 하나)에서 제거 — 선택 상태는 잉크 문법으로 말한다
 const BE_TYPES = {
@@ -58,11 +61,16 @@ async function renderBatchEntryView(main) {
 }
 
 async function beLoad(cohort) {
+    if (String(cohort) !== String(beCohort)) beBatch = '';
     beCohort = cohort;
     bePicked = new Set();
     const body = document.getElementById('be-body');
     if (!cohort) { body.innerHTML = ''; return; }
     body.innerHTML = '<div class="card">불러오는 중...</div>';
+    try {
+        const cf = typeof getCohortConfig === 'function' ? await getCohortConfig(cohort) : null;
+        beBatchSize = Number(cf && cf.housing && cf.housing.batchSize) || 12;
+    } catch (e) { beBatchSize = 12; }
 
     const rats = (await getRatsWithCache()).filter(r => String(r.cohort) === String(cohort));
     rats.sort((a, b) => String(a.ratId).localeCompare(String(b.ratId)));
@@ -83,7 +91,8 @@ function beRender() {
 
     // 케이지별 묶음 (배정 안 된 개체는 '미배정'으로)
     const groups = {};
-    beRats.forEach(r => {
+    const bnos = beBatchList();
+    beVisible().forEach(r => {
         const key = beHousing[r.ratId] ? `${beHousing[r.ratId]}번 케이지` : '미배정';
         (groups[key] = groups[key] || []).push(r);
     });
@@ -144,9 +153,14 @@ function beRender() {
     <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
             <h4 style="margin:0; color:var(--ink);">대상 선택
-                <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); font-weight:normal;">(${bePicked.size}마리 선택됨)</span></h4>
-            <div style="display:flex; gap:6px;">
-                <button class="btn-small db-tap" onclick="bePickAll(true)" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">전체 선택</button>
+                <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); font-weight:normal;">(${bePicked.size}마리 선택됨${bePicked.size ? ' · ' + beBatchSummary(beRats.filter(r => bePicked.has(r.ratId))) : ''})</span></h4>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                ${bnos.length ? `<label for="be-batch" style="font-size:0.8rem; color:var(--ink-soft);">배치</label>
+                <select id="be-batch" onchange="beSetBatch(this.value)" style="width:auto; min-width:90px; padding:5px; border:1px solid #C9C5B8; border-radius:2px;">
+                    <option value="" ${!beBatch ? 'selected' : ''}>전체</option>
+                    ${bnos.map(b => `<option value="${b}" ${beBatch === b ? 'selected' : ''}>B${b}</option>`).join('')}
+                </select>` : ''}
+                <button class="btn-small db-tap" onclick="bePickAll(true)" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">${beBatch ? `B${beBatch} 전체 선택` : '전체 선택'}</button>
                 <button class="btn-small db-tap" onclick="bePickAll(false)" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">전체 해제</button>
             </div>
         </div>
@@ -175,8 +189,25 @@ function beExistingText(r) {
         const n = (r.mrDates || []).length;
         return n ? `MR ${n}건` : '';
     }
-    if (beType === 'sacrifice') return r.sampleDate || '';
+    if (beType === 'sacrifice') return [r.sampleDate ? `희생 ${r.sampleDate}` : '', r.deathDate ? `사망 ${r.deathDate}` : ''].filter(Boolean).join(' · ');
     return r[BE_TYPES[beType].field] || '';
+}
+
+// ---------- 배치 ----------
+function beBatchOf(r) { return typeof getBatchNo === 'function' ? getBatchNo(r, beBatchSize) : null; }
+function beBatchList() { return [...new Set(beRats.map(beBatchOf).filter(Boolean))].sort((a, b) => a - b); }
+function beVisible() { return beBatch ? beRats.filter(r => beBatchOf(r) === beBatch) : beRats; }
+// 고른 개체의 배치별 마리수 "B1 6 · B2 3" (배치 없는 코호트는 빈 문자열)
+function beBatchSummary(list) {
+    const m = {};
+    list.forEach(r => { const b = beBatchOf(r); if (b) m[b] = (m[b] || 0) + 1; });
+    return Object.keys(m).sort((a, b) => a - b).map(b => `B${b} ${m[b]}마리`).join(' · ');
+}
+function beSetBatch(v) {
+    beBatch = Number(v) || '';
+    // 화면에서 안 보이는 배치의 선택은 버린다 — 보이지 않는 개체가 같이 저장되지 않게
+    if (beBatch) bePicked = new Set([...bePicked].filter(id => beVisible().some(r => r.ratId === id)));
+    beRender();
 }
 
 function beRatChip(r) {
@@ -200,11 +231,12 @@ function beRatChip(r) {
 function beSetType(t) { beType = t; beRender(); }
 function bePick(id) { bePicked.has(id) ? bePicked.delete(id) : bePicked.add(id); beRender(); }
 function bePickAll(on) {
-    bePicked = new Set(on ? beRats.filter(r => r.status !== '사망').map(r => r.ratId) : []);
+    // 고른 배치 안에서만 (배치를 안 골랐으면 전체)
+    bePicked = new Set(on ? beVisible().filter(r => r.status !== '사망').map(r => r.ratId) : []);
     beRender();
 }
 function bePickGroup(g) {
-    const ids = beRats.filter(r => (beHousing[r.ratId] ? `${beHousing[r.ratId]}번 케이지` : '미배정') === g)
+    const ids = beVisible().filter(r => (beHousing[r.ratId] ? `${beHousing[r.ratId]}번 케이지` : '미배정') === g)
         .filter(r => r.status !== '사망').map(r => r.ratId);
     const allOn = ids.every(id => bePicked.has(id));
     ids.forEach(id => allOn ? bePicked.delete(id) : bePicked.add(id));
@@ -219,6 +251,32 @@ async function beSave() {
     const t = BE_TYPES[beType];
     const targets = beRats.filter(r => bePicked.has(r.ratId));
 
+    // 날짜 검사 (global.js checkRatDates). 결찰일 하나가 틀리면 BAPN · 사료 전환 · 메트포민이 전부 따라 틀린다.
+    const today = getTodayStr();
+    const errs = [], warns = [];
+    if (date > today) errs.push(`날짜 ${date}가 오늘(${today})보다 뒤입니다`);
+    targets.forEach(r => {
+        const dead = r.status === '사망';
+        const patch = beType === 'ligation' ? { surgeryDate: date }
+            : beType === 'ovx' ? { ovxDate: date }
+            : beType === 'sacrifice' ? (dead ? { sampleDate: date } : { sampleDate: date, deathDate: date })
+            : null;
+        if (beType === 'sacrifice' && dead && r.deathDate && date < String(r.deathDate).slice(0, 10))
+            warns.push(`${r.ratId}: 희생일 ${date}이 사망일 ${r.deathDate}보다 앞입니다`);
+        if (!patch || typeof checkRatDates !== 'function') return;
+        const c = checkRatDates(r, patch, today);
+        c.errors.forEach(x => errs.push(`${r.ratId}: ${x}`));
+        c.warns.forEach(x => warns.push(x));
+    });
+    if (errs.length) return alert('저장하지 않았습니다 — 날짜를 확인하세요:\n\n' + [...new Set(errs)].slice(0, 12).join('\n') + (errs.length > 12 ? `\n… 외 ${errs.length - 12}건` : ''));
+    if (warns.length && !confirm('확인해주세요:\n\n' + [...new Set(warns)].slice(0, 10).join('\n') + '\n\n계속할까요?')) return;
+
+    // 배치가 둘 이상 섞였으면 한 번 더 묻는다 — 전체 선택으로 다른 배치까지 쓰는 사고 방지
+    const bsum = beBatchSummary(targets);
+    const nBatch = new Set(targets.map(beBatchOf).filter(Boolean)).size;
+    if (!confirm(`${t.label} ${date}\n${targets.length}마리${bsum ? ` (${bsum})` : ''}\n\n기록할까요?`)) return;
+    if (nBatch > 1 && !confirm(`배치 ${nBatch}개가 섞여 있습니다 (${bsum}).\n\n같은 날 같은 처치를 받은 게 맞습니까? 다르면 취소하고 배치를 고르세요.`)) return;
+
     // Sham/Naïve의 surgeryDate는 '반입일 + 기준주령'으로 만든 가상 날짜다.
     // 여기서 실제 수술일을 덮어쓰면 그래프의 POD 축이 조용히 어긋난다.
     if (beType === 'ligation') {
@@ -230,7 +288,13 @@ async function beSave() {
     }
 
     // 이미 값이 있는 개체는 덮어쓰기 전에 확인
-    const overwrite = targets.filter(r => beType !== 'mr' && beExistingText(r));
+    // 희생: 이미 사망한 개체는 사망일·상태를 그대로 두고 희생일·샘플만 적으므로, 덮어쓰기는 희생일 또는 (생존인데 사망일이 있는) 경우
+    const overwrite = targets.filter(r => beType === 'sacrifice'
+        ? (r.sampleDate || (r.status !== '사망' && r.deathDate))
+        : (beType !== 'mr' && beExistingText(r)));
+    const deadSac = beType === 'sacrifice' ? targets.filter(r => r.status === '사망') : [];
+    if (deadSac.length && !confirm(`이미 사망한 ${deadSac.length}마리는 사망일·상태를 그대로 두고 희생일·샘플만 적습니다.\n\n` +
+        deadSac.slice(0, 8).map(r => `${r.ratId} (사망 ${r.deathDate || '날짜 없음'})`).join('\n') + (deadSac.length > 8 ? '\n... 외' : '') + '\n\n계속할까요?')) return;
     if (overwrite.length) {
         const list = overwrite.slice(0, 8).map(r => `${r.ratId} (${beExistingText(r)})`).join('\n');
         if (!confirm(`이미 기록이 있는 개체 ${overwrite.length}마리를 덮어씁니다.\n\n${list}` +
@@ -244,6 +308,7 @@ async function beSave() {
 
     // MR은 같은 시점이 이미 있으면 건너뛴다 (중복 기록 방지)
     const skipped = [];
+    const sacLiving = [];   // 이번에 희생으로 사망 처리된 개체 (재실 닫기 · 마지막 생존 확인일 대상)
 
     try {
         const snap = await db.collection('rats').where('cohort', '==', String(beCohort)).get();
@@ -266,9 +331,14 @@ async function beSave() {
             } else if (beType === 'sacrifice') {
                 // 희생 = 사망. 지금까지의 관례(샘플 있는 111마리 전원 status 사망,
                 // 계획 희생은 cod 'Sacrifice')에 맞춰 상태까지 같이 기록한다.
-                const upd = { sampleDate: date, status: '사망', deathDate: date };
+                // 단, 이미 사망한 개체(사후 샘플)는 사망일·상태·사인을 건드리지 않는다
+                const upd = { sampleDate: date };
                 if (sampleType) upd.sampleType = sampleType;
-                if (!doc.data().cod && !doc.data().codFull) upd.cod = 'Sacrifice';
+                if (doc.data().status !== '사망') {
+                    upd.status = '사망'; upd.deathDate = date;
+                    if (!doc.data().cod && !doc.data().codFull) upd.cod = 'Sacrifice';
+                    sacLiving.push(r.ratId);
+                }
                 batch.update(doc.ref, upd);
             } else {
                 batch.update(doc.ref, { [t.field]: date });
@@ -281,8 +351,11 @@ async function beSave() {
 
         // 희생 처리된 개체는 케이지 재실도 닫는다 (안 닫으면 섭취량 마리·일에 계속 잡힘)
         if (beType === 'sacrifice') {
-            for (const r of targets) {
-                if (docByRat[r.ratId]) await closeOpenHousing(r.ratId, '희생');
+            for (const id of sacLiving) {
+                await closeOpenHousing(id, '희생');
+                // 사망일 = 희생일. 마지막 생존 확인일도 같이 (사건 기록 evSave와 같음, global.js lastAliveDateFor)
+                try { await docByRat[id].ref.update({ lastAliveDate: await lastAliveDateFor(id, date) }); }
+                catch (e) { console.warn('lastAliveDate 저장 실패', id, e); }
             }
         }
         clearRatsCache();

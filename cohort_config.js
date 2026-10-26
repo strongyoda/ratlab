@@ -56,6 +56,20 @@ function cfgDefaultConfig(cohort) {
 let cfgDraft = null;
 let cfgDirty = false;
 let cfgLoadedCohort = null;
+// 불러올 때 DB 문서의 지문. 저장 직전에 다시 읽어 다르면 막는다 — 오래 열어 둔 화면이 저장하면
+// groups · dosing 배열이 통째로 옛 값으로 덮인다 (merge여도 배열은 통째 교체, 2026-10-26 점검)
+let cfgLoadedSig = null;
+function cfgSig(d) {
+    if (!d) return null;
+    const norm = v => (v && typeof v.toMillis === 'function') ? v.toMillis()
+        : Array.isArray(v) ? v.map(norm)
+        : (v && typeof v === 'object') ? Object.keys(v).sort().reduce((o, k) => (o[k] = norm(v[k]), o), {})
+        : v;
+    return JSON.stringify(norm(d));
+}
+// 숫자 칸: 비우면 0이 아니라 null (0은 '농도 상한 없음'처럼 뜻이 있는 값이라 빈칸이 조용히 그 뜻이 됐다)
+const cfgNum = v => (v === '' || v === null || v === undefined || isNaN(Number(v))) ? null : Number(v);
+const cfgShow = (v, dflt) => v === null ? '' : (v === undefined ? dflt : v);
 
 function cfgMarkDirty() {
     cfgDirty = true;
@@ -146,6 +160,7 @@ async function cfgCreateNew() {
     } catch (e) { console.error('이전 설정 물려받기 실패', e); }
 
     cfgLoadedCohort = val;
+    cfgLoadedSig = null;   // 새 코호트 — 저장할 때도 문서가 없어야 한다
     cfgDirty = true;
     cfgRenderBody();
     const bar = document.getElementById('cfg-savebar');
@@ -177,6 +192,7 @@ async function cfgOpen(cohort) {
             cfgDraft = base;
         }
         cfgLoadedCohort = String(cohort);
+        cfgLoadedSig = doc.exists ? cfgSig(doc.data()) : null;
         cfgDirty = false;
         cfgRenderBody();
     } catch (e) {
@@ -383,7 +399,7 @@ function cfgDosingCard(c) {
                 <div style="min-width:160px;">
                     <div style="font-size:0.78rem; color:var(--ink-soft);">목표 용량</div>
                     <div style="display:flex; align-items:center; gap:5px;">
-                        <input type="number" step="any" value="${d.value}" onchange="cfgSetDose(${i},'value',this.value)"
+                        <input type="number" step="any" value="${cfgShow(d.value, '')}" onchange="cfgSetDose(${i},'value',this.value)"
                                style="width:90px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.82rem; color:var(--ink-soft);">mg/kg/day</span>
                     </div>
@@ -391,7 +407,7 @@ function cfgDosingCard(c) {
                 <div style="min-width:160px;">
                     <div style="font-size:0.78rem; color:var(--ink-soft);">원액 농도</div>
                     <div style="display:flex; align-items:center; gap:5px;">
-                        <input type="number" step="any" value="${d.stockConc || 0}" onchange="cfgSetDose(${i},'stockConc',this.value)"
+                        <input type="number" step="any" value="${cfgShow(d.stockConc, 0)}" onchange="cfgSetDose(${i},'stockConc',this.value)"
                                style="width:90px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.82rem; color:var(--ink-soft);">mg/mL</span>
                     </div>
@@ -400,7 +416,7 @@ function cfgDosingCard(c) {
             <div style="min-width:160px;">
                 <div style="font-size:0.78rem; color:var(--ink-soft);">사료 내 농도</div>
                 <div style="display:flex; align-items:center; gap:5px;">
-                    <input type="number" step="any" value="${d.value}" onchange="cfgSetDose(${i},'value',this.value)"
+                    <input type="number" step="any" value="${cfgShow(d.value, '')}" onchange="cfgSetDose(${i},'value',this.value)"
                            style="width:90px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                     <span style="font-size:0.82rem; color:var(--ink-soft);">% (w/w)</span>
                     <span style="font-size:0.82rem; color:var(--navy); font-weight:bold;">= ${cfgPercentToMgPerG(d.value)} mg/g</span>
@@ -427,7 +443,7 @@ function cfgDosingCard(c) {
                 <div>
                     <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">부족분 보정 상한</div>
                     <div style="display:flex; align-items:center; gap:5px;">
-                        <input type="number" step="0.05" min="1" value="${d.gainCap || 1}" onchange="cfgSetDose(${i},'gainCap',this.value)"
+                        <input type="number" step="0.05" min="1" value="${cfgShow(d.gainCap, 1)}" onchange="cfgSetDose(${i},'gainCap',this.value)"
                                style="width:72px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.8rem; color:var(--ink-soft);">배 · 1 = 보정 없음 · 파일럿 시뮬(장부 28일·농도 상한 350): 1.7 → 누적 136, 2.5 → 누적 150 · 최악 421</span>
                     </div>
@@ -436,7 +452,7 @@ function cfgDosingCard(c) {
                     <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">램프 유예</div>
                     <div style="display:flex; align-items:center; gap:5px;">
                         <span style="font-size:0.85rem; color:var(--ink-soft);">결찰 후</span>
-                        <input type="number" value="${d.rampDays || 0}" onchange="cfgSetDose(${i},'rampDays',this.value)"
+                        <input type="number" value="${cfgShow(d.rampDays, 0)}" onchange="cfgSetDose(${i},'rampDays',this.value)"
                                style="width:64px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.8rem; color:var(--ink-soft);">일 동안은 보정 안 함 (급성기 과다투여 방지)</span>
                     </div>
@@ -444,7 +460,7 @@ function cfgDosingCard(c) {
                 <div>
                     <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:4px;">농도 상한</div>
                     <div style="display:flex; align-items:center; gap:5px;">
-                        <input type="number" value="${d.ceilingDose || 0}" onchange="cfgSetDose(${i},'ceilingDose',this.value)"
+                        <input type="number" value="${cfgShow(d.ceilingDose, 0)}" onchange="cfgSetDose(${i},'ceilingDose',this.value)"
                                style="width:72px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.8rem; color:var(--ink-soft);">mg/kg/day · 0 = 없음 · 결찰+램프 뒤 최근 4주 최대 섭취를 마셔도 이 값을 넘지 않게 농도를 누름 (아팠다 회복하는 첫 구간 대비)</span>
                     </div>
@@ -462,7 +478,7 @@ function cfgDosingCard(c) {
                     <div style="display:flex; align-items:center; gap:5px;">
                         ${anchorSel(d.startAnchor, `cfgSetDose(${i},'startAnchor',this.value)`)}
                         <span style="font-size:0.85rem;">+</span>
-                        <input type="number" value="${d.startOffset || 0}" onchange="cfgSetDose(${i},'startOffset',this.value)"
+                        <input type="number" value="${cfgShow(d.startOffset, 0)}" onchange="cfgSetDose(${i},'startOffset',this.value)"
                                style="width:64px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.85rem; color:var(--ink-soft);">일</span>
                     </div>
@@ -473,7 +489,7 @@ function cfgDosingCard(c) {
                         ${anchorSel(d.endAnchor, `cfgSetDose(${i},'endAnchor',this.value)`)}
                         ${d.endAnchor === 'end' ? '' : `
                         <span style="font-size:0.85rem;">+</span>
-                        <input type="number" value="${d.endOffset || 0}" onchange="cfgSetDose(${i},'endOffset',this.value)"
+                        <input type="number" value="${cfgShow(d.endOffset, 0)}" onchange="cfgSetDose(${i},'endOffset',this.value)"
                                style="width:64px; padding:6px; border:1px solid #C9C5B8; border-radius:2px;">
                         <span style="font-size:0.85rem; color:var(--ink-soft);">일</span>`}
                     </div>
@@ -549,11 +565,11 @@ function cfgToggleTimepoint(kind, tp, on) {
     cfgRenderBody();
 }
 
-function cfgSetHousing(key, val) { cfgDraft.housing[key] = Number(val); cfgMarkDirty(); }
+function cfgSetHousing(key, val) { cfgDraft.housing[key] = cfgNum(val); cfgMarkDirty(); }
 
 function cfgSetDose(i, key, val) {
     const numeric = ['value', 'stockConc', 'startOffset', 'endOffset', 'gainCap', 'rampDays', 'ceilingDose'];
-    cfgDraft.dosing[i][key] = numeric.includes(key) ? Number(val) : val;
+    cfgDraft.dosing[i][key] = numeric.includes(key) ? cfgNum(val) : val;
     cfgMarkDirty();
     if (key === 'value' || key === 'endAnchor') cfgRenderBody();
 }
@@ -602,7 +618,32 @@ function cfgValidate(c) {
         (d.groups || []).forEach(g => {
             if (!keys.includes(g)) errs.push(`'${d.substance}'가 존재하지 않는 군 '${g}'를 가리킵니다. (군 코드를 바꿨다면 투약 항목의 군도 다시 선택하세요)`);
         });
+        // 빈 숫자 칸 (null) — 0으로 저장되면 '상한 없음' · '보정 없음'으로 조용히 바뀐다
+        if (d.startOffset === null) errs.push(`'${d.substance}'의 시작 오프셋이 비어 있습니다.`);
+        if (d.endAnchor !== 'end' && d.endOffset === null) errs.push(`'${d.substance}'의 종료 오프셋이 비어 있습니다.`);
+        if (d.startAnchor === 'end') errs.push(`'${d.substance}'의 시작 기준이 '종료까지'입니다.`);
+        if (d.endAnchor && d.endAnchor !== 'end' && d.endAnchor === d.startAnchor && !(Number(d.endOffset) > Number(d.startOffset)))
+            errs.push(`'${d.substance}'의 종료(${CFG_ANCHORS[d.endAnchor]} + ${d.endOffset}일)가 시작(+${d.startOffset}일)보다 뒤가 아닙니다.`);
+        if (d.medium === 'water') {
+            if (d.gainCap === null) errs.push(`'${d.substance}'의 부족분 보정 상한이 비어 있습니다 (보정 없음이면 1).`);
+            else if (d.gainCap !== undefined && !(Number(d.gainCap) >= 1)) errs.push(`'${d.substance}'의 부족분 보정 상한은 1 이상이어야 합니다.`);
+            if (d.rampDays === null) errs.push(`'${d.substance}'의 램프 유예가 비어 있습니다 (없으면 0).`);
+            else if (Number(d.rampDays) < 0) errs.push(`'${d.substance}'의 램프 유예가 음수입니다.`);
+            if (d.ceilingDose === null) errs.push(`'${d.substance}'의 농도 상한이 비어 있습니다 (없으면 0).`);
+            else if (Number(d.ceilingDose) > 0 && !(Number(d.ceilingDose) > Number(d.value)))
+                errs.push(`'${d.substance}'의 농도 상한(${d.ceilingDose})이 목표 용량(${d.value})보다 커야 합니다.`);
+        }
     });
+
+    // 농도 기준 창 · 부족분 장부 (물 투약이 있을 때만 쓰임)
+    const h = c.housing || {};
+    if ((c.dosing || []).some(d => d.medium === 'water')) {
+        if (h.doseWindowDays === null || h.doseWindowDays === undefined) errs.push('농도 기준 창이 비어 있습니다.');
+        else if (!(Number(h.doseWindowDays) >= 8)) errs.push(`농도 기준 창은 8일 이상이어야 합니다 (지금 ${h.doseWindowDays}).`);
+        if (h.doseLedgerDays === null || h.doseLedgerDays === undefined) errs.push('부족분 장부가 비어 있습니다.');
+        else if (Number(h.doseWindowDays) > 0 && Number(h.doseLedgerDays) < Number(h.doseWindowDays))
+            errs.push(`부족분 장부(${h.doseLedgerDays}일)는 농도 기준 창(${h.doseWindowDays}일) 이상이어야 합니다.`);
+    }
     return errs;
 }
 
@@ -612,11 +653,17 @@ async function cfgSave() {
     if (errs.length) return alert('저장 전에 확인해주세요:\n\n· ' + errs.join('\n· '));
 
     try {
+        const ref = db.collection('cohortConfigs').doc(String(cfgDraft.cohort));
+        // 불러온 뒤 다른 곳(다른 PC · 다른 탭)에서 바뀌었으면 덮어쓰지 않는다
+        const now = await ref.get();
+        if ((now.exists ? cfgSig(now.data()) : null) !== cfgLoadedSig)
+            return alert('다른 곳에서 바뀌었습니다 — 다시 불러오세요.\n\n(지금 고친 내용은 저장하지 않았습니다. 「불러오기」 후 다시 고쳐 저장하세요.)');
         const payload = Object.assign({}, cfgDraft, {
             updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
             updatedBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || null
         });
-        await db.collection('cohortConfigs').doc(String(cfgDraft.cohort)).set(payload, { merge: true });
+        await ref.set(payload, { merge: true });
+        try { const after = await ref.get(); cfgLoadedSig = after.exists ? cfgSig(after.data()) : null; } catch (e) { cfgLoadedSig = undefined; }
 
         cfgDirty = false;
         const bar = document.getElementById('cfg-savebar');

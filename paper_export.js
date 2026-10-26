@@ -150,7 +150,10 @@ function pcConfigProtocol(cfg, g) {
     if (!rules.length) return '';
     const anc = { ovx: 'OVX', ligation: '결찰', arrival: '반입' };
     const amt = d => d.medium === 'water' ? `${d.value} mg/kg/일` : `${d.value}%`;
-    const when = d => `${anc[d.startAnchor] || '결찰'}${Number(d.startOffset) ? ' +' + Number(d.startOffset) + '일' : ''}~`;
+    const at = (an, off) => `${anc[an] || '결찰'}${Number(off) ? ' +' + Number(off) + '일' : ''}`;
+    // 끝나는 날도 적는다 — C14 G3의 고염식 중단(결찰 +20까지)과 BAPN free base 21일이 처치의 핵심이다 (2026-10-26 점검)
+    const when = d => `${at(d.startAnchor, d.startOffset)}~${d.endAnchor && d.endAnchor !== 'end' ? at(d.endAnchor, d.endOffset) : ''}`;
+    if (g === 'G0') return 'OVX + CCA·RA 결찰 + 사료 전환일 전 종료(군 배정 전) — ' + rules.map(d => `${d.substance} ${amt(d)} (${d.medium === 'water' ? '물' : '사료'}, ${when(d)})`).join(' + ');
     return 'OVX + CCA·RA 결찰 + ' + rules.map(d => `${d.substance} ${amt(d)} (${d.medium === 'water' ? '물' : '사료'}, ${when(d)})`).join(' + ');
 }
 function pcProtocol(r, configs) {

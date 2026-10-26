@@ -123,7 +123,8 @@ async function searchForEdit(ratId) {
         const ratDoc = rSnap.docs[0];
         const rData = ratDoc.data();
         
-        const currentCod = rData.cod || extractLegacyCod(rData.codFull);
+        // 사인이 없으면 비워 둔다 — extractLegacyCod('')가 'Unknown'을 돌려줘서 생존 개체에 사인이 저장되던 문제 (2026-10-26)
+        const currentCod = rData.cod || ((rData.codFull && rData.codFull !== '미기록') ? extractLegacyCod(rData.codFull) : '');
         const currentCodSec = rData.codSec || []; // 부원인 로드
         const currentAre = rData.are || '';
         let areMain = currentAre.split(' ')[0] || '';
@@ -219,7 +220,8 @@ async function searchForEdit(ratId) {
                                 </select>
                                 <input type="date" class="ed-mr-dt" value="${mr.date}" style="padding:5px;">
                                 <select class="ed-mr-sz" style="width:80px; padding:5px;">
-                                    <option value="None" ${mr.infarctSize==='None'||!mr.infarctSize?'selected':''}>None</option>
+                                    <option value="" ${!mr.infarctSize?'selected':''}>-</option>
+                                    <option value="None" ${mr.infarctSize==='None'?'selected':''}>None</option>
                                     <option value="Small" ${mr.infarctSize==='Small'?'selected':''}>Small</option>
                                     <option value="Large" ${mr.infarctSize==='Large'?'selected':''}>Large</option>
                                 </select>
@@ -253,6 +255,17 @@ async function searchForEdit(ratId) {
         html += `</tbody></table><div style="height:60px;"></div> <button class="btn btn-green float-save-btn" onclick="saveTotalEdit('${ratDoc.id}','${rData.ratId}')">💾 전체 저장</button></div>`;
         resDiv.innerHTML = html;
     } catch(e) { console.error(e); resDiv.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
+}
+
+// 입력칸이 불러올 때 값에서 바뀌었나 (input은 defaultValue, select는 처음 selected 옵션, 체크는 defaultChecked)
+function edChanged(el) {
+    if (!el) return false;
+    if (el.type === 'checkbox' || el.type === 'radio') return el.checked !== el.defaultChecked;
+    if (el.tagName === 'SELECT') {
+        const o = [...el.options].find(x => x.defaultSelected) || el.options[0];
+        return !!o && el.value !== o.value;
+    }
+    return el.value !== el.defaultValue;
 }
 
 async function saveTotalEdit(ratDocId, ratIdArg) {
@@ -298,29 +311,58 @@ async function saveTotalEdit(ratDocId, ratIdArg) {
     // 🌟 [수정] 데일리 로그 변경 시 rats.lastScore 자동 동기화를 위해
     //          rat 업데이트를 즉시 batch 에 넣지 않고 객체로 보관해뒀다가
     //          데일리 로그 순회 후 lastScore 합쳐서 한 번에 batch.update.
-    const ratUpdate = {
-        status: document.getElementById('ed-status').value,
-        cod: codVal,
-        codSec: codSecVal, // 🌟 DB에 Secondary Array 별도 저장
-        are: areVal,
-        areCounts: areCounts,
-        codFull: `${codVal} / ARE: ${areVal}`, 
-        arrivalDate: document.getElementById('ed-arrival').value,
-        surgeryDate: document.getElementById('ed-surgery').value,
-        doseStartDate: document.getElementById('ed-dose-start').value,
-        deathDate: document.getElementById('ed-death').value,
-        arrivalAge: Number(document.getElementById('ed-arrival-age').value),
-        ovxDate: document.getElementById('ed-ovx').value,
-        sampleType: document.getElementById('ed-sample-tp').value,
-        sampleDate: document.getElementById('ed-sample-date').value,
-        sampleMemo: document.getElementById('ed-sample-memo').value,
-        mrDates: mrDatesArr
-    };
+    // 바뀐 칸만 쓴다 — 불러올 때 값(defaultValue)과 비교. 안 건드린 칸까지 다시 쓰면 생존 개체에 사인
+    // 'Unknown'이 박히고 MR infarct 빈칸이 'None'이 되는 식으로 오염됐다 (2026-10-26 점검)
+    const elv = id => document.getElementById(id);
+    const changed = id => edChanged(elv(id));
+    const curSnap = await ratRef.get();
+    if (!curSnap.exists) return alert('개체를 찾을 수 없습니다.');
+    const old = curSnap.data();
+    const ratUpdate = {};
+    if (changed('ed-status')) ratUpdate.status = elv('ed-status').value;
+    const dateIds = { 'ed-arrival': 'arrivalDate', 'ed-surgery': 'surgeryDate', 'ed-dose-start': 'doseStartDate',
+                      'ed-death': 'deathDate', 'ed-ovx': 'ovxDate', 'ed-sample-date': 'sampleDate' };
+    Object.entries(dateIds).forEach(([id, k]) => { if (changed(id)) ratUpdate[k] = elv(id).value; });
+    if (changed('ed-arrival-age')) ratUpdate.arrivalAge = Number(elv('ed-arrival-age').value);
+    if (changed('ed-sample-tp')) ratUpdate.sampleType = elv('ed-sample-tp').value;
+    if (changed('ed-sample-memo')) ratUpdate.sampleMemo = elv('ed-sample-memo').value;
+    const mrNorm = a => JSON.stringify((a || []).map(m => [m.timepoint || '', m.date || '', m.infarctSize || '', (m.infarctLoc && m.infarctLoc !== '-') ? m.infarctLoc : '']));
+    if (mrNorm(mrDatesArr) !== mrNorm(old.mrDates)) ratUpdate.mrDates = mrDatesArr;
 
-    // 케이지에 살아 있는 개체를 '사망'으로 바꾸는 수정은 여기서 막는다 — 케이지별 입력으로 (global.js deathBlocked)
-    if (ratUpdate.status === '사망') {
-        const cur = await ratRef.get();
-        if (cur.exists && cur.data().status !== '사망' && await deathBlocked(cur.data().ratId)) return;
+    // 사인 · ARE: 손댄 부분만
+    const codTouched = changed('ed-cod') || changed('ed-cod-other');
+    const secTouched = codSecVal.slice().sort().join('|') !== (old.codSec || []).slice().sort().join('|');
+    const areTouched = changed('ed-are-main') || (areMain === 'O' && (changed('ed-are-micro') || changed('ed-are-macro') || changed('ed-are-unk')));
+    if (codTouched) ratUpdate.cod = codVal;
+    if (secTouched) ratUpdate.codSec = codSecVal; // 🌟 DB에 Secondary Array 별도 저장
+    if (areTouched) { ratUpdate.are = areVal; ratUpdate.areCounts = areCounts; }
+    if (codTouched || areTouched) ratUpdate.codFull = `${codTouched ? codVal : (old.cod || codVal)} / ARE: ${areTouched ? areVal : (old.are || '')}`;
+
+    // 사망: 상태를 사망으로 바꾸거나 사망일을 새로 넣으면(상태를 생존으로 둔 채여도) 케이지에 살아 있는 개체는
+    // 여기서 막는다 — 케이지별 입력으로 (global.js deathBlocked). 이미 사망인 개체의 정정은 통과.
+    const nowDead = (ratUpdate.status || old.status) === '사망';
+    const becameDead = nowDead && old.status !== '사망';
+    const deathNew = ('deathDate' in ratUpdate) ? ratUpdate.deathDate : (old.deathDate || '');
+    const deathNewlySet = !!ratUpdate.deathDate && !old.deathDate;
+    if ((becameDead || deathNewlySet) && old.status !== '사망') {
+        if (await deathBlocked(old.ratId)) return;
+        if (typeof deathBlockedRecentMove === 'function' && await deathBlockedRecentMove(old.ratId)) return;
+    }
+    if (becameDead && !deathNew) return alert('상태를 사망으로 바꾸려면 사망일도 넣으세요.');
+    if (deathNewlySet && !nowDead && !confirm('사망일을 넣었는데 상태는 「생존」입니다. 이대로 저장할까요?')) return;
+
+    // 날짜 검사 (global.js checkRatDates): 고친 날짜만
+    const datePatch = {};
+    ['arrivalDate', 'ovxDate', 'surgeryDate', 'deathDate', 'sampleDate'].forEach(k => { if (k in ratUpdate) datePatch[k] = ratUpdate[k] || null; });
+    if (Object.keys(datePatch).length && typeof checkRatDates === 'function') {
+        const dc = checkRatDates(old, datePatch);
+        if (dc.errors.length) return alert('저장하지 않았습니다 — 날짜를 확인하세요:\n\n· ' + dc.errors.join('\n· '));
+        if (dc.warns.length && !confirm('확인해주세요:\n\n· ' + dc.warns.join('\n· ') + '\n\n계속할까요?')) return;
+    }
+    // 사망일이 바뀌면 마지막 생존 확인일도 다시 (global.js lastAliveDateFor)
+    if ('deathDate' in ratUpdate) {
+        try { ratUpdate.lastAliveDate = deathNew ? await lastAliveDateFor(old.ratId, deathNew) : null; }
+        catch (e) { console.warn('lastAliveDate 계산 실패', e); }
     }
 
     const tables = ['meas-tbody', 'daily-tbody'];
@@ -382,7 +424,7 @@ async function saveTotalEdit(ratDocId, ratIdArg) {
                 if (isNew) {
                     const newRef = db.collection(coll).doc();
                     batch.set(newRef, data);
-                } else {
+                } else if ([...row.querySelectorAll('input')].some(edChanged)) {   // 안 바뀐 행은 다시 쓰지 않는다
                     const ref = db.collection(coll).doc(docId);
                     batch.update(ref, data);
                 }
@@ -395,7 +437,7 @@ async function saveTotalEdit(ratDocId, ratIdArg) {
     if (latestDailyScore !== null) {
         ratUpdate.lastScore = latestDailyScore;
     }
-    batch.update(ratRef, ratUpdate);
+    if (Object.keys(ratUpdate).length) batch.update(ratRef, ratUpdate);
 
     try {
         await batch.commit();
@@ -764,10 +806,38 @@ function analyzeBP(mode) {
 }
 
 
-function openBatchModal() {
+// 장비에 적힌 이름 → 실제 있는 Rat ID.
+// 예전 정규식 /C\d{4}/는 C1401G2를 C1401로 잘라 없는 ID로 혈압이 저장됐다 (고아 기록, 2026-10-26 점검).
+//  1) ' - '나 공백 앞 토큰이 그대로 있는 ID면 그것
+//  2) 아니면 C+숫자(13.5 코호트의 C13.511 같은 점 포함) 접두가 맞는 개체가 딱 하나면 그것
+//  3) 아니면 적힌 그대로 두고 ok=false (빨간 칸)
+function bpResolveRatId(raw, ids) {
+    const s = String(raw || '').trim();
+    const tok = s.split(/\s+-\s+|\s+/)[0] || s;
+    const exact = ids.find(id => id.toUpperCase() === tok.toUpperCase());
+    if (exact) return { id: exact, ok: true };
+    const m = s.match(/C\d+(?:\.\d+)?/i);
+    if (m) {
+        const p = m[0].toUpperCase();
+        const hits = ids.filter(id => id.toUpperCase().startsWith(p) && !/^\d/.test(id.slice(p.length)));
+        if (hits.length === 1) return { id: hits[0], ok: true };
+    }
+    return { id: tok, ok: false };
+}
+function bpMarkId(input, ok) {
+    input.style.borderColor = ok ? '#00c853' : 'var(--red, #d32f2f)';
+    input.style.background = ok ? '' : '#ffebee';
+    input.title = ok ? '' : '없는 Rat ID입니다 — 고쳐 넣으세요';
+}
+
+async function openBatchModal() {
     // 체크된 항목 가져오기
     const inputs = document.querySelectorAll('input[type="radio"]:checked');
     if (inputs.length === 0) return alert("저장할 데이터를 하나 이상 선택해주세요.");
+    let ratIds = [];
+    try { ratIds = (await getRatsWithCache(true)).map(r => String(r.ratId || '')).filter(Boolean); }
+    catch (e) { console.error(e); return alert('개체 목록을 불러오지 못했습니다: ' + e.message); }
+    window._bpRatIds = new Set(ratIds);
 
     const tbody = document.getElementById("bpBatchList");
     tbody.innerHTML = "";
@@ -785,10 +855,9 @@ function openBatchModal() {
         const data = currentAnalyzedData[input.value];
         if (!data) return;
 
-        // Rat ID 자동 포맷팅: "C0504G1 - 4" -> "C0504"
-        let formattedId = data.ratId;
-        const idMatch = data.ratId.match(/C\d{4}/i);
-        if (idMatch) formattedId = idMatch[0].toUpperCase();
+        // Rat ID: 장비 이름 "C1401G2 - 4" → 실제 있는 ID (bpResolveRatId). 못 찾으면 빨간 칸
+        const resolved = bpResolveRatId(data.ratId, ratIds);
+        const formattedId = resolved.id;
 
         const row = `
             <tr style="border-bottom:1px solid #eee;">
@@ -804,8 +873,9 @@ function openBatchModal() {
                 </td>
                 
                 <td style="padding:10px;">
-                    <input type="text" id="save_id_${idx}" value="${formattedId}" 
-                        style="padding:6px; width:120px; border:2px solid #00c853; border-radius:2px; font-weight:bold; font-size:14px;">
+                    <input type="text" id="save_id_${idx}" value="${formattedId}"
+                        style="padding:6px; width:120px; border:2px solid ${resolved.ok ? '#00c853' : 'var(--red, #d32f2f)'}; ${resolved.ok ? '' : 'background:#ffebee;'} border-radius:2px; font-weight:bold; font-size:14px;"
+                        ${resolved.ok ? '' : 'title="없는 Rat ID입니다 — 고쳐 넣으세요"'}>
                 </td>
                 
                 <td style="padding:10px; display:flex; align-items:center; gap:5px;">
@@ -827,6 +897,8 @@ function openBatchModal() {
     inputs.forEach((_, idx) => {
         const sel = document.getElementById(`save_time_${idx}`);
         const manual = document.getElementById(`save_time_manual_${idx}`);
+        const idInp = document.getElementById(`save_id_${idx}`);
+        if (idInp) idInp.addEventListener('input', () => bpMarkId(idInp, window._bpRatIds.has(idInp.value.trim())));
         if (!sel || !manual) return;
 
         const setManualEnabled = (enabled) => {
@@ -877,8 +949,12 @@ async function saveBatchToDB() {
 
     if (rows.length === 0) return alert("저장할 데이터가 없습니다.");
 
-    if (!confirm(`${rows.length}건의 데이터를 데이터베이스에 저장하시겠습니까?\n(같은 날짜 · 같은 시점 기록이 있으면 그 기록에 혈압 값만 합쳐지고, 없으면 새로 만들어집니다.)`)) return;
-
+    // 1단계: 전부 검사하고 나서 쓴다. 예전엔 중간 행에서 막혀도 앞 행들은 이미 쓰고 있었다.
+    // 없는 Rat ID는 고아 기록이 되므로 한 건이라도 있으면 아무것도 쓰지 않는다 (2026-10-26 점검)
+    let known;
+    try { known = new Set((await getRatsWithCache(true)).map(r => String(r.ratId || ''))); }
+    catch (e) { console.error(e); return alert('개체 목록을 불러오지 못했습니다: ' + e.message); }
+    const jobs = [], missing = [];
     for (const row of rows) {
         const idInput = row.querySelector('input[id^="save_id_"]');
         const dateInput = row.querySelector('input[id^="save_date_"]'); // 새 데이터일 때만 사용
@@ -889,15 +965,24 @@ async function saveBatchToDB() {
         if (!idInput || !hiddenData) continue;
 
         const ratId = idInput.value.trim();
-        const inputDate = dateInput.value; 
+        const inputDate = dateInput.value;
         const timepoint = (timeManual.value.trim()) || timeSelect.value;
-        
+
         let sourceData;
         try { sourceData = JSON.parse(hiddenData.value); } catch (e) { continue; }
 
-        if (!ratId) { alert(`Rat ID가 비어있는 행이 있습니다.`); return; }
+        if (!ratId) { bpMarkId(idInput, false); alert(`Rat ID가 비어있는 행이 있습니다.`); return; }
         if (!timepoint) { alert(`[${ratId}]의 시점(Timepoint)을 선택해주세요.`); return; }
         if (!inputDate) { alert(`[${ratId}]의 측정 날짜를 넣어주세요.`); return; }
+        if (!known.has(ratId)) { bpMarkId(idInput, false); missing.push(`${ratId}  (장비: ${sourceData.ratId || '-'})`); continue; }
+        bpMarkId(idInput, true);
+        jobs.push({ ratId, inputDate, timepoint, sourceData });
+    }
+    if (missing.length) return alert(`없는 Rat ID가 ${missing.length}건 있어 아무것도 저장하지 않았습니다 (빨간 칸):\n\n${missing.join('\n')}\n\n고친 뒤 다시 저장하세요.`);
+
+    if (!confirm(`${jobs.length}건의 데이터를 데이터베이스에 저장하시겠습니까?\n(같은 날짜 · 같은 시점 기록이 있으면 그 기록에 혈압 값만 합쳐지고, 없으면 새로 만들어집니다.)`)) return;
+
+    for (const { ratId, inputDate, timepoint, sourceData } of jobs) {
 
         // ---------------------------------------------------------
         // 기존 데이터 확인 후 병합(Merge) 로직
@@ -1017,6 +1102,7 @@ async function saveCsvToDB() {
 
     let successCount = 0;
     let failCount = 0;
+    const csvSkipped = [];   // 무시한 칸 (사망일 등)
 
     try {
         // 직렬화 처리 (안정성을 위해 한 마리씩 순차 업데이트)
@@ -1036,7 +1122,16 @@ async function saveCsvToDB() {
             let updates = {};
 
             // 1. 단일 데이터 매핑
-            if (row['Death_Date']) { updates.deathDate = row['Death_Date']; updates.status = '사망'; }
+            // 사망일은 이미 사망인 개체의 정정만 받는다 — 살아 있는 개체의 사망은 케이지별 입력에서만 (재실·마지막 잔량)
+            if (row['Death_Date']) {
+                const dd = String(row['Death_Date']).trim();
+                if (existingData.status !== '사망') csvSkipped.push(`${ratId}: 생존 개체라 사망일(${dd}) 무시 — 케이지별 입력에서`);
+                else if (!/^\d{4}-\d{2}-\d{2}$/.test(dd)) csvSkipped.push(`${ratId}: 사망일 형식이 YYYY-MM-DD가 아님 (${dd})`);
+                else if (dd !== String(existingData.deathDate || '')) {
+                    updates.deathDate = dd;
+                    try { updates.lastAliveDate = await lastAliveDateFor(ratId, dd); } catch (e) { console.warn('lastAliveDate 계산 실패', ratId, e); }
+                }
+            }
             if (row['OVX_Date']) updates.ovxDate = row['OVX_Date'];
             if (row['Sample_Type']) updates.sampleType = row['Sample_Type'];
             if (row['Sample_Date']) updates.sampleDate = row['Sample_Date'];
@@ -1096,7 +1191,8 @@ async function saveCsvToDB() {
 
         // 완료 후 캐시 비우고 알림
         clearRatsCache();
-        alert(`✨ 대량 업데이트가 완료되었습니다!\n\n- 성공: ${successCount}건\n- 실패(없는 ID 등): ${failCount}건`);
+        alert(`✨ 대량 업데이트가 완료되었습니다!\n\n- 성공: ${successCount}건\n- 실패(없는 ID 등): ${failCount}건` +
+            (csvSkipped.length ? `\n- 무시한 칸 ${csvSkipped.length}건:\n${csvSkipped.slice(0, 15).join('\n')}${csvSkipped.length > 15 ? `\n… 외 ${csvSkipped.length - 15}건` : ''}` : ''));
         
         // UI 초기화
         document.getElementById('csv-preview-area').innerHTML = '';
@@ -1195,6 +1291,12 @@ async function saveCodFinal() {
             // 케이지에 살아 있는 개체의 사망은 여기서 저장하지 않는다 — 케이지별 입력으로 (global.js deathBlocked)
             const cur = await db.collection("rats").doc(codTargetDocId).get();
             if (cur.exists && cur.data().status !== '사망' && await deathBlocked(cur.data().ratId)) { closeCod(); return; }
+            if (cur.exists && cur.data().status !== '사망' && typeof deathBlockedRecentMove === 'function' && await deathBlockedRecentMove(cur.data().ratId)) { closeCod(); return; }
+            // 사망일 없는 '사망'은 POD·생존 분석에서 빠지고 마지막 생존 확인일도 못 남긴다
+            if (!cur.exists || !cur.data().deathDate) {
+                alert('사망일이 없어 저장하지 않았습니다.\n\n살아 있던 개체면 「케이지별 입력」에서 사망을 먼저 저장하고, 이미 사망 처리된 개체면 「데이터 수정」에서 사망일을 넣은 뒤 다시 하세요.');
+                closeCod(); return;
+            }
             await db.collection("rats").doc(codTargetDocId).update({
                 codFull: finalStr,
                 status: '사망',
@@ -1497,7 +1599,8 @@ function addEdMrRow() {
         </select>
         <input type="date" class="ed-mr-dt" style="padding:5px;">
         <select class="ed-mr-sz" style="width:80px; padding:5px;">
-            <option value="None" selected>None</option>
+            <option value="" selected>-</option>
+            <option value="None">None</option>
             <option value="Small">Small</option>
             <option value="Large">Large</option>
         </select>
@@ -1696,10 +1799,12 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
     
     let areList = [];
     let codSecList = []; // 부원인 리스트
+    let dbDeathDate = null;   // DB의 사망일. 호출하는 쪽이 없으면 오늘 날짜를 넘겨서, 생존 개체 사인 창에 오늘이 사망일로 채워졌다
     try {
         const docSnap = await db.collection("rats").doc(docId).get();
         if(docSnap.exists) {
             const rData = docSnap.data();
+            dbDeathDate = rData.deathDate || '';
             if(rData.areList && Array.isArray(rData.areList)) areList = rData.areList;
             if(rData.codSec && Array.isArray(rData.codSec)) codSecList = rData.codSec; // DB에서 부원인 로드
         }
@@ -1740,7 +1845,8 @@ window.openSimpleCod = async function(docId, currentCod, currentAre, currentDeat
         }
     }
     if(document.getElementById('modal-death-date')) {
-        document.getElementById('modal-death-date').value = currentDeathDate || '';
+        // 사망일이 없으면 비워 둔다 (기본값으로 오늘을 넣지 않음)
+        document.getElementById('modal-death-date').value = (dbDeathDate !== null ? dbDeathDate : currentDeathDate) || '';
     }
 
     const simpleCodModal = document.getElementById('simple-cod-modal');
@@ -1814,6 +1920,12 @@ window.saveSimpleCod = async function() {
         if (cur.exists && cur.data().status !== '사망' && await deathBlocked(cur.data().ratId)) {
             document.getElementById('simple-cod-modal').style.display = 'none';   // 케이지 입력으로 넘어갔으니 창은 닫는다
             return;
+        }
+        if (cur.exists && cur.data().status !== '사망' && typeof deathBlockedRecentMove === 'function' && await deathBlockedRecentMove(cur.data().ratId)) return;
+        if (cur.exists && typeof checkRatDates === 'function' && deathDateEl.value !== String(cur.data().deathDate || '')) {   // 바꾼 사망일만 검사
+            const dc = checkRatDates(cur.data(), { deathDate: deathDateEl.value });
+            if (dc.errors.length) return alert('저장하지 않았습니다 — 날짜를 확인하세요:\n\n· ' + dc.errors.join('\n· '));
+            if (dc.warns.length && !confirm('확인해주세요:\n\n· ' + dc.warns.join('\n· ') + '\n\n계속할까요?')) return;
         }
         updateData.deathDate = deathDateEl.value;
         updateData.status = '사망';

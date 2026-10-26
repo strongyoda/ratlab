@@ -80,6 +80,9 @@ async function feedingGroupFixes(cohort) {
         const want = Array.from(groups)[0];
         const have = normGroupKey(v.group);
         if (have === want) return;
+        // C14부터 G0 = 배정 전(미배정). 전환 전 기록의 G0는 그때 사실이라 고치면 안 된다 —
+        // 지금 군으로 바꾸면 공통 처치 기간 섭취가 메트포민군으로 집계된다 (2026-10-26 점검)
+        if (have === 'G0' && Number(cohort) >= 14) return;
         fixes.push({ id: d.id, cageId: String(v.cageId), dateStr: v.dateStr || '', from: have, to: want });
     });
 
@@ -892,6 +895,19 @@ function cageTodayItems(cage, occ, cfg, rows, today) {
             else out.push({ kind: 'dose', face: 'green', text: `${rule.substance} 투약 시작 — 오늘 채우는 물부터 조제` });
         } else if (dd > 0 && dd <= 3) {
             out.push({ kind: 'soon', face: 'canary', text: `${rule.substance} D-${dd}` });
+        } else if (dd < 0 && dd >= -7) {
+            // 시작일을 놓쳤다(라운드·군 배정이 하루 늦음). 그날 뒤로 사료를 간 기록 · 약을 넣은 기록이 없으면 계속 알린다.
+            // 안 알리면 G3에 고염 사료가 그대로 남거나 메트포민이 빠진 채 지나간다 (2026-10-26 점검)
+            const after = (rows || []).filter(r => r.dateStr && r.dateStr >= start && r.dateStr < today);
+            const done = rule.medium === 'food'
+                ? after.some(r => !((r.noFood !== undefined && r.noFood !== null) ? r.noFood : r.noRefill))
+                : after.some(r => Number(r.doseMg) > 0);
+            if (!done) {
+                if (rule.medium === 'food') foodToday = true;
+                out.push({ kind: 'missed', face: 'pink', text: rule.medium === 'food'
+                    ? `${rule.substance} 사료 시작일(${start})이 지났는데 그 뒤 사료를 간 기록이 없습니다 — 오늘 바꾸세요`
+                    : `${rule.substance} 투약 시작일(${start})이 지났는데 약을 넣은 기록이 없습니다 — 오늘부터 조제` });
+            }
         }
     });
 
@@ -899,7 +915,12 @@ function cageTodayItems(cage, occ, cfg, rows, today) {
     // (C14: G1·G2 BAPN fumarate + 고염, G3 BAPN fumarate + 일반 염도). 고염식이 오늘 끝나는 케이지는 따로 빨갛게.
     // 사료 교체일은 물까지 통째로 가는 날 — 투약 시작이 사료와 같은 날이어야 한다(2026-08-14).
     const mine = rules.filter(x => x.medium === 'food' && (x.groups || []).includes(gkey) && Number(x.value) > 0);
-    const saltEnds = mine.some(x => /NaCl|염/i.test(x.substance || '') && doseRuleWindow(x, occ).end === today);
+    const saltEnds = mine.some(x => {
+        if (!/NaCl|염/i.test(x.substance || '')) return false;
+        const e = doseRuleWindow(x, occ).end;
+        // 놓친 전환(위 'missed')이면 며칠 지나서도 고염식 중단을 같이 알린다
+        return e === today || (foodToday && e && e < today && diff(e, today) <= 7);
+    });
     const anyEnds = mine.some(x => doseRuleWindow(x, occ).end === today);
     if (foodToday || anyEnds) {
         const on = mine.filter(x => doseRuleOnDate(x, occ, today));
@@ -926,11 +947,12 @@ function cageTodayItems(cage, occ, cfg, rows, today) {
     if (ev.bp) out.push({ kind: 'bp', face: 'canary', text: `BP ${[...ev.bp].join('·')} — 「BP일」 표시` });
     if (ev.mr) out.push({ kind: 'mr', face: 'canary', text: `MR ${[...ev.mr].join('·')} — 「처치일」 표시` });
 
-    // 주말 물: 목·금에만. 제일 큰 통으로도 3일을 못 넘기면 주말 보충이 필요하다.
-    if (dow === 4 || dow === 5) {
-        const o = weekendWaterOutlook(rows, occ.length, cfg.housing);
-        if (o && o.short) out.push({ kind: 'weekend', face: 'pink', text: `주말 물 ${o.days.toFixed(1)}일치 — ${o.fill} mL로도 부족, 주말 보충 필요` });
-        else if (dow === 5 && o) out.push({ kind: 'friday', face: 'ink', text: `금요일 — 큰 통 (${o.fill} mL면 ${o.days.toFixed(1)}일)` });
+    // 주말 · 연휴 물: 목·금, 또는 오늘 채운 물이 3일 넘게 버텨야 하는 날(연휴 앞). 제일 큰 통으로도 못 넘기면 중간 보충이 필요하다.
+    const gapToday = labNextVisitGap(today);
+    if (dow === 4 || dow === 5 || gapToday >= 3) {
+        const o = weekendWaterOutlook(rows, occ.length, cfg.housing, today);
+        if (o && o.short) out.push({ kind: 'weekend', face: 'pink', text: `${o.need}일 버틸 물 ${o.days.toFixed(1)}일치 — ${o.fill} mL로도 부족, 중간 보충 필요` });
+        else if (gapToday >= 3 && o) out.push({ kind: 'friday', face: 'ink', text: `다음 방문까지 ${gapToday}일 — 큰 통 (${o.fill} mL면 ${o.days.toFixed(1)}일)` });
     }
     if (occ.length === 1) out.push({ kind: 'single', face: 'ink', text: '1마리 케이지' });
     return out;
@@ -999,7 +1021,53 @@ function fillOptions(housing) {
 // 중앙값이 걸러버린 탓. 바닥난 구간의 값은 반동이 아니라 하한이라 걸러내면 안 된다.
 // 달력은 보지 않는다 — 채움량으로 며칠인지만 계산하고, 오늘이 금요일인지는 사람이 안다.
 const OUTLOOK_MIN_DAYS = 3;   // 금요일 오후 → 월요일 오전 ≈ 2.8일. 이보다 짧으면 주말을 못 넘긴다
-function weekendWaterOutlook(rows, n, housing) {
+
+// 사육실에 아무도 안 가는 날 = 토 · 일 + 공휴일. 연휴 앞이면 다음 방문까지 4~5일이라 '3일'로 판정하면
+// 목요일(12/24 · 12/31)이나 설 앞 금요일(2/5)에 "전 케이지 3일 이상"이 떠도 물이 마른다 (2026-10-26 점검).
+// C14 기간(2026-10 ~ 2027-03) 공휴일. 기간이 바뀌면 여기에 더한다.
+const LAB_HOLIDAYS = new Set(['2026-12-25', '2027-01-01', '2027-02-06', '2027-02-07', '2027-02-08', '2027-02-09', '2027-03-01']);
+function labDayOff(ds) {
+    const w = new Date(ds + 'T00:00:00').getDay();
+    return w === 0 || w === 6 || LAB_HOLIDAYS.has(ds);
+}
+// 오늘 채운 물로 버텨야 하는 일수 = 다음 출근일까지 (평일 1, 금 → 월 3, 12/24 목 → 12/28 월 4, 2/5 금 → 2/10 수 5)
+function labNextVisitGap(ds) {
+    let n = 1;
+    while (n < 10 && labDayOff(doseShift(ds, n))) n++;
+    return n;
+}
+// 처치 날짜 검사 (일괄 입력 · 사건 기록 · 데이터 수정 · 신규 등록 공용, 2026-10-26 점검).
+// 결찰일 하나가 틀리면 BAPN · 사료 전환 · 메트포민 · 군 배정 날짜가 전부 따라 틀린다.
+// rat: 지금 개체, patch: 새로 넣을 날짜들 { arrivalDate, ovxDate, surgeryDate, deathDate, sampleDate }
+// 반환 { errors: [막을 것], warns: [확인받을 것] }
+function checkRatDates(rat, patch, today) {
+    const t = today || getTodayStr();
+    const d = v => doseDateOf(v);
+    const m = Object.assign({}, rat || {}, patch || {});
+    const name = { arrivalDate: '반입일', ovxDate: 'OVX', surgeryDate: '결찰일', deathDate: '사망일', sampleDate: '희생일' };
+    const errors = [], warns = [];
+    Object.keys(patch || {}).forEach(k => {
+        const v = d(patch[k]);
+        if (!v || !name[k]) return;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { errors.push(`${name[k]} 형식이 이상합니다 (${v})`); return; }
+        if (v > t) errors.push(`${name[k]} ${v}가 오늘(${t})보다 뒤입니다`);
+        else if ((new Date(t + 'T00:00:00') - new Date(v + 'T00:00:00')) / 864e5 > 30) warns.push(`${name[k]} ${v}는 30일도 더 전입니다`);
+    });
+    const order = ['arrivalDate', 'ovxDate', 'surgeryDate'];
+    for (let i = 0; i < order.length; i++) for (let j = i + 1; j < order.length; j++) {
+        const a = d(m[order[i]]), b = d(m[order[j]]);
+        if (a && b && a > b && (order[i] in (patch || {}) || order[j] in (patch || {})))
+            errors.push(`${name[order[i]]}(${a})이 ${name[order[j]]}(${b})보다 뒤입니다`);
+    }
+    ['deathDate', 'sampleDate'].forEach(k => {
+        const v = d(m[k]);
+        if (!v || !(k in (patch || {}))) return;
+        order.forEach(o => { const a = d(m[o]); if (a && a > v) errors.push(`${name[k]}(${v})이 ${name[o]}(${a})보다 앞입니다`); });
+    });
+    return { errors, warns };
+}
+
+function weekendWaterOutlook(rows, n, housing, today) {
     const clean = (rows || []).filter(r => !(r.flags || []).length
         && typeof r.waterPerCapita === 'number' && r.waterPerCapita > 0 && !rowSpansWeekend(r))
         .slice().sort((a, b) => String(b.dateStr).localeCompare(String(a.dateStr)));   // 최신순
@@ -1009,7 +1077,14 @@ function weekendWaterOutlook(rows, n, housing) {
     const opts = fillOptions(housing);
     const fill = Math.max(...(opts.length ? opts : [700]));   // 제일 큰 물통 기준
     const days = fill / (pc * n);
-    return { pc, fill, days, short: days < OUTLOOK_MIN_DAYS };
+    // 목요일엔 다음 날(금) 채움이 버틸 일수를 미리 본다. 오늘 채운 물이 연휴를 넘겨야 하면 그 일수.
+    let need = OUTLOOK_MIN_DAYS;
+    if (today) {
+        const w = new Date(today + 'T00:00:00').getDay();
+        const ahead = w === 4 && !labDayOff(doseShift(today, 1)) ? doseShift(today, 1) : today;
+        need = Math.max(OUTLOOK_MIN_DAYS, labNextVisitGap(ahead));
+    }
+    return { pc, fill, days, need, short: days < need };
 }
 
 // 조제 어림에서 케이지 하나의 예측 섭취량이 너무 낮으면 (채우는 물이 7일치를

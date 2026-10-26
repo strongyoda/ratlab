@@ -22,20 +22,79 @@ async function checkRatValid(ratId) {
     }
 }
 
-async function saveBulk() { 
-    const c=document.getElementById('add-c').value, g=document.getElementById('add-g').value || '1';
-    const s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value; 
-    for(let i=s; i<=e; i++) { 
-        await db.collection("rats").add({
-            ratId:`C${c.padStart(2,'0')}${String(i).padStart(2,'0')}G${g}`, 
-            cohort:c, 
-            group:`G${g}`, 
-            num:String(i), 
-            arrivalDate:d, 
-            status:'생존'
-        }); 
-    } 
-    clearRatsCache(); alert("완료"); 
+// 대량 등록. 번호가 겹치면 같은 ID가 두 마리 생겨 체중·급여가 섞인다 — 저장 전에 전부 막는다 (2026-10-26 점검)
+async function saveBulk() {
+    const c=(document.getElementById('add-c').value || '').trim();
+    let g=document.getElementById('add-g').value || '1';
+    const s=Number(document.getElementById('add-s').value), e=Number(document.getElementById('add-e').value), d=document.getElementById('add-d').value;
+    if (!c) return alert('코호트를 입력하세요.');
+    if (!(s > 0) || !(e > 0) || !Number.isInteger(s) || !Number.isInteger(e)) return alert('시작·끝 번호를 1 이상 정수로 입력하세요.');
+    if (e < s) return alert('끝 번호가 시작 번호보다 작습니다.');
+    if (!d) return alert('반입일을 넣으세요.');
+    const dc = typeof checkRatDates === 'function' ? checkRatDates({}, { arrivalDate: d }) : { errors: [], warns: [] };
+    if (dc.errors.length) return alert('날짜를 확인하세요:\n\n· ' + dc.errors.join('\n· '));
+    if (dc.warns.length && !confirm('확인해주세요:\n\n· ' + dc.warns.join('\n· ') + '\n\n계속할까요?')) return;
+
+    // 코호트 14부터는 반입 = G0 (군은 전환일에 「사건 기록 → 군 배정」에서 정한다)
+    let gNote = '';
+    if (Number(c) >= 14) {
+        if (g !== '0') gNote = `\n(코호트 ${c}은 반입 시 G0으로만 등록합니다 — 고른 G${g}은 무시)`;
+        g = '0';
+    }
+    const idOf = i => `C${c.padStart(2,'0')}${String(i).padStart(2,'0')}G${g}`;
+
+    let all;
+    try { all = await getRatsWithCache(true); } catch (err) { return alert('기존 개체 확인 실패: ' + err.message); }
+    // 숨김 개체도 번호를 차지하므로 DB에서 코호트 전체를 다시 본다
+    const cSnap = await db.collection('rats').where('cohort', '==', c).get();
+    const same = all.filter(r => String(r.cohort) === c).concat(cSnap.docs.map(x => x.data()));
+    const ids = new Set(all.map(r => String(r.ratId)));
+    cSnap.forEach(x => ids.add(String(x.data().ratId)));
+    const dup = [];
+    for (let i = s; i <= e; i++) {
+        if (same.some(r => Number(r.num) === i)) dup.push(`${i}번 (이미 있음)`);
+        else if (ids.has(idOf(i))) dup.push(`${idOf(i)} (ID 중복)`);
+    }
+    if (dup.length) return alert(`이미 있는 번호라 등록하지 않았습니다:\n\n${[...new Set(dup)].slice(0, 15).join('\n')}${dup.length > 15 ? `\n… 외 ${dup.length - 15}` : ''}`);
+
+    const n = e - s + 1;
+    let bsz = 12;
+    try { const cf = typeof getCohortConfig === 'function' ? await getCohortConfig(c) : null; bsz = Number(cf && cf.housing && cf.housing.batchSize) || 12; } catch (err) {}
+    const bs = Number(c) >= 14 && typeof getBatchNo === 'function' ? ` (Batch ${getBatchNo({ cohort: c, num: s }, bsz)}~${getBatchNo({ cohort: c, num: e }, bsz)})` : '';
+    if (!confirm(`코호트 ${c}, 번호 ${s}~${e}${bs}, ${n}마리, 반입일 ${d}\n${idOf(s)} … ${idOf(e)}${gNote}\n\n등록할까요?`)) return;
+
+    try {
+        const batch = db.batch();
+        for(let i=s; i<=e; i++) {
+            batch.set(db.collection("rats").doc(), {
+                ratId: idOf(i),
+                cohort:c,
+                group:`G${g}`,
+                num:String(i),
+                arrivalDate:d,
+                status:'생존'
+            });
+        }
+        await batch.commit();
+    } catch (err) { console.error(err); return alert('등록 실패: ' + err.message); }
+    clearRatsCache(); alert(`${n}마리 등록 완료`);
+}
+
+// 이동 중(옛 재실은 '이동'으로 닫혔는데 새 케이지가 아직 없음)인 개체의 사망도 막는다.
+// global.js deathBlocked는 열린 재실이 있을 때만 막아서, 옮기는 사이에 다른 화면으로 사망이 새어 나간다.
+// true = 막았음.
+async function deathBlockedRecentMove(ratId) {
+    if (!ratId) return false;
+    try {
+        const hs = await db.collection('ratHousing').where('ratId', '==', ratId).get();
+        if (hs.docs.some(x => x.data().to === null)) return false;   // 열린 재실은 deathBlocked 몫
+        const now = Date.now();
+        const moved = hs.docs.map(x => x.data()).find(h => h.endReason === '이동' && h.to && h.to.toMillis && now - h.to.toMillis() < 864e5);
+        if (!moved) return false;
+        alert(`${ratId}은(는) 24시간 안에 케이지를 옮기다 만 개체입니다 (${moved.cageId} 케이지에서 나옴, 새 케이지 없음).\n\n` +
+            `「케이지 현황」에서 새 케이지에 넣은 뒤 「케이지별 입력」에서 사망을 저장하세요. 여기서는 저장하지 않습니다.`);
+        return true;
+    } catch (e) { console.warn('이동 재실 확인 실패', e); return false; }
 }
 
 async function saveDaily() {
@@ -60,6 +119,7 @@ async function saveDaily() {
     }
     // 케이지에 살아 있는 개체의 사망은 여기서 저장하지 않는다 — 케이지별 입력으로 (global.js deathBlocked)
     if (dead && await deathBlocked(id)) return;
+    if (dead && await deathBlockedRecentMove(id)) return;   // 옮기다 만 개체도 (위 함수)
 
     try {
         let savedCount = 0;
@@ -81,6 +141,8 @@ async function saveDaily() {
                 if(dead) {
                     await rSnap.docs[0].ref.update({ status: '사망', deathDate: date });
                     await closeOpenHousing(id, '사망');   // 케이지 재실도 닫아야 섭취량 계산이 안 어긋남
+                    try { await rSnap.docs[0].ref.update({ lastAliveDate: await lastAliveDateFor(id, date) }); }
+                    catch (e) { console.warn('lastAliveDate 저장 실패', id, e); }
                 }
                 else { await rSnap.docs[0].ref.update({ lastScore: total }); }
             }
@@ -300,6 +362,23 @@ window.changeRatGroup = async function(docId, oldRatId, newGroupNum) {
     const newRatId = oldRatId.replace(/G\d+$/, '') + newGroup; // 기존 ID에서 G숫자만 갈아끼움
     if (oldRatId === newRatId) return;
 
+    // 코호트 14부터는 군 배정(assign.js)만 군을 바꾼다 — 급여 기록 ratIds 이동 · 2마리 케이지 군 섞임 검사 ·
+    // groupAssignments 기록을 여기서는 안 해서 섭취·투약이 옛 ID로 갈라진다 (2026-10-26 점검)
+    let ratCohort = null;
+    try { const rd = await db.collection("rats").doc(docId).get(); ratCohort = rd.exists ? rd.data().cohort : null; } catch (e) {}
+    if (Number(ratCohort) >= 14) {
+        alert('군은 「사건 기록 → 군 배정」에서만 바꿉니다.');
+        loadDetailData(oldRatId);
+        return;
+    }
+    // 새 ID가 이미 있으면 두 개체의 기록이 한 ID로 합쳐진다
+    const clash = await db.collection("rats").where("ratId", "==", newRatId).get();
+    if (!clash.empty) {
+        alert(`[${newRatId}]은(는) 이미 있는 ID입니다. 바꾸지 않았습니다.`);
+        loadDetailData(oldRatId);
+        return;
+    }
+
     if(!confirm(`[${oldRatId}] 개체를 [${newGroup}] 그룹으로 이동하시겠습니까?\n모든 관련 데이터(혈압/체중/투약/데일리)의 소유자 ID가 [${newRatId}](으)로 연동 변경됩니다.`)) {
         loadDetailData(oldRatId); // 취소 시 셀렉트박스 원상복구를 위해 화면 새로고침
         return;
@@ -319,6 +398,12 @@ window.changeRatGroup = async function(docId, oldRatId, newGroupNum) {
             const promises = snap.docs.map(d => d.ref.update({ ratId: newRatId }));
             await Promise.all(promises);
         }
+
+        // 급여 기록의 ratIds도 새 ID로 — 안 바꾸면 그 구간 섭취·투약이 옛 ID에 남는다
+        const fSnap = await db.collection("cageFeeding").where("ratIds", "array-contains", oldRatId).get();
+        await Promise.all(fSnap.docs.map(d => d.ref.update({
+            ratIds: (d.data().ratIds || []).map(x => x === oldRatId ? newRatId : x)
+        })));
 
         // 2-1. 재실 기록(ratHousing)도 반드시 같이 갈아끼운다.
         // 여기를 빠뜨리면 케이지 안의 쥐가 통째로 사라진 것처럼 보이고,
@@ -345,7 +430,8 @@ window.changeRatGroup = async function(docId, oldRatId, newGroupNum) {
         try {
             const ratSnap = await db.collection("rats").doc(docId).get();
             const cohort = ratSnap.exists ? ratSnap.data().cohort : null;
-            if (cohort) {
+            // 코호트 14+는 전환 전 G0 기록이 맞는 값이라 코호트 전체 정정을 제안하지 않는다
+            if (cohort && Number(cohort) < 14) {
                 const fixes = await feedingGroupFixes(cohort);
                 if (fixes.length && confirm(
                         `급여 기록 ${fixes.length}건의 군 표기가 옛 군으로 남아 있습니다.` + "\n" +

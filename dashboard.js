@@ -58,7 +58,9 @@ async function dbLoad() {
     const cutoff = dbShift(today, -14);
 
     const [rats, cageSnap, houseSnap, feedSnap, measSnap, cfgSnap] = await Promise.all([
-        getRatsWithCache(),
+        // 다른 기기에서 군 배정(ID 변경)을 하면 5분 캐시의 옛 ID로는 재실 개체를 못 찾아 케이지가 빈 것으로 보이고
+        // 오늘 만들 원액에서 빠진다 — 대시보드는 항상 새로 읽는다 (2026-10-26 점검)
+        getRatsWithCache(true),
         db.collection('cages').get(),
         db.collection('ratHousing').where('to', '==', null).get(),
         // 급여 기록은 투약 계산용으로 길게 한 번 받고(global.js DOSE_HISTORY_DAYS), 나머지 기능에는
@@ -78,14 +80,20 @@ async function dbLoad() {
 
     const cages = [];   cageSnap.forEach(d => cages.push(Object.assign({ id: d.id }, d.data())));
     const housing = []; houseSnap.forEach(d => housing.push(d.data()));
-    const doseFeeds = [];   feedSnap.forEach(d => doseFeeds.push(d.data()));
+    const allFeeds = [];    feedSnap.forEach(d => allFeeds.push(d.data()));
+    // 케이지 번호는 코호트가 바뀌면 다시 쓰인다(파일럿 13.5의 26~30번 → C14 Batch 5). 번호로만 묶으면
+    // 옛 코호트의 마지막 채움이 새 첫 구간의 기준이 되어 섭취량·조제가 틀린다 (2026-10-26).
+    // 지금 개체가 있는 케이지는 그 개체 코호트의 기록만 남긴다. 빈 케이지 기록은 그대로.
+    const cageCohort = {};
+    housing.forEach(h => { if (h.cageId != null && h.cohort != null) cageCohort[String(h.cageId)] = String(h.cohort); });
+    const doseFeeds = allFeeds.filter(f => { const c = cageCohort[String(f.cageId)]; return !c || String(f.cohort) === c; });
     const feeds = doseFeeds.filter(f => String(f.dateStr) >= cutoff);
     const meas = [];    measSnap.forEach(d => meas.push(d.data()));
     const configs = {}; cfgSnap.forEach(d => { configs[d.id] = d.data(); });
 
     // '진행 중' = 설정이 있고, 최근 2주 안에 급여 기록이 있는 코호트.
     // 끝난 코호트에 생존으로 남아 있는 개체까지 세면 경고가 옛 개체로 뒤덮인다.
-    const recentCohorts = new Set(feeds.map(f => String(f.cohort)));
+    const recentCohorts = new Set(allFeeds.filter(f => String(f.dateStr) >= cutoff).map(f => String(f.cohort)));
     const notDead = rats.filter(r => r.status !== '사망');
     const active = [...new Set(notDead.map(r => String(r.cohort)))]
         .filter(c => configs[c] && recentCohorts.has(c))
@@ -262,6 +270,14 @@ function dbTodo() {
         const cfg = configs[String(occ[0].cohort)];
         if (!cfg || !cfg.dosing) return;
         const gkey = cageGroupKey(occ, cage);
+        // 배정 전(G0) 케이지는 군이 없어 투약 규칙이 안 맞는다 — 군과 상관없이 물 투약이 시작되는 날(전환일)을 예고한다
+        if (gkey === 'G0') {
+            const sw = cfg.dosing.filter(x => x.medium === 'water' && Number(x.value) > 0)
+                .map(x => doseRuleWindow(x, occ).start).filter(Boolean).sort()[0];
+            const dd = sw ? dbDiffDays(today, sw) : null;
+            if (dd !== null && dd > 0 && dd <= 3) doseSoon.push({ n: cage.number, sub: '전환일 · 군 배정 필요', d: dd });
+            return;
+        }
         const rule = cfg.dosing.find(x => x.medium === 'water'
             && (x.groups || []).includes(gkey) && Number(x.value) > 0);
         if (!rule) return;
@@ -303,15 +319,15 @@ function dbTodo() {
         const occ = dbOccupants(cage.id);
         const cfg = configs[String(occ[0].cohort)];
         const rows = feeds.filter(f => String(f.cageId) === String(cage.id));
-        const o = weekendWaterOutlook(rows, occ.length, cfg && cfg.housing);
-        if (o) weekend.push({ n: cage.number, days: o.days, fill: o.fill, short: o.short });
+        const o = weekendWaterOutlook(rows, occ.length, cfg && cfg.housing, today);
+        if (o) weekend.push({ n: cage.number, days: o.days, fill: o.fill, short: o.short, need: o.need });
     });
     weekend.sort((a, b) => a.days - b.days);
     const wd = new Date(today + 'T00:00:00').getDay();
     // 목·금에만 띄운다. 평일에는 아래 dbIntakeIssues 의 '마를 수 있음'이 통에 실제로 남은
     // 양으로 같은 판정을 더 정확하게 하므로, 같이 띄우면 한 케이지가 두 번 뜬다.
     // 목·금은 질문이 다르다 — "다 채워도 주말을 넘기나"라서 둘 다 볼 값어치가 있다.
-    const weekendDay = (wd === 4 || wd === 5);
+    const weekendDay = (wd === 4 || wd === 5 || labNextVisitGap(today) >= 3);   // 연휴 앞날도
 
     return { pending, usedCount: used.length, doneCount: doneToday.size, doseToday, doseSoon, evMr, evBp, weekend, weekendDay };
 }
@@ -361,14 +377,14 @@ function dbTodoCard(t) {
     if (t.weekend && t.weekend.length) {
         const short = t.weekend.filter(w => w.short);
         if (t.weekendDay) {
-            const fill = t.weekend[0].fill;
+            const fill = t.weekend[0].fill, need = t.weekend[0].need || 3;
             rows.push(`
             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                 <b style="min-width:96px;">주말 물</b>
                 ${short.length
                     ? short.map(w => chip(dbEsc(w.n) + '번 ' + w.days.toFixed(1) + '일', 'var(--stock-canary-soft)', '#7A5C00')).join('')
-                      + `<span style="color:var(--ink-soft); font-size:0.8rem;"><span class="mono">${fill}</span> mL로 3일을 못 넘깁니다 — 토요일에 볼 케이지 · 최근 평일 섭취 중앙값 기준</span>`
-                    : `<span style="color:var(--ink-soft); font-size:0.85rem;"><span class="mono">${fill}</span> mL면 전 케이지 3일 이상 (최소 <span class="mono">${t.weekend[0].days.toFixed(1)}</span>일)</span>`}
+                      + `<span style="color:var(--ink-soft); font-size:0.8rem;"><span class="mono">${fill}</span> mL로 ${need}일을 못 넘깁니다 — 중간에 들러 볼 케이지 · 최근 평일 섭취 기준</span>`
+                    : `<span style="color:var(--ink-soft); font-size:0.85rem;"><span class="mono">${fill}</span> mL면 전 케이지 ${need}일 이상 (최소 <span class="mono">${t.weekend[0].days.toFixed(1)}</span>일)</span>`}
             </div>`);
         }
     }
@@ -494,10 +510,13 @@ function dbAlerts() {
     // 기준일이 비어 있으면 투약 시작일을 판정할 수 없다.
     // 약물마다 따로 알리면 같은 사실이 여러 번 뜨므로 기준일 단위로 묶는다.
     // 전부 비어 있으면 아직 안 한 처치일 수 있고, 일부만 비어 있으면 확실한 누락이다.
-    const anchorMap = {};   // anchor -> { missing:[], total:0, subs:Set }
+    // 배치마다 처치 날이 다르므로(C14: 매주 한 배치) 같은 배치 안에서만 비교한다. 코호트 전체로 세면
+    // B1이 결찰하는 순간 아직 차례가 안 된 B2~B6가 몇 주 내내 '입력 누락'으로 빨갛게 떠서 진짜 경보를 가린다 (2026-10-26 점검)
+    const anchorMap = {};   // anchor|배치 -> { missing:[], total:0, subs:Set }
     alive.forEach(r => {
         const cfg = configs[String(r.cohort)];
         if (!cfg || !cfg.dosing) return;
+        const bno = getBatchNo(r, Number((cfg.housing || {}).batchSize) || 12);
         const gkey = 'G' + String(r.group || 1).replace(/^G/, '');
         const anchors = {};
         (cfg.dosing || []).forEach(rule => {
@@ -505,20 +524,25 @@ function dbAlerts() {
             (anchors[rule.startAnchor] = anchors[rule.startAnchor] || new Set()).add(rule.substance);
         });
         Object.entries(anchors).forEach(([anchor, subs]) => {
-            const e = anchorMap[anchor] = anchorMap[anchor] || { missing: [], total: 0, subs: new Set() };
+            const key = `${anchor}|${r.cohort}|${bno || ''}`;
+            const e = anchorMap[key] = anchorMap[key] || { anchor, bno, missing: [], total: 0, subs: new Set() };
             e.total++;
             subs.forEach(x => e.subs.add(x));
             const have = anchor === 'ovx' ? r.ovxDate : anchor === 'arrival' ? r.arrivalDate : r.surgeryDate;
             if (!have) e.missing.push(r.ratId);
+            else { const hd = dbDateOf(have); if (hd && (!e.last || hd > e.last)) e.last = hd; }
         });
     });
-    Object.entries(anchorMap).forEach(([anchor, e]) => {
+    Object.values(anchorMap).forEach(e => {
         if (!e.missing.length) return;
-        const name = { ovx: 'OVX일', arrival: '반입일', ligation: '수술일' }[anchor] || anchor;
+        const anchor = e.anchor;
+        const name = (e.bno ? `Batch ${e.bno} ` : '') + ({ ovx: 'OVX일', arrival: '반입일', ligation: '수술일' }[anchor] || anchor);
         const subs = [...e.subs].map(dbEsc).join(' · ');
         const all = e.missing.length === e.total;
+        // 결찰은 월(01~06) · 화(07~12)로 나뉜다 — 같은 배치의 다른 개체가 어제·오늘 했으면 아직 진행 중이다
+        const inProgress = !all && e.last && dbDiffDays(e.last, today) <= 1;
         out.push({
-            level: all ? 'orange' : 'red',
+            level: (all || inProgress) ? 'orange' : 'red',
             head: `${name}이 비어 있는 개체 ${e.missing.length}마리${all ? '' : ` (${e.total}마리 중)`}`,
             body: all
                 ? `아직 하지 않은 처치일 수 있습니다. 이미 했다면 「일괄 입력」에서 넣으세요 — 넣기 전까지 ${subs} 투약이 시작되지 않습니다.`
@@ -677,7 +701,12 @@ function dbIntakeIssues() {
             const clean = rows.filter(r => dbUsableRow(r) && typeof r[key] === 'number' && r[key] >= 0);
             if (clean.length < 3) return;
             const curRow = clean[0], cur = curRow[key];
-            const prevRows = clean.slice(1, 6).filter(r => r[key] > 0);
+            // 고염식을 끊은 케이지(C14 G3)는 물이 1/3~1/4로 줄어든 게 정상이다. 끊기 전 구간을 평소값에 넣으면
+            // 전환 뒤 몇 주 내내 −70% 경보가 떠서 진짜 감소(파열 전 신호)를 가린다 (2026-10-26 점검)
+            const occNow = dbOccupants(cid);
+            const dietSince = doseDietResetDate(dbData.configs[String((occNow[0] || {}).cohort)], occNow, today);
+            const prevPool = (dietSince && curRow.dateStr > dietSince) ? clean.filter(r => r.dateStr > dietSince) : clean;
+            const prevRows = prevPool.filter(r => r !== curRow).slice(0, 5).filter(r => r[key] > 0);
             if (!prevRows.length) return;
             const base = prevRows.reduce((a, b) => a + b[key], 0) / prevRows.length;
             if (!(base > 0)) return;
@@ -716,7 +745,8 @@ function dbIntakeIssues() {
         const wclean = rows.filter(r => dbUsableRow(r) && r.waterPerCapita > 0);
         if (latest && wclean.length) {
             const dow = new Date(latest.dateStr + 'T00:00:00').getDay();
-            const gap = dow === 5 ? 3 : 2;                 // 금요일이면 3일, 아니면 2일
+            // 다음 방문까지 버틸 일수 + 그다음 정규 교체까지. 연휴 앞이면 4~5일 (global.js labNextVisitGap)
+            const gap = Math.max(dow === 5 ? 3 : 2, labNextVisitGap(latest.dateStr));
             const occ = dbOccupants(cid).length;
             const src = wclean.slice(0, 3);
             const recent = src.reduce((a, b) => a + b.waterPerCapita, 0) / src.length;
@@ -758,6 +788,9 @@ function dbCageStages(cageId) {
             if (!start || d < start) start = d;
         });
         if (start) out.push({ date: start, label: rule.substance });
+        // 끝나는 규칙(G3 고염식 중단 · BAPN free base 종료)도 섭취가 바뀌는 처치 시점이다
+        const end = (rule.endAnchor && rule.endAnchor !== 'end') ? doseRuleWindow(rule, occ).end : null;
+        if (end) out.push({ date: end, label: `${rule.substance} 종료` });
     });
     return out;
 }

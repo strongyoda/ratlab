@@ -31,13 +31,37 @@ let raState = null;   // { cohort, batch, rats, housing, cageNo, cfg, strata, sl
 const raEsc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const raGroupNo = r => { const m = String(r.ratId || '').match(/G(\d+)$/); return m ? Number(m[1]) : (Number(String(r.group || '').replace(/^G/, '')) || 0); };
 const raWithGroup = (ratId, g) => /G\d+$/.test(ratId) ? ratId.replace(/G\d+$/, g) : ratId + g;
+// 배정 기록은 코호트·배치마다 문서 하나 — 두 화면이 각자 확정해 서로 다른 배정이 둘 생기는 것을 막는다
+const raRecId = (cohort, batch) => `${cohort}_B${batch}`;
+const raAbort = msg => Object.assign(new Error(msg), { raAbort: true });   // 아무것도 쓰기 전에 멈춤
+
+// 사건 기록의 evRats는 최대 5분 묵은 캐시다. 다른 기기에서 배정·이동·사망이 있었을 수 있으므로
+// 배정 상자를 열 때 · 추첨할 때 · 확정 직전에 개체 · 재실 · 케이지 번호를 새로 읽는다.
+async function raRefresh(st) {
+    const [rats, hs, cageSnap] = await Promise.all([
+        getRatsWithCache(true),
+        db.collection('ratHousing').where('cohort', '==', String(st.cohort)).get(),
+        db.collection('cages').get()
+    ]);
+    st.rats = rats.filter(r => String(r.cohort) === String(st.cohort))
+        .sort((a, b) => (Number(a.num) || 0) - (Number(b.num) || 0) || String(a.ratId).localeCompare(String(b.ratId)));
+    st.housing = {};
+    hs.forEach(d => { const v = d.data(); if (!v.to) st.housing[v.ratId] = String(v.cageId); });
+    st.cageNo = {};
+    cageSnap.forEach(d => { st.cageNo[d.id] = d.data().number; });
+}
 
 // 사건 기록(events.js)이 코호트 데이터를 다 읽어 둔 뒤 부른다
-function raMount() {
+async function raMount() {
     const box = document.getElementById('ra-box');
     if (!box) return;
     if (!box.raBound) { box.addEventListener('click', raOnClick); box.raBound = true; }
-    raState = { cohort: evCohort, rats: evRats, housing: evHousing, cageNo: evCageNo, cfg: evCfg || {}, batch: null, plan: null, record: null, busy: false };
+    const me = { cohort: evCohort, rats: evRats, housing: evHousing, cageNo: evCageNo, cfg: evCfg || {}, batch: null, plan: null, record: null, busy: false };
+    raState = me;
+    box.innerHTML = '<div class="card" style="color:var(--ink-soft);">최신 개체 · 재실을 불러오는 중...</div>';
+    try { await raRefresh(me); }
+    catch (e) { console.error(e); if (raState === me) box.innerHTML = `<div class="card" style="color:var(--stamp);">최신 개체를 읽지 못했습니다: ${raEsc(e.message)} — 새로고침하세요.</div>`; return; }
+    if (raState !== me) return;   // 그 사이 다시 열렸다
     const batches = raBatches();
     const today = getTodayStr();
     // 기본 배치: 전환일이 오늘이거나 가장 최근에 지난 미배정 배치
@@ -106,6 +130,38 @@ function raSlotsFor(batchNo) {
     return s ? { mon: s.mon.slice(), tue: s.tue.slice() } : null;
 }
 
+// 추첨에서 말없이 빠지는 G0 케이지·개체가 없게 한다 — 하나라도 있으면 추첨·확정을 막고 고칠 곳을 알려 준다.
+// avail: 추가 배정 때 기록에 남은 빈 자리 { mon, tue } (없으면 자리 표 전체)
+function raProblems(st, slots, avail) {
+    const out = [];
+    const hasG0 = c => c.groups.includes(0);
+    const DOW = '일월화수목금토';
+    const other = st.other.filter(hasG0);
+    if (other.length) out.push(`결찰 요일로 층을 정할 수 없는 G0 케이지: ${other.map(c => `${c.number}번(${c.dow.map(d => d == null ? '결찰일 없음' : DOW[d]).join('·')})`).join(', ')}` +
+        ` — 개체 상세에서 결찰일(수술일)을 고치거나, 같은 요일 결찰끼리 케이지를 다시 짜세요. 결찰 전 배치면 결찰 뒤에 배정합니다.`);
+    const none = st.none.filter(r => raGroupNo(r) === 0);
+    if (none.length) out.push(`열린 재실(케이지)이 없는 G0 개체: ${none.map(r => r.ratId).join(', ')} — 케이지 현황에서 케이지에 넣은 뒤 진행하세요.`);
+    const mixed = [...st.mon, ...st.tue, ...st.other].filter(c => c.groups.length > 1);
+    if (mixed.length) out.push(`한 케이지에 군이 섞여 있습니다: ${mixed.map(c => c.number + '번').join(', ')} — 케이지 현황에서 정리한 뒤 진행하세요.`);
+    if (slots) ['mon', 'tue'].forEach(k => {
+        const cs = st[k].filter(c => c.g0), n = (avail || slots)[k].length;
+        if (cs.length > n) out.push(`${k === 'mon' ? '월' : '화'}요일 결찰 G0 케이지 ${cs.length}개(${cs.map(c => c.number + '번').join(', ')})인데 ${avail ? '남은 ' : ''}군 자리는 ${n}개` +
+            ` — 결찰일(요일)이 맞는지, 한 케이지를 둘로 나눠 담지 않았는지 확인하세요.`);
+    });
+    return out;
+}
+// 기록에 남은 빈 자리 (처음 추첨 때 케이지가 자리보다 적어 빠진 자리)
+function raAvail(rec) {
+    const d = (rec && rec.dropped) || {};
+    return { mon: (d.mon || []).slice(), tue: (d.tue || []).slice() };
+}
+// 기록에 있는 케이지인데 아직 G0 — 추가 배정이 아니라 「기록대로 다시 적용」할 일이다
+function raInRecord(st, rec) {
+    const ids = new Set(((rec && rec.result) || []).map(it => String(it.cageId)));
+    const cs = [...st.mon, ...st.tue].filter(c => c.g0 && ids.has(String(c.cageId)));
+    return cs.length ? [`배정 기록에 있는 케이지인데 아직 G0: ${cs.map(c => c.number + '번').join(', ')} — 「기록대로 다시 적용」을 누르세요.`] : [];
+}
+
 // ---------- 추첨 ----------
 // crypto 난수로 Fisher–Yates. 자리도 섞는다 — 케이지가 자리보다 적으면(사망으로 빈 케이지) 어느 자리가
 // 빠지는지도 무작위여야 특정 군이 늘 빠지는 치우침이 없다.
@@ -117,13 +173,29 @@ function raShuffle(arr) {
     }
     return a;
 }
-function raDraw() {
-    const st = raStrata(raState.batch), slots = raSlotsFor(raState.batch);
+// 기록이 없으면 처음 추첨, 기록이 있으면(적용 끝) 남은 G0 케이지를 그 기록의 빈 자리로 추가 추첨한다.
+async function raDraw() {
+    const me = raState;
+    if (!me || me.busy) return;
+    me.busy = true;
+    try { await raRefresh(me); me.record = await raLoadRecord(me.batch); }
+    catch (e) { console.error(e); me.busy = false; return alert('최신 개체 · 재실을 읽지 못했습니다: ' + e.message); }
+    me.busy = false;
+    if (raState !== me) return;
+    const rec = me.record;
+    const st = raStrata(me.batch), slots = raSlotsFor(me.batch);
     if (!slots) return alert('이 배치의 군 자리 표가 없습니다 (코호트 설정 assignSlots 또는 기본표).');
-    const plan = { batch: raState.batch, drawnAt: new Date().toISOString(), strata: {}, dropped: {}, items: [] };
+    if (rec && !rec.applied) { raRender(); return alert('이 배치는 배정 기록이 있지만 적용이 끝나지 않았습니다 — 「기록대로 다시 적용」을 먼저 누르세요.'); }
+    const avail = rec ? raAvail(rec) : null;
+    const probs = raProblems(st, slots, avail).concat(rec ? raInRecord(st, rec) : []);
+    if (probs.length) { raRender(); return alert('추첨할 수 없습니다 — 먼저 고치세요.\n\n· ' + probs.join('\n· ')); }
+    if (![...st.mon, ...st.tue].some(c => c.g0)) { raRender(); return alert('추첨할 G0 케이지가 없습니다 (화면을 새로 읽었습니다).'); }
+    const pool = avail || slots;
+    const plan = { batch: me.batch, drawnAt: new Date().toISOString(), strata: {}, dropped: {}, items: [], extra: [],
+                   addOn: !!rec, recId: rec ? rec._id : null };
     ['mon', 'tue'].forEach(k => {
         const cages = st[k].filter(c => c.g0);
-        const order = raShuffle(cages); const slotOrder = raShuffle(slots[k]);
+        const order = raShuffle(cages); const slotOrder = raShuffle(pool[k]);
         plan.strata[k] = order.map(c => c.cageId);
         order.forEach((c, i) => { if (i < slotOrder.length) plan.items.push({ cageId: c.cageId, number: c.number, stratum: k, group: slotOrder[i],
             rats: c.occ.map(r => ({ from: r.ratId, to: raWithGroup(r.ratId, slotOrder[i]) })) }); });
@@ -135,23 +207,93 @@ function raDraw() {
 }
 
 // ---------- 적용 ----------
+// 확정 직전 검사 — 추첨 뒤에 케이지 구성이 바뀌었으면(이동 · 사망 · ID 변경 · 다른 기기의 확정) 그 추첨은 무효.
+// 문제 목록(문자열 배열)을 돌려준다. 빈 배열 = 그대로 적용해도 된다.
+async function raCheckPlan(p) {
+    await raRefresh(raState);
+    const st = raStrata(p.batch), slots = raSlotsFor(p.batch);
+    const rec = await raLoadRecord(p.batch);
+    if (p.addOn) {
+        if (!rec || rec._id !== p.recId) return ['배정 기록이 바뀌었습니다.'];
+        if (!rec.applied) return ['배정 기록의 적용이 끝나지 않았습니다 — 「기록대로 다시 적용」 먼저.'];
+    } else if (rec) return [`다른 기기(또는 다른 화면)에서 이 배치를 이미 확정했습니다 (${rec.date} · ${rec.by || ''}).`];
+    const bad = raProblems(st, slots, p.addOn ? raAvail(rec) : null).concat(p.addOn ? raInRecord(st, rec) : []);
+    const live = new Map(raState.rats.map(r => [r.ratId, r]));
+    const key = a => a.map(String).sort().join(',');
+    ['mon', 'tue'].forEach(k => {
+        if (key(st[k].filter(c => c.g0).map(c => c.cageId)) !== key(p.strata[k] || []))
+            bad.push(`${k === 'mon' ? '월' : '화'}요일 층의 G0 케이지 목록이 추첨 때와 다릅니다.`);
+    });
+    p.items.forEach(it => {
+        const c = [...st.mon, ...st.tue].find(x => String(x.cageId) === String(it.cageId));
+        if (!c || key(c.occ.map(r => r.ratId)) !== key(it.rats.map(x => x.from)))
+            bad.push(`${it.number}번 케이지의 개체가 추첨 때와 다릅니다 (이동 · 사망 · ID 변경).`);
+        it.rats.forEach(x => {
+            const r = live.get(x.from);
+            if (!r || r.status === '사망' || raGroupNo(r) !== 0) bad.push(`${x.from} — 지금은 G0 생존 개체로 없습니다.`);
+            if (live.has(x.to)) bad.push(`${x.to} — 이미 있는 ID입니다.`);
+        });
+    });
+    return [...new Set(bad)];
+}
+
 async function raApply() {
     const p = raState.plan;
     if (!p || raState.busy) return;
     const n = p.items.reduce((a, it) => a + it.rats.length, 0);
-    if (!confirm(`Batch ${p.batch} 케이지 ${p.items.length}개, 개체 ${n}마리의 군을 확정합니다.\n\n` +
+    const today = getTodayStr();
+    const binfo = raBatches().find(b => b.no === p.batch);
+    if (!confirm(`${p.addOn ? '[추가 배정] ' : ''}Batch ${p.batch} 케이지 ${p.items.length}개, 개체 ${n}마리의 군을 확정합니다.\n\n` +
         `· 오늘 라운드(케이지별 입력) 전에 하세요 — 조제가 군을 보고 계산됩니다.\n` +
         `· 적용하는 동안 다른 사람이 이 코호트를 입력하면 안 됩니다 (옛 ID로 저장될 수 있음).\n` +
-        `· 개체 ID가 바뀝니다 (예 C1401G0 → C1401G2). 되돌리려면 다시 추첨해야 합니다.\n\n계속할까요?`)) return;
+        `· 개체 ID가 바뀝니다 (예 C1401G0 → C1401G2). 확정 후에는 이 화면에서 되돌릴 수 없고 다시 추첨할 수도 없습니다.\n\n계속할까요?`)) return;
+    if (!binfo || binfo.switchDay !== today) {
+        const typed = prompt(`이 배치의 전환일은 ${(binfo && binfo.switchDay) || '없음'}이고 오늘은 ${today}입니다.\n` +
+            `배치를 잘못 고른 게 아니라면 배치 번호(${p.batch})를 입력하세요.`);
+        if (typed === null) return;
+        if (String(typed).trim() !== String(p.batch)) return alert('배치 번호가 맞지 않아 취소했습니다. 아무것도 저장하지 않았습니다.');
+    }
     raState.busy = true; raRender();
+    let written = false;
     try {
+        const bad = await raCheckPlan(p);
+        if (bad.length) throw raAbort('추첨 뒤 데이터가 바뀌었습니다.\n\n· ' + bad.join('\n· '));
         const by = (firebase.auth().currentUser && firebase.auth().currentUser.email) || null;
-        const recRef = db.collection('groupAssignments').doc();
-        const record = { cohort: String(raState.cohort), batch: p.batch, date: getTodayStr(), at: firebase.firestore.Timestamp.now(), by,
-                         rng: 'crypto.getRandomValues', drawnAt: p.drawnAt, strata: p.strata, dropped: p.dropped,
-                         result: p.items.map(it => ({ cageId: it.cageId, number: it.number, stratum: it.stratum, group: it.group, rats: it.rats })),
-                         applied: false };
-        await recRef.set(record);   // 먼저 기록 — 중간에 끊겨도 「다시 적용」이 이 기록을 따른다
+        const items = p.items.map(it => ({ cageId: it.cageId, number: it.number, stratum: it.stratum, group: it.group, rats: it.rats }));
+        let recRef;
+        if (!p.addOn) {
+            recRef = db.collection('groupAssignments').doc(raRecId(raState.cohort, p.batch));
+            const record = { cohort: String(raState.cohort), batch: p.batch, date: today, at: firebase.firestore.Timestamp.now(), by,
+                             rng: 'crypto.getRandomValues', drawnAt: p.drawnAt, strata: p.strata, dropped: p.dropped,
+                             extra: p.extra || [], result: items, applied: false };
+            // 먼저 기록 — 중간에 끊겨도 「다시 적용」이 이 기록을 따른다. 다른 추첨이 먼저 썼으면 멈춘다.
+            await db.runTransaction(async t => {
+                const ex = await t.get(recRef);
+                if (ex.exists) throw raAbort(`다른 기기(또는 다른 화면)에서 이 배치를 먼저 확정했습니다 (${ex.data().date} · ${ex.data().by || ''}).`);
+                t.set(recRef, record);
+            });
+        } else {
+            // 추가 배정 — 같은 기록에 붙인다. 빈 자리는 기록 안에서 다시 확인하고 쓴 만큼 지운다.
+            recRef = db.collection('groupAssignments').doc(p.recId);
+            await db.runTransaction(async t => {
+                const s = await t.get(recRef);
+                if (!s.exists) throw raAbort('배정 기록이 없어졌습니다.');
+                const v = s.data();
+                if (!v.applied) throw raAbort('배정 기록의 적용이 끝나지 않았습니다 — 「기록대로 다시 적용」 먼저.');
+                const used = new Set((v.result || []).map(it => String(it.cageId)));
+                if (items.some(it => used.has(String(it.cageId)))) throw raAbort('이미 기록에 있는 케이지가 섞였습니다.');
+                const dropped = raAvail(v);
+                for (const it of items) {
+                    const i = dropped[it.stratum].indexOf(it.group);
+                    if (i < 0) throw raAbort('기록의 빈 자리가 추첨 때와 다릅니다 (다른 화면에서 추가 배정했을 수 있음).');
+                    dropped[it.stratum].splice(i, 1);
+                }
+                t.update(recRef, { result: (v.result || []).concat(items), dropped, applied: false,
+                    addOns: (v.addOns || []).concat([{ date: today, at: firebase.firestore.Timestamp.now(), by, drawnAt: p.drawnAt,
+                        strata: p.strata, extra: p.extra || [], cages: items.map(it => ({ cageId: it.cageId, number: it.number, stratum: it.stratum, group: it.group })) }]) });
+            });
+        }
+        written = true;
         const pairs = p.items.flatMap(it => it.rats.map(r => ({ from: r.from, to: r.to, group: it.group })));
         const left = await raApplyRenames(pairs);
         await recRef.update({ applied: left.length === 0, leftovers: left });
@@ -161,7 +303,15 @@ async function raApply() {
         raState.plan = null; raState.busy = false;
         await evLoad(evCohort);
     } catch (e) {
-        console.error(e); raState.busy = false; raRender();
+        console.error(e); raState.busy = false;
+        if (!written) {
+            raState.plan = null;
+            alert(e.raAbort
+                ? '확정하지 않았습니다 (아무것도 저장하지 않음).\n\n' + e.message + '\n\n화면을 새로 읽습니다. 필요하면 다시 추첨하세요.'
+                : '확정 중 오류: ' + e.message + '\n\n화면을 새로 읽습니다. 배정 기록이 보이면 「기록대로 다시 적용」을 누르세요.');
+            clearRatsCache(); await evLoad(evCohort); return;
+        }
+        raRender();
         alert('적용 실패: ' + e.message + '\n\n「다시 적용」으로 이어서 할 수 있습니다.');
     }
 }
@@ -174,6 +324,7 @@ async function raResume() {
     if (!confirm(`${rec.date} 배정 기록(Batch ${rec.batch})대로 옛 ID가 남은 기록을 정리합니다. 계속할까요?`)) return;
     raState.busy = true; raRender();
     try {
+        await raRefresh(raState);   // 케이지 군 사본을 맞출 재실을 최신으로
         const left = await raApplyRenames(pairs);
         await db.collection('groupAssignments').doc(rec._id).update({ applied: left.length === 0, leftovers: left });
         clearRatsCache();
@@ -184,10 +335,17 @@ async function raResume() {
 
 // 배정 전인데 G 번호가 붙어 있는 배치(번호로 군을 미리 정하던 때 등록)를 G0로 되돌린다
 async function raResetToG0() {
+    if (raState.busy) return;
+    // 묵은 화면이 다른 기기의 확정을 G0로 되돌리지 않게 — 최신으로 읽고 배정 기록이 있으면 멈춘다
+    raState.busy = true;
+    try { await raRefresh(raState); raState.record = await raLoadRecord(raState.batch); }
+    catch (e) { console.error(e); raState.busy = false; return alert('최신 개체를 읽지 못했습니다: ' + e.message); }
+    raState.busy = false;
+    if (raState.record) { raRender(); return alert('이 배치는 배정 기록이 있어 G0로 되돌리지 않습니다 (화면을 새로 읽었습니다).'); }
     const st = raStrata(raState.batch);
     const cages = [...st.mon, ...st.tue, ...st.other].filter(c => !c.g0);
     const pairs = cages.flatMap(c => c.occ.filter(r => raGroupNo(r) > 0).map(r => ({ from: r.ratId, to: raWithGroup(r.ratId, 'G0'), group: 'G0' })));
-    if (!pairs.length || raState.busy) return;
+    if (!pairs.length) { raRender(); return; }
     if (!confirm(`Batch ${raState.batch} ${pairs.length}마리를 G0(미배정)으로 되돌립니다.\n${pairs.slice(0, 6).map(x => x.from + ' → ' + x.to).join('\n')}${pairs.length > 6 ? '\n…' : ''}\n\n계속할까요?`)) return;
     raState.busy = true; raRender();
     try {
@@ -247,7 +405,10 @@ async function raApplyRenames(pairs) {
 }
 
 // ---------- 화면 ----------
+// 고정 ID(코호트_B배치) 기록을 먼저 본다. 없으면 고정 ID 이전(자동 ID)에 남긴 기록을 찾는다.
 async function raLoadRecord(batchNo) {
+    const fx = await db.collection('groupAssignments').doc(raRecId(raState.cohort, batchNo)).get();
+    if (fx.exists) return Object.assign({ _id: fx.id }, fx.data());
     const sn = await db.collection('groupAssignments').where('cohort', '==', String(raState.cohort)).where('batch', '==', batchNo).get();
     let rec = null;
     sn.forEach(d => { const v = d.data(); if (!rec || String(v.date) > String(rec.date)) rec = Object.assign({ _id: d.id }, v); });
@@ -279,19 +440,20 @@ async function raRenderBatch(batchNo, binfo, today) {
     const body = document.getElementById('ra-body');
     const st = raStrata(batchNo), slots = raSlotsFor(batchNo);
     raState.record = await raLoadRecord(batchNo);
-    const rec = raState.record, plan = raState.plan;
+    const rec = raState.record; let plan = raState.plan;
     const face = (bg, bd, ink) => `background:${bg}; border:1px solid ${bd}; color:${ink}; padding:8px 11px; border-radius:2px; font-size:0.84rem; margin-bottom:8px;`;
     const warn = [];
-    if (binfo && binfo.switchDay && binfo.switchDay !== today) warn.push(`이 배치의 전환일은 <b class="mono">${binfo.switchDay}</b>입니다 (오늘 ${today}).`);
-    if (st.other.length) warn.push(`결찰 요일이 월·화가 아니거나 섞인 케이지 ${st.other.map(c => c.number + '번').join(', ')} — 층을 정할 수 없어 뺍니다.`);
-    if (st.none.length) warn.push(`케이지 배정이 없는 개체 ${st.none.map(r => r.ratId).join(', ')} — 케이지 현황에서 먼저 넣으세요.`);
+    if (plan && plan.addOn !== !!rec) raState.plan = plan = null;   // 그 사이 기록이 생겼거나 사라졌다 — 그 추첨은 무효
+    if (binfo && binfo.switchDay && binfo.switchDay !== today) warn.push(`이 배치의 전환일은 <b class="mono">${binfo.switchDay}</b>입니다 (오늘 ${today}). 확정하려면 배치 번호를 입력해야 합니다.`);
+    // 빠지는 케이지 · 개체 · 자리 부족은 경고가 아니라 막음 (raProblems)
+    const avail = rec && rec.applied ? raAvail(rec) : null;
+    const inRec = rec ? raInRecord(st, rec) : [];
+    const probs = raProblems(st, slots, avail).concat(inRec);
     const foodRules = ((raState.cfg.dosing) || []).filter(d => d.medium === 'food');
     // 물질마다 G0를 덮는 규칙이 하나라도 있으면 된다 — G3만의 고염식 규칙(전환일에 끝남)처럼 G0가 없는 규칙은 정상
     const g0Missing = [/BAPN/i, /NaCl|염/i].some(re => foodRules.some(d => re.test(d.substance || ''))
         && !foodRules.some(d => re.test(d.substance || '') && (d.groups || []).includes('G0')));
     if (g0Missing) warn.push('코호트 설정의 고염식·BAPN 규칙에 <b>G0</b>가 없습니다 — 배정 전 개체의 사료 노출이 계산되지 않습니다. 코호트 설정에서 G0를 추가하세요.');
-    const mixed = [...st.mon, ...st.tue].filter(c => c.groups.length > 1);
-    if (mixed.length) warn.push(`한 케이지에 군이 섞여 있습니다: ${mixed.map(c => c.number + '번').join(', ')} — 케이지 현황에서 정리한 뒤 진행하세요.`);
     // 결찰 전(수술일 없음)이라 층이 없는 케이지도 G0 되돌리기 대상이다 — B1처럼 번호로 군이 붙은 채 등록된 배치
     const preAssigned = [...st.mon, ...st.tue, ...st.other].filter(c => c.assignedGroup);
     const eligible = [...st.mon, ...st.tue].filter(c => c.g0);
@@ -310,27 +472,30 @@ async function raRenderBatch(batchNo, binfo, today) {
         <div style="flex:1; min-width:300px;">
             <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid var(--ink); padding-bottom:4px; margin-bottom:4px;">
                 <b>${label} 결찰 <span class="mono" style="font-weight:400; color:var(--ink-soft);">케이지 ${st[k].length}</span></b>
-                <span class="mono" style="font-size:0.78rem; color:var(--ink-soft);">자리 ${slots ? slots[k].join(' · ') : '없음'}</span>
+                <span class="mono" style="font-size:0.78rem; color:var(--ink-soft);">자리 ${slots ? slots[k].join(' · ') : '없음'}${avail ? ` · 남은 자리 ${avail[k].join(' · ') || '없음'}` : ''}</span>
             </div>
             ${st[k].length ? st[k].map(cageRow).join('') : '<div style="font-size:0.82rem; color:var(--ink-soft); padding:6px 0;">케이지 없음</div>'}
             ${plan && plan.dropped[k] && plan.dropped[k].length ? `<div style="font-size:0.78rem; color:#7A5C00; margin-top:4px;">케이지가 자리보다 적어 빠진 자리: ${plan.dropped[k].join(' · ')}</div>` : ''}
         </div>`;
 
     body.innerHTML = `
+    ${probs.length ? `<div class="card" style="padding-top:12px; padding-bottom:6px;">
+        <b style="color:var(--stamp); display:block; margin-bottom:6px;">추첨 · 확정을 막았습니다 — 아래를 고친 뒤 새로고침하세요</b>
+        ${probs.map(w => `<div style="${face('var(--stock-pink-soft)', 'var(--stock-pink)', 'var(--ink)')}">${raEsc(w)}</div>`).join('')}</div>` : ''}
     ${warn.length ? `<div class="card" style="padding-top:12px; padding-bottom:6px;">${warn.map(w => `<div style="${face('var(--stock-canary-soft)', '#E3C55C', '#6B571C')}">${w}</div>`).join('')}</div>` : ''}
     ${rec ? `<div class="card" style="background:var(--stock-green-soft); border-color:var(--approve);">
         <b style="color:var(--approve);">Batch ${batchNo} 배정 기록 있음</b>
         <div style="font-size:0.82rem; margin-top:4px;">${raEsc(rec.date)} · ${raEsc(rec.by || '')} · 케이지 ${rec.result.length}개${rec.applied ? '' : ' · <b style="color:var(--stamp);">적용이 끝나지 않음</b>'}</div>
         <div class="mono" style="font-size:0.8rem; margin-top:6px;">${rec.result.map(it => `${raEsc(it.number)}번 ${raEsc(it.group)}`).join(' · ')}</div>
-        ${!rec.applied || eligible.length ? `<button data-ra="resume" class="btn-small btn-blue db-tap" style="margin-top:8px;" ${raState.busy ? 'disabled' : ''}>기록대로 다시 적용</button>` : ''}
+        ${!rec.applied || inRec.length ? `<button data-ra="resume" class="btn-small btn-blue db-tap" style="margin-top:8px;" ${raState.busy ? 'disabled' : ''}>기록대로 다시 적용</button>` : ''}
     </div>` : ''}
     <div class="card">
         <div style="display:flex; gap:20px; flex-wrap:wrap;">${stratum('mon', '월요일')}${stratum('tue', '화요일')}</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; align-items:center;">
-            ${!rec && eligible.length && !mixed.length ? (plan
-                ? `<button data-ra="apply" class="btn btn-green db-tap" style="width:auto; padding:0.7rem 1.4rem;" ${raState.busy ? 'disabled' : ''}>${raState.busy ? '적용 중...' : '이 결과로 확정'}</button>
+            ${(!rec || rec.applied) && eligible.length && !probs.length ? (plan
+                ? `<button data-ra="apply" class="btn btn-green db-tap" style="width:auto; padding:0.7rem 1.4rem;" ${raState.busy ? 'disabled' : ''}>${raState.busy ? '적용 중...' : (rec ? '이 결과로 추가 배정 확정' : '이 결과로 확정')}</button>
                    <button data-ra="redraw" class="btn-small db-tap" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);" ${raState.busy ? 'disabled' : ''}>다시 추첨</button>`
-                : `<button data-ra="draw" class="btn btn-blue db-tap" style="width:auto; padding:0.7rem 1.4rem;">추첨 (케이지 ${eligible.length}개)</button>`) : ''}
+                : `<button data-ra="draw" class="btn btn-blue db-tap" style="width:auto; padding:0.7rem 1.4rem;" ${raState.busy ? 'disabled' : ''}>${rec ? `추가 배정 — 남은 G0 케이지 ${eligible.length}개를 기록의 빈 자리로 추첨` : `추첨 (케이지 ${eligible.length}개)`}</button>`) : ''}
             ${!rec && preAssigned.length ? `<button data-ra="reset" class="btn-small db-tap" style="background:var(--paper); color:var(--stamp); outline:1px solid var(--stamp);" ${raState.busy ? 'disabled' : ''}>G 번호가 붙은 ${preAssigned.length}개 케이지를 G0로 되돌리기</button>` : ''}
             ${rec && !eligible.length ? `<span style="font-size:0.85rem; color:var(--approve); font-weight:700;">이 배치는 배정이 끝났습니다.</span>` : ''}
         </div>

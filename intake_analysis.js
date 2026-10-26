@@ -200,13 +200,15 @@ function iaRender() {
         const g = iaGroupOf(r);
         byGroup[g] = byGroup[g] || {};
         const c = String(r.cageId);
-        byGroup[g][c] = byGroup[g][c] || { water: [], food: [], met: [], bapn: [], nacl: [] };
+        byGroup[g][c] = byGroup[g][c] || { water: [], food: [], met: [], metS: 0, metD: 0, bapn: [], nacl: [] };
         byGroup[g][c].water.push(r.waterPerCapita);
         if (typeof r.foodPerCapita === 'number') byGroup[g][c].food.push(r.foodPerCapita);
 
         // 메트포민: 실제로 마신 물 × 구간 시작 시점의 물통 농도 ÷ 케이지 총 체중
         const md = iaMetDose(r);
-        if (md !== null) byGroup[g][c].met.push(md);
+        // 주말 3일 구간과 평일 1일 구간이 같은 무게가 되면 누적선 · 노출 표와 다른 값이 나온다 → 일수 가중
+        if (md !== null) { const dd = r.animalDays / (r.ratCount || 1);
+            byGroup[g][c].met.push(md); if (dd > 0) { byGroup[g][c].metS += md * dd; byGroup[g][c].metD += dd; } }
         // 사료 속 물질 — 그 구간에 실제로 들어가 있던 규칙만 (global.js doseRuleOnDate).
         // C14는 BAPN이 free base → fumarate로 바뀌고 G3는 고염식이 전환일에 끝난다. 예전엔 기간을 안 봐서
         // 시작 전 구간에도 고염식을 곱했고, 두 BAPN 규칙이 한 구간에 겹쳐 들어갔다 (2026-10-20 수정).
@@ -224,7 +226,8 @@ function iaRender() {
 
     const groupKeys = Object.keys(byGroup).sort();
     const cageMean = (obj, key) => {
-        const vals = Object.values(obj).map(c => c[key].length ? c[key].reduce((a, b) => a + b, 0) / c[key].length : null)
+        const vals = Object.values(obj).map(c => key === 'met' ? (c.metD > 0 ? c.metS / c.metD : null)
+            : c[key].length ? c[key].reduce((a, b) => a + b, 0) / c[key].length : null)
             .filter(v => v !== null);
         return iaStat(vals);
     };
@@ -460,7 +463,7 @@ function iaCageTable(usable) {
     iaCageSum = {};
     keys.forEach(c => {
         const list = byCage[c];
-        const g = iaGroupOf(list[0]);
+        const g = iaGroupOf(list[list.length - 1]);   // 가장 최근 기록의 군 — 첫 기록은 C14에서 배정 전 G0다 (2026-10-26)
         const doses = list.map(iaMetDose).filter(v => v !== null);   // list는 시간순 → 마지막이 최근
         // '최근'은 마지막 계산 가능 구간 하나다. 며칠짜리인지 화면만 봐서는 알 수 없어
         // (주말이면 3일 치) 구간의 끝 날짜를 같이 적는다.
@@ -569,7 +572,7 @@ function iaCageEvents(cageId) {
     const mine = iaRats.filter(r => ids.has(r.ratId));
     if (!mine.length) return [];
 
-    const gkey = iaGroupOf(rows[0]);
+    const gkey = iaGroupOf(rows[rows.length - 1]);   // 가장 최근 기록의 군 (C14 첫 기록은 G0)
     const dOf = v => !v ? null : (typeof v === 'string' ? v.slice(0, 10)
         : (v.toDate ? new Date(v.toDate().getTime() - v.toDate().getTimezoneOffset() * 60000)
             .toISOString().slice(0, 10) : null));
@@ -735,7 +738,7 @@ function iaDrawCageMetChart(cageId, list, labels, used, events) {
     }
     cv.parentElement.style.display = '';
 
-    const rule = iaWaterRuleOf(iaGroupOf(list[0]));
+    const rule = iaWaterRuleOf(iaGroupOf(list[list.length - 1]));
     const target = rule ? Number(rule.value) : null;
     const anyOut = doseOut.some(v => v !== null);
     const OUT = { showLine: false, pointRadius: 4, pointBorderWidth: 1.5,

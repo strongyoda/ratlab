@@ -93,6 +93,8 @@ async function deCheckGroupTags(cohort) {
     if (!box) return;
     try {
         deGroupFixes = await feedingGroupFixes(cohort);
+        // 코호트 14+는 전환 전 G0 기록이 맞는 값이다 — 지금 군(G1~3)으로 바꾸면 전환 전 섭취가 처치군으로 잡힌다
+        if (Number(cohort) >= 14) deGroupFixes = deGroupFixes.filter(f => normGroupKey(f.from) !== 'G0');
     } catch (e) {
         console.error('군 표기 점검 실패:', e);
         deGroupFixes = [];
@@ -237,6 +239,26 @@ async function deCountHandlings(cageId, prevMs, rowMs) {
     }
 }
 
+// kg·일 = Σ 개체 체중 × 겹친 시간 (케이지별 입력 ciComputeIntake와 같은 식).
+// 체중은 그날 잰 값, 없으면 그 전 최근 값. 한 마리라도 모르면 null (rowKgDays가 sumBW로 대신 계산).
+async function deKgDays(ovs, dateStr) {
+    if (!ovs.length) return null;
+    const ds = String(dateStr || getTodayStr()).slice(0, 10);
+    const w = {};
+    for (const id of [...new Set(ovs.map(o => o.ratId))]) {
+        const s = await db.collection('measurements').where('ratId', '==', id).get();
+        let best = null, bestD = '';
+        s.forEach(d => {
+            const v = d.data(), dt = String(v.date || '').slice(0, 10);
+            if (Number(v.weight) > 0 && dt && dt <= ds && dt >= bestD) { bestD = dt; best = Number(v.weight); }
+        });
+        w[id] = best;
+    }
+    let kgH = 0;
+    for (const o of ovs) { if (!(w[o.ratId] > 0)) return null; kgH += o.ms / 3600000 * w[o.ratId] / 1000; }
+    return kgH > 0 ? kgH / 24 : null;
+}
+
 async function deRecomputeRow(row, prev, keepHandlings) {
     const payload = {};
     const rowAt = row.at && row.at.toMillis ? row.at.toMillis() : null;
@@ -256,23 +278,40 @@ async function deRecomputeRow(row, prev, keepHandlings) {
 
         // 마리·일: 이 케이지의 재실 기록과 구간의 겹침 (구간 도중 사망·이동 반영)
         let animalDays = row.animalDays || null;
+        // 구간이 바뀌면(행 삭제로 앞뒤가 이어짐) kg·일과 재실변동도 다시 — 안 하면 구간은 두 배인데
+        // kgDays는 옛 값이라 도달량 mg/kg이 두 배로 나왔다 (2026-10-26 점검). undefined = 건드리지 않음
+        let kgDays, hChanged = null;
         if (rowAt && prevAt) {
             const hs = await db.collection('ratHousing').where('cageId', '==', String(row.cageId)).get();
             let animalHours = 0;
+            const ovs = [];
             hs.forEach(d => {
                 const h = d.data();
                 const from = h.from && h.from.toMillis ? h.from.toMillis() : 0;
                 const to = h.to && h.to.toMillis ? h.to.toMillis() : rowAt;
                 const ov = Math.min(rowAt, to) - Math.max(prevAt, from);
-                if (ov > 0) animalHours += ov / 3600000;
+                if (ov > 0) { animalHours += ov / 3600000; ovs.push({ ratId: h.ratId, ms: ov, from, to }); }
             });
             animalDays = animalHours / 24;
+            if (!keepHandlings) {
+                kgDays = await deKgDays(ovs, row.dateStr);
+                // 케이지별 입력과 같은 규칙: 양 끝 30분 안쪽의 들고 남은 변동으로 안 친다
+                const EDGE = 30 * 60000;
+                hChanged = ovs.some(o => o.ms > EDGE && (o.from > prevAt + EDGE || o.to < rowAt - EDGE));
+            }
+        } else if (!keepHandlings) {
+            kgDays = null;   // 구간 시각을 몰라 다시 못 잼 — 낡은 값을 남기느니 비운다 (rowKgDays가 sumBW로 대신 계산)
         }
 
         payload.intervalHours = Number(hours.toFixed(2));
         payload.handlings = hnd;
         payload.lossTotal = Number(loss.toFixed(2));
         payload.animalDays = animalDays === null ? null : Number(animalDays.toFixed(3));
+        if (kgDays !== undefined) payload.kgDays = kgDays === null ? null : Number(kgDays.toFixed(3));
+        if (hChanged !== null) {
+            const fl = (row.flags || []).filter(f => f !== '재실변동').concat(hChanged ? ['재실변동'] : []);
+            if (fl.join('|') !== (row.flags || []).join('|')) payload.flags = fl;
+        }
 
         if (typeof prev.waterGiven === 'number' && typeof row.waterRemaining === 'number') {
             const wc = prev.waterGiven - row.waterRemaining - loss;
@@ -334,7 +373,13 @@ async function deSaveRow(i) {
 
 async function deDeleteRow(i) {
     const r = deCageRows[i];
-    if (!confirm(`${r.dateStr} 기록을 삭제할까요?\n이 구간이 사라지면 앞뒤 구간이 하나로 이어져 다시 계산됩니다.`)) return;
+    // 투약이 든 기록을 지우면 그 물통 농도가 사라져, 이어진 다음 구간이 앞 농도로 계산된다
+    const dose = Number(r.doseMg) > 0
+        ? `\n\n⚠ 이 기록에 투약 ${Number(r.doseMg).toFixed(1)} mg${Number(r.doseCc) > 0 ? ` (원액 ${r.doseCc} mL)` : ''}이 들어 있습니다.\n지우면 이 날 탄 농도가 기록에서 사라져 다음 구간의 도달량(mg/kg)이 틀어집니다. 잘못 넣은 값이면 지우지 말고 고치세요.` : '';
+    const auto = (r.flags || []).filter(f => f === '재실변동' || f === '사망발생');
+    const autoTxt = auto.length ? `\n\n이 기록에 「${auto.join(' · ')}」 표시가 있습니다 — 이어지는 구간에 재실 변동이 들어가 그 구간도 기준에서 빠질 수 있습니다.` : '';
+    if (!confirm(`${r.dateStr} 기록을 삭제할까요?\n이 구간이 사라지면 앞뒤 구간이 하나로 이어져 다시 계산됩니다 (마리·일 · kg·일 · 재실변동 포함).${dose}${autoTxt}`)) return;
+    if (dose && !confirm(`정말 투약 기록이 든 ${r.dateStr} 행을 지울까요?`)) return;
     try {
         const later = deCageRows[i - 1];              // 시간상 다음 구간
         const newPrev = deCageRows[i + 1];            // 시간상 이전 구간

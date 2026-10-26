@@ -76,7 +76,10 @@ async function coRenderExposure(boxId, rats, sfx) {
             if (!mine.size) return;
             const members = rats.filter(r => mine.has(r.ratId));
             const surgs = members.map(r => doseDateOf(r.surgeryDate)).filter(Boolean).sort();
-            cages[ck] = { key: ck, cohort: String(members[0].cohort), group: ceGkey(members[0]),
+            // 케이지의 군 = 배정된(G0 아닌) 개체의 군. 전환 전에 죽은 개체는 G0로 남으므로 첫 개체로 정하면
+            // 그 케이지 전체가 G0로 빠진다 (2026-10-26 점검)
+            const ref = members.find(r => ceGkey(r) !== 'G0') || members[0];
+            cages[ck] = { key: ck, cohort: String(ref.cohort), group: ceGkey(ref), ref,
                           surg: surgs[0] || null, rats: members, iv: metDoseIntervals(rows), rows };
         });
 
@@ -102,7 +105,7 @@ async function coRenderExposure(boxId, rats, sfx) {
         };
         const cageFood = {};   // cageKey -> { bapn:[{pod,dose,days,end}], nacl:[...] }
         Object.values(cages).forEach(cg => {
-            const ref = cg.rats[0];
+            const ref = cg.ref || cg.rats[0];
             const out = { bapn: [], nacl: [] };
             [['bapn', /BAPN/i], ['nacl', /NaCl|염/i]].forEach(([k, re]) => {
                 const rules = foodRules(ref, re);
@@ -162,7 +165,7 @@ async function coRenderExposure(boxId, rats, sfx) {
         const metCum = {};   // gk -> week -> [cage cumulative]
         const metAll = {};   // gk -> [cage 최종 누적]
         Object.values(cages).forEach(cg => {
-            const rule = waterRule(cg.rats[0]);
+            const rule = waterRule(cg.ref || cg.rats[0]);
             if (!rule || !cg.surg) return;
             const starts = cg.rats.map(r => ceStartMs(r, rule)).filter(v => v !== null);
             if (!starts.length) return;

@@ -69,7 +69,7 @@ async function cgLoadAll() {
         const [cageSnap, houseSnap, rats, cfgSnap] = await Promise.all([
             db.collection('cages').get(),
             db.collection('ratHousing').where('to', '==', null).get(),
-            getRatsWithCache(),
+            getRatsWithCache(true),   // 5분 캐시는 다른 기기의 군 배정(ID 변경)을 모른다 — 재실 복구가 그걸 되돌렸다
             db.collection('cohortConfigs').get()
         ]);
 
@@ -408,16 +408,59 @@ function cgCageClicked(cageId) {
     cgMoveRat(ratId, cageId);
 }
 
+// ---------- 쓰기 직전 다시 읽기 ----------
+// 화면을 연 뒤 다른 기기에서 옮기기 · 군 배정(ID 변경) · 사망 저장이 있었을 수 있다.
+// 옮기기·빼기는 화면의 재실이 아니라 방금 Firestore에서 읽은 재실을 기준으로 한다.
+async function cgFreshOpens(field, val) {
+    const sn = await db.collection('ratHousing').where(field, '==', String(val)).where('to', '==', null).get();
+    return sn.docs.map(d => Object.assign({ id: d.id }, d.data()));
+}
+async function cgFreshRats(ids) {
+    const out = new Map(), u = [...new Set(ids)];
+    for (let i = 0; i < u.length; i += 10) {
+        const sn = await db.collection('rats').where('ratId', 'in', u.slice(i, i + 10)).get();
+        sn.forEach(d => out.set(d.data().ratId, d.data()));
+    }
+    return out;
+}
+// 열린 재실 하나를 닫는다. 이미 닫힌 기록은 건드리지 않고(false), 그 사이 ID가 바뀌었으면 멈춘다.
+function cgCloseHousing(id, ratId, now, reason) {
+    const ref = db.collection('ratHousing').doc(id);
+    return db.runTransaction(async t => {
+        const s = await t.get(ref);
+        if (!s.exists || s.data().to) return false;
+        if (s.data().ratId !== ratId) throw new Error(`재실 기록의 개체 ID가 바뀌었습니다 (${ratId} → ${s.data().ratId}). 새로고침하세요.`);
+        t.update(ref, { to: now, endReason: reason });
+        return true;
+    });
+}
+
 // ---------- 실제 이동 (가드레일 + 시각 기록) ----------
 async function cgMoveRat(ratId, cageId) {
-    const rat = cgAllRats.find(r => r.ratId === ratId);
     const cage = cgCages.find(c => String(c.id) === String(cageId));
-    if (!rat || !cage) return;
+    if (!cgAllRats.some(r => r.ratId === ratId) || !cage) return;
+    const stale = msg => { alert(msg + '\n\n화면을 새로 읽습니다. 다시 옮기세요.'); return cgLoadAll(); };
 
-    const current = cgHousingOf(ratId);
-    if (current && String(current.cageId) === String(cageId)) { cgRenderBody(); return; }
+    let opens, targetOpen, fresh;
+    try {
+        [opens, targetOpen] = await Promise.all([cgFreshOpens('ratId', ratId), cgFreshOpens('cageId', cageId)]);
+        fresh = await cgFreshRats([ratId, ...targetOpen.map(h => h.ratId)]);
+    } catch (e) { console.error(e); alert('최신 재실을 읽지 못했습니다: ' + e.message); cgRenderBody(); return; }
 
-    const occ = cgOccupants(cageId);
+    const rat = fresh.get(ratId);
+    if (!rat || rat.archived) return stale(`${ratId} 개체가 없습니다 — 다른 기기에서 군 배정으로 ID가 바뀌었을 수 있습니다.`);
+    if (!cgIsAlive(rat)) { alert(`${ratId}는 사망 처리된 개체라 케이지에 넣을 수 없습니다 (빼기만 됩니다).`); cgRenderBody(); return; }
+    if (opens.some(h => String(h.cageId) === String(cageId))) {
+        const cur = cgHousingOf(ratId);
+        if (cur && String(cur.cageId) === String(cageId)) { cgRenderBody(); return; }
+        return stale(`${ratId}는 이미 ${cage.number}번에 있습니다 (다른 기기에서 옮김).`);
+    }
+
+    // 대상 케이지의 지금 입주자 (방금 읽은 재실 기준)
+    const occIds = [...new Set(targetOpen.map(h => h.ratId))].filter(id => id !== ratId);
+    const unknown = occIds.filter(id => !fresh.has(id) || !cgAllRats.some(r => r.ratId === id));
+    if (unknown.length) return stale(`${cage.number}번 재실 기록의 개체(${unknown.join(', ')})가 화면 목록과 다릅니다 — 군 배정 중이거나 ID가 바뀌었습니다.`);
+    const occ = occIds.map(id => fresh.get(id)).filter(r => !r.archived);
 
     // 가드레일 1: 정원 초과
     if (occ.length >= cgMaxRats(cage)) {
@@ -428,16 +471,17 @@ async function cgMoveRat(ratId, cageId) {
     // 가드레일 2: 다른 군 섞임 방지
     // 메트포민은 물에 타는데 물통은 케이지 공유라, 군이 섞이면 프로토콜 위반이 된다.
     const ratGroup = cgGroupOf(rat);
-    const cageGroup = cgCageGroup(cageId);   // 케이지 문서가 아니라 '지금 들어있는 쥐'가 기준
-    if (cageGroup && ratGroup && cageGroup !== ratGroup) {
-        alert(`군이 다릅니다.\n\n${ratId} = ${ratGroup}\n${cage.number}번 케이지 = ${cageGroup}\n\n` +
+    const cageGroups = [...new Set(occ.map(cgGroupOf).filter(Boolean))];   // 케이지 문서가 아니라 '지금 들어있는 쥐'가 기준
+    if (ratGroup && cageGroups.some(g => g !== ratGroup)) {
+        alert(`군이 다릅니다.\n\n${ratId} = ${ratGroup}\n${cage.number}번 케이지 = ${cageGroups.join(', ')}\n\n` +
               `물통을 공유하므로 서로 다른 군을 같은 케이지에 둘 수 없습니다.`);
         cgRenderBody(); return;
     }
 
     // 가드레일 3: 다른 코호트 섞임
-    if (occ.length && String(occ[0].cohort) !== String(rat.cohort)) {
-        if (!confirm(`${cage.number}번에 다른 코호트(${occ[0].cohort}) 개체가 있습니다. 그래도 넣을까요?`)) {
+    const otherCo = occ.find(o => String(o.cohort) !== String(rat.cohort));
+    if (otherCo) {
+        if (!confirm(`${cage.number}번에 다른 코호트(${otherCo.cohort}) 개체가 있습니다. 그래도 넣을까요?`)) {
             cgRenderBody(); return;
         }
     }
@@ -446,23 +490,20 @@ async function cgMoveRat(ratId, cageId) {
         const now = firebase.firestore.Timestamp.now();
 
         // 이전 재실 종료 → 새 재실 시작 (구간이 시각으로 이어짐)
-        // 혹시 열린 기록이 여러 개면 전부 닫는다 (중복 집계 방지)
-        const opens = cgAllOpenHousingOf(ratId);
-        if (opens.length) {
-            const fromCages = new Set(opens.map(h => String(h.cageId)));
-            for (const h of opens) {
-                await db.collection('ratHousing').doc(h.id).update({ to: now, endReason: '이동' });
-            }
-            cgHousing = cgHousing.filter(h => h.ratId !== ratId);
-            for (const cid of fromCages) await cgClearCageIfEmpty(cid);
-        }
+        // 혹시 열린 기록이 여러 개면 전부 닫는다 (중복 집계 방지). 이미 닫힌 기록은 건드리지 않는다.
+        const fromCages = new Set(opens.map(h => String(h.cageId)));
+        for (const h of opens) await cgCloseHousing(h.id, ratId, now, '이동');
         const ref = await db.collection('ratHousing').add({
             ratId: ratId, cageId: String(cageId), cohort: String(rat.cohort),
             group: ratGroup, from: now, to: null,
-            startReason: current ? '이동' : '입실',
+            startReason: opens.length ? '이동' : '입실',
             by: (firebase.auth().currentUser && firebase.auth().currentUser.email) || null
         });
-        cgHousing.push({ id: ref.id, ratId, cageId: String(cageId), cohort: String(rat.cohort), group: ratGroup, from: now, to: null });
+        // 화면의 재실을 방금 읽은 것으로 맞춘다
+        cgHousing = cgHousing.filter(h => h.ratId !== ratId && String(h.cageId) !== String(cageId))
+            .concat(targetOpen.filter(h => h.ratId !== ratId))
+            .concat([{ id: ref.id, ratId, cageId: String(cageId), cohort: String(rat.cohort), group: ratGroup, from: now, to: null }]);
+        for (const cid of fromCages) await cgClearCageIfEmpty(cid);
 
         // 케이지 문서의 group/cohort는 화면 표시를 위한 사본일 뿐이다.
         // 판정에는 쓰지 않지만, 낡은 채로 남지 않도록 이동할 때마다 다시 맞춘다.
@@ -479,6 +520,7 @@ async function cgMoveRat(ratId, cageId) {
 // ratId가 같이 안 바뀌어서, 케이지 안의 쥐가 통째로 사라진 것처럼 보였다.
 // 남아 있는 그런 기록을 같은 개체(끝의 G숫자만 다른 ID)로 다시 이어 붙인다.
 const cgBaseId = id => String(id || '').replace(/G\d+$/, '');
+const cgIdGroupNo = id => { const m = String(id || '').match(/G(\d+)$/); return m ? Number(m[1]) : 0; };
 
 async function cgHealOrphanHousing() {
     const live = new Set(cgAllRats.map(r => r.ratId));
@@ -494,23 +536,43 @@ async function cgHealOrphanHousing() {
         if (live.has(h.ratId)) return;                       // 멀쩡한 기록
         const cand = byBase.get(cgBaseId(h.ratId)) || [];
         if (cand.length !== 1) return;                       // 확실할 때만 손댄다
+        // 군 배정을 되돌리지 않는다 — 재실 쪽 G 번호가 더 크면(C1401G2 재실 ↔ C1401G0 개체) 개체 목록이 묵은 것이다
+        if (cgIdGroupNo(cand[0].ratId) < cgIdGroupNo(h.ratId)) {
+            console.warn('재실 복구 건너뜀 (배정을 되돌리는 방향):', h.ratId, '→', cand[0].ratId);
+            return;
+        }
         fixes.push({ h: h, rat: cand[0] });
     });
     if (!fixes.length) return;
 
+    const cageNo = cid => { const c = cgCages.find(x => String(x.id) === String(cid)); return c ? c.number : cid; };
+    if (!confirm(`군 변경으로 끊어진 것으로 보이는 재실 기록 ${fixes.length}건이 있습니다. 아래처럼 이어 붙일까요?\n\n` +
+            fixes.map(f => `${cageNo(f.h.cageId)}번: ${f.h.ratId} → ${f.rat.ratId}`).join('\n') +
+            `\n\n방금 다른 기기에서 군 배정을 했다면 「취소」를 누르고 잠시 뒤 새로고침하세요.`)) return;
+
+    const done = [];
     try {
         for (const f of fixes) {
             const g = cgGroupOf(f.rat);
-            await db.collection('ratHousing').doc(f.h.id).update({ ratId: f.rat.ratId, group: g });
+            const ref = db.collection('ratHousing').doc(f.h.id);
+            // 쓰기 직전 다시 읽는다 — 이미 닫혔거나 그 사이 ID가 바뀐 기록은 건드리지 않는다
+            const ok = await db.runTransaction(async t => {
+                const s = await t.get(ref);
+                if (!s.exists || s.data().to || s.data().ratId !== f.h.ratId) return false;
+                t.update(ref, { ratId: f.rat.ratId, group: g });
+                return true;
+            });
+            if (!ok) continue;
             f.h.ratId = f.rat.ratId; f.h.group = g;
+            done.push(f);
         }
-        const cages = new Set(fixes.map(f => String(f.h.cageId)));
+        const cages = new Set(done.map(f => String(f.h.cageId)));
         for (const cid of cages) await cgSyncCageGroup(cid);
-        console.log('재실 기록 복구:', fixes.map(f => f.h.ratId).join(', '));
-        alert(`군 변경으로 끊어져 있던 재실 기록 ${fixes.length}건을 케이지에 다시 이어 붙였습니다.\n\n` +
-              fixes.map(f => `${f.h.cageId}번 ← ${f.rat.ratId}`).join('\n'));
+        console.log('재실 기록 복구:', done.map(f => f.h.ratId).join(', '));
+        if (done.length < fixes.length) alert(`${fixes.length - done.length}건은 그 사이 바뀌어 건너뛰었습니다. 새로고침하세요.`);
     } catch (e) {
         console.error('재실 기록 복구 실패:', e);
+        alert('재실 기록 복구 실패: ' + e.message);
     }
 }
 
@@ -532,14 +594,19 @@ async function cgClearCageIfEmpty(cageId) {
 }
 
 async function cgRemoveRat(ratId, reason) {
-    const opens = cgAllOpenHousingOf(ratId);
-    if (!opens.length) { cgRenderBody(); return; }
+    const rat = cgAllRats.find(r => r.ratId === ratId);
+    if (reason === '이동' && rat && cgIsAlive(rat) &&
+        !confirm(`${ratId}를 케이지에서 뺄까요?\n\n케이지에서 빼면 그 쥐의 섭취 구간이 끊깁니다. 사망은 케이지별 입력에서 저장하세요.`)) {
+        cgRenderBody(); return;
+    }
+    let opens;
+    try { opens = await cgFreshOpens('ratId', ratId); }   // 화면이 아니라 지금 열린 재실
+    catch (e) { console.error(e); alert('최신 재실을 읽지 못했습니다: ' + e.message); cgRenderBody(); return; }
+    if (!opens.length) { cgHousing = cgHousing.filter(h => h.ratId !== ratId); cgRenderBody(); return; }
     try {
         const now = firebase.firestore.Timestamp.now();
         const fromCages = new Set(opens.map(h => String(h.cageId)));
-        for (const h of opens) {
-            await db.collection('ratHousing').doc(h.id).update({ to: now, endReason: reason || '내보냄' });
-        }
+        for (const h of opens) await cgCloseHousing(h.id, ratId, now, reason || '내보냄');
         cgHousing = cgHousing.filter(h => h.ratId !== ratId);
         for (const cid of fromCages) await cgClearCageIfEmpty(cid);
         cgRenderBody();
@@ -551,13 +618,26 @@ async function cgRemoveRat(ratId, reason) {
 
 // ---------- 케이지 추가 / 삭제 ----------
 async function cgAddCage() {
-    const val = (document.getElementById('cg-new-cage').value || '').trim();
-    if (!val) return alert('케이지 번호를 입력하세요.');
-    if (cgCages.some(c => String(c.number) === val)) return alert(`${val}번 케이지가 이미 있습니다.`);
+    const raw = (document.getElementById('cg-new-cage').value || '').trim();
+    if (!raw) return alert('케이지 번호를 입력하세요.');
+    // '07'과 '7'이 다른 케이지로 생기지 않게 숫자로 맞춘다 (문서 ID = 숫자 문자열)
+    const num = Number(raw);
+    if (!Number.isInteger(num) || num <= 0) return alert('케이지 번호는 1 이상의 정수여야 합니다.');
+    const val = String(num);
+    if (cgCages.some(c => Number(c.number) === num || String(c.id) === val)) return alert(`${num}번 케이지가 이미 있습니다.`);
+
+    // 정원: 고른 코호트 설정, 없으면 설정이 있는 가장 최근 코호트
+    const coKey = cgConfigs[String(cgCohort)] ? String(cgCohort)
+        : Object.keys(cgConfigs).filter(k => !isNaN(Number(k))).sort((a, b) => Number(b) - Number(a))[0];
+    const cfg = coKey != null ? cgConfigs[coKey] : null;
+    const maxRats = (cfg && cfg.housing && cfg.housing.ratsPerCage) || 3;
+    if (!confirm(`${num}번 케이지를 만듭니다.\n정원 ${maxRats}마리 — ${cfg && cfg.housing && cfg.housing.ratsPerCage
+            ? `코호트 ${coKey} 설정 기준${cgCohort && String(cgCohort) === coKey ? '' : ' (배정 코호트를 고르지 않아 가장 최근 코호트)'}` : '설정이 없어 기본값'}.\n\n계속할까요?`)) return;
 
     try {
-        const cfg = cgConfigs[String(cgCohort)] || Object.values(cgConfigs)[0];
-        const maxRats = (cfg && cfg.housing && cfg.housing.ratsPerCage) || 3;
+        // 다른 기기에서 먼저 만든 같은 번호를 덮어쓰지 않게 (빈 통 무게 · 군 사본이 지워진다)
+        const ex = await db.collection('cages').doc(val).get();
+        if (ex.exists) { alert(`${num}번 케이지가 이미 있습니다 (다른 기기에서 추가됨). 새로고침합니다.`); return cgLoadAll(); }
         await db.collection('cages').doc(val).set({
             number: Number(val), room: 'A', maxRats: maxRats, active: true,
             group: null, cohort: null,
