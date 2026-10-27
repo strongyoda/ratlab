@@ -598,7 +598,7 @@ async function loadDetailData(forceId = null) {
                                 </label>
                             </div>
                             ${rdSchedRow('반입', `<span class="mono" style="font-size:0.85rem;">${chEsc(rat.arrivalDate || '-')}</span>
-                                <select id="arr-age" aria-label="반입주령" onchange="rdSet('arrivalAge', this.value); rdRefreshHints();" style="${RD_IN}">${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주령</option>`).join('')}</select>`, null)}
+                                <select id="arr-age" aria-label="반입주령" onchange="rdSet('arrivalAge', this.value); rdRefreshHints();" style="${RD_IN}">${rat.arrivalAge ? '' : '<option value="" selected>- (미입력)</option>'}${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rat.arrivalAge==v?'selected':''}>${v}주령</option>`).join('')}</select>`, null)}
                             ${rdSchedRow('OVX', `<input type="date" id="ovx-d" value="${chEsc(rat.ovxDate||'')}" aria-label="OVX 일자" onchange="rdSet('ovxDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-ovx-d')}
                             ${rdSchedRow('고염식 시작', `<input type="date" id="nacl-d" value="${chEsc(rat.naclStartDate||'')}" aria-label="고염식 시작일" onchange="rdSet('naclStartDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-nacl-d')}
                             ${rdSchedRow('수술 (Ligation)', `

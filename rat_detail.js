@@ -61,7 +61,7 @@ async function rdSave() {
 
     const payload = {};
     Object.entries(rdDraft).forEach(([k, v]) => {
-        if (k === 'arrivalAge' || k === 'refAge') payload[k] = Number(v);
+        if (k === 'arrivalAge' || k === 'refAge') { if (v !== '' && v !== null && Number(v) > 0) payload[k] = Number(v); }
         else if (k === 'isNonInduction') payload[k] = !!v;
         else payload[k] = v;
     });

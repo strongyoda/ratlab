@@ -191,7 +191,7 @@ async function searchForEdit(ratId) {
                 <div class="input-group">
                     <label>반입주령</label>
                     <select id="ed-arrival-age" style="padding:5px;">
-                        ${[5,6,7,8,9,10].map(v => `<option value="${v}" ${(rData.arrivalAge||6)==v?'selected':''}>${v}주</option>`).join('')}
+                        ${rData.arrivalAge ? '' : '<option value="" selected>- (미입력)</option>'}${[5,6,7,8,9,10].map(v => `<option value="${v}" ${rData.arrivalAge==v?'selected':''}>${v}주</option>`).join('')}
                     </select>
                 </div>
                 <div class="input-group"><label>OVX일자</label><input type="date" id="ed-ovx" value="${rData.ovxDate||''}"></div>
@@ -323,7 +323,7 @@ async function saveTotalEdit(ratDocId, ratIdArg) {
     const dateIds = { 'ed-arrival': 'arrivalDate', 'ed-surgery': 'surgeryDate', 'ed-dose-start': 'doseStartDate',
                       'ed-death': 'deathDate', 'ed-ovx': 'ovxDate', 'ed-sample-date': 'sampleDate' };
     Object.entries(dateIds).forEach(([id, k]) => { if (changed(id)) ratUpdate[k] = elv(id).value; });
-    if (changed('ed-arrival-age')) ratUpdate.arrivalAge = Number(elv('ed-arrival-age').value);
+    if (changed('ed-arrival-age') && Number(elv('ed-arrival-age').value) > 0) ratUpdate.arrivalAge = Number(elv('ed-arrival-age').value);
     if (changed('ed-sample-tp')) ratUpdate.sampleType = elv('ed-sample-tp').value;
     if (changed('ed-sample-memo')) ratUpdate.sampleMemo = elv('ed-sample-memo').value;
     const mrNorm = a => JSON.stringify((a || []).map(m => [m.timepoint || '', m.date || '', m.infarctSize || '', (m.infarctLoc && m.infarctLoc !== '-') ? m.infarctLoc : '']));

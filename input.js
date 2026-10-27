@@ -31,6 +31,10 @@ async function saveBulk() {
     if (!(s > 0) || !(e > 0) || !Number.isInteger(s) || !Number.isInteger(e)) return alert('시작·끝 번호를 1 이상 정수로 입력하세요.');
     if (e < s) return alert('끝 번호가 시작 번호보다 작습니다.');
     if (!d) return alert('반입일을 넣으세요.');
+    // 반입주령은 주령 그래프 · 사망 주령 · 논문 표의 기준이다. 비워 두면 화면마다 5 · 6주로 다르게 꾸며 보였다 (2026-10-28, 14~24번)
+    const ageEl = document.getElementById('add-age');
+    const age = ageEl ? Number(ageEl.value) : NaN;
+    if (!(age >= 3 && age <= 20)) return alert('반입주령을 고르세요.');
     const dc = typeof checkRatDates === 'function' ? checkRatDates({}, { arrivalDate: d }) : { errors: [], warns: [] };
     if (dc.errors.length) return alert('날짜를 확인하세요:\n\n· ' + dc.errors.join('\n· '));
     if (dc.warns.length && !confirm('확인해주세요:\n\n· ' + dc.warns.join('\n· ') + '\n\n계속할까요?')) return;
@@ -61,7 +65,7 @@ async function saveBulk() {
     let bsz = 12;
     try { const cf = typeof getCohortConfig === 'function' ? await getCohortConfig(c) : null; bsz = Number(cf && cf.housing && cf.housing.batchSize) || 12; } catch (err) {}
     const bs = Number(c) >= 14 && typeof getBatchNo === 'function' ? ` (Batch ${getBatchNo({ cohort: c, num: s }, bsz)}~${getBatchNo({ cohort: c, num: e }, bsz)})` : '';
-    if (!confirm(`코호트 ${c}, 번호 ${s}~${e}${bs}, ${n}마리, 반입일 ${d}\n${idOf(s)} … ${idOf(e)}${gNote}\n\n등록할까요?`)) return;
+    if (!confirm(`코호트 ${c}, 번호 ${s}~${e}${bs}, ${n}마리, 반입일 ${d} · ${age}주령\n${idOf(s)} … ${idOf(e)}${gNote}\n\n등록할까요?`)) return;
 
     try {
         const batch = db.batch();
@@ -72,6 +76,7 @@ async function saveBulk() {
                 group:`G${g}`,
                 num:String(i),
                 arrivalDate:d,
+                arrivalAge:age,
                 status:'생존'
             });
         }
