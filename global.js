@@ -930,8 +930,15 @@ function cageTodayItems(cage, occ, cfg, rows, today) {
     }
     if (saltEnds) out.push({ kind: 'saltstop', face: 'pink', text: '고염식 중단 — 오늘부터 일반 염도 사료. 고염 포대 쓰지 말 것' });
 
-    if (occ.some(r => doseDateOf(r.surgeryDate) === today || doseDateOf(r.ovxDate) === today))
-        out.push({ kind: 'surgery', face: 'canary', text: '오늘 수술 — 「수술일」 표시' });
+    // 라운드는 수술 전에 돈다 — 수술 당일에 재는 구간은 수술 전이고, 마취로 덜 마신 건 다음 라운드에 재는 구간이다.
+    // 그래서 「수술일」은 '지난 기록 이후 수술이 있었던' 구간에 켠다(다음 평일, 주말이 끼면 월요일).
+    // 수술 당일 라운드를 수술 뒤에 돌았다면 그날은 직접 켜고, 다음 날 자동 표시는 끄면 된다 (2026-10-29 사용자)
+    const surgDays = occ.flatMap(r => [doseDateOf(r.surgeryDate), doseDateOf(r.ovxDate)]).filter(Boolean);
+    const lastRow = (rows || []).map(r => r.dateStr).filter(d => d && d < today).sort().pop() || null;
+    if (surgDays.some(d => d < today && diff(d, today) <= 7 && (!lastRow || d >= lastRow)))
+        out.push({ kind: 'surgery', face: 'canary', text: '지난 라운드 뒤 수술 — 「수술일」 표시 (마취로 덜 마신 구간)' });
+    else if (surgDays.includes(today))
+        out.push({ kind: 'surgeryToday', face: 'ink', text: '오늘 수술 — 이 구간은 수술 전이라 표시 안 함 (다음 라운드에 자동)' });
 
     // 처치 시점(BP·MR) = 수술일 + 설정 시점. 그날 표시를 켜야 반동 구간이 농도 기준에서 빠진다.
     const tps = cfg.timepoints || {};
