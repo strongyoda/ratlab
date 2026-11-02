@@ -1065,6 +1065,10 @@ function chMakeChart(id, cfg) {
     if (old) { try { old.destroy(); } catch (e) {} }
     const c = new Chart(document.getElementById(id), cfg);
     window.__chCharts[id] = c;
+    const cv = document.getElementById(id);
+    if (cv && cv.closest && cv.closest('.comp-col') && typeof compAlign === 'function') {
+        clearTimeout(window.__compSyncTimer); window.__compSyncTimer = setTimeout(compAlign, 250);
+    }
     return c;
 }
 
@@ -1282,6 +1286,7 @@ async function analyzeTrend() {
 }
 
 async function loadGroupComparison() {
+    { const ov = document.getElementById('batch-overlay-wrapper'); if (ov) ov.remove(); }
     compScatterCharts = {}; compScatterDataCache = {}; compFilterState = {};
     syncChartsSbp = []; syncChartsWt = []; activeCrosshairValSbp = null; activeCrosshairValWt = null;
 
@@ -1377,6 +1382,7 @@ async function loadGroupComparison() {
             const title = `${g.name} : ${g.selectedVals.map(v => v.replace('||', '(') + ')').join(', ')}`;
             await runCohortAnalysis(g.selectedVals, `comp-res-grp-${i}`, `_grp_${i}`, fixedOptions, title);
         }
+        compAlignSoon();
     } catch(e) { console.error("Group Scale Calc Error", e); }
 }
 
@@ -1392,7 +1398,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const ratSnaps = await Promise.all(ratPromises);
         let rats = []; const ratInfoMap = {};
 
-        ratSnaps.forEach(snap => { snap.forEach(d => { const r = d.data(); const key = `${r.cohort}||${r.group || 'G1'}`; if (targetGroups.includes(key)) { rats.push(r); ratInfoMap[r.ratId] = r; } }); });
+        ratSnaps.forEach(snap => { snap.forEach(d => { const r = d.data(); const key = `${r.cohort}||${r.group || 'G1'}`; if (targetGroups.includes(key) && (!(fixedOptions && fixedOptions.ratFilter) || fixedOptions.ratFilter(r))) { rats.push(r); ratInfoMap[r.ratId] = r; } }); });
         if (rats.length === 0) { resDiv.innerHTML = headerHtml + "<div style='padding:20px; text-align:center;'>선택한 그룹에 데이터가 없습니다.</div>"; return; }
 
         const deadRats = rats.filter(r => r.status === "사망");
@@ -1542,11 +1548,11 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
 
         let finalHtml = headerHtml;
         finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:var(--sheet); padding:20px; border-radius:2px; border:1px solid var(--ink); width:95%; max-width:700px; max-height:85vh; overflow-y:auto;"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px double var(--ink); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--ink);">샘플 획득 상세 내역 (총 <span class="mono">${rats.length}</span>마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
-        finalHtml += `<div class="card"><h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span class="mono" style="color:var(--ink); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:var(--stock-canary-soft); border:1px solid #E3C55C;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);"><b style="font-size:0.9rem; color:var(--ink);">MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
-        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">ARE 발생률 (마리 수 기준)</h4><div style="background:var(--stock-blue-soft); padding:10px; border-radius:2px; margin-bottom:15px; border:1px solid var(--ink-blue);"><b style="color:var(--ink); font-size:1.05rem;">총 발견된 ARE: <span class="mono">${totalAreCount}</span>개</b> <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateTotal}%; background:var(--ink-blue); height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateValid}%; background:var(--stock-canary); height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed var(--rule); padding-top:15px; margin-bottom:15px;"><div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;"><div style="flex:3 1 300px; min-width:0;"><h5 style="text-align:center; color:var(--ink); margin:0 0 10px;">ARE 발생 부위별 분포</h5><div style="height:320px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div>${window.AreMap && AreMap.statsHtml(rats) ? `<div style="flex:2 1 220px; min-width:0;">${AreMap.statsHtml(rats)}</div>` : ''}</div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:var(--ink-soft);">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div class="card" data-sec="info"><h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span class="mono" style="color:var(--ink); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:var(--stock-canary-soft); border:1px solid #E3C55C;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);"><b style="font-size:0.9rem; color:var(--ink);">MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
+        finalHtml += `<div class="card" data-sec="are"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">ARE 발생률 (마리 수 기준)</h4><div style="background:var(--stock-blue-soft); padding:10px; border-radius:2px; margin-bottom:15px; border:1px solid var(--ink-blue);"><b style="color:var(--ink); font-size:1.05rem;">총 발견된 ARE: <span class="mono">${totalAreCount}</span>개</b> <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateTotal}%; background:var(--ink-blue); height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateValid}%; background:var(--stock-canary); height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed var(--rule); padding-top:15px; margin-bottom:15px;"><div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;"><div style="flex:3 1 300px; min-width:0;"><h5 style="text-align:center; color:var(--ink); margin:0 0 10px;">ARE 발생 부위별 분포</h5><div style="height:320px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div>${window.AreMap && AreMap.statsHtml(rats) ? `<div style="flex:2 1 220px; min-width:0;">${AreMap.statsHtml(rats)}</div>` : ''}</div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:var(--ink-soft);">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
 
         const infSizeChartId = `infSizeChart${uniqueSuffix}`; const infLocChartId = `infLocChart${uniqueSuffix}`;
-        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
+        finalHtml += `<div class="card" data-sec="inf"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
 
         const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
         const codChartId = `codChart${uniqueSuffix}`, areChartId = `areChart${uniqueSuffix}`;
@@ -1571,7 +1577,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
                 </div>
             `;
 
-            finalHtml += `<div class="card">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
+            finalHtml += `<div class="card" data-sec="surv">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
         const controlPanel = `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 9px; border:1px solid ${isCrosshairEnabled ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? 'var(--ink)' : 'var(--paper)'}; color:${isCrosshairEnabled ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">가이드선 ${isCrosshairEnabled ? 'ON' : 'OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 9px; border:1px solid ${isIndividualVisible ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? 'var(--ink)' : 'var(--paper)'}; color:${isIndividualVisible ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">개별점 ${isIndividualVisible ? 'ON' : 'OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 9px; border:none; border-radius:2px; font-size:0.75rem; cursor:pointer; background:var(--ink-blue); color:#fff; transition:0.15s; font-weight:bold;">${window.isAgeMode ? '주령(Age) 연속 보기' : '시점(POD) 보기'}</button><button style="font-size:0.75rem; color:var(--ink); background:var(--paper); border:1px solid var(--rule); padding:4px 9px; border-radius:2px; cursor:pointer; font-weight:bold;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">줌 초기화</button></div>`;
@@ -1582,7 +1588,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${bpChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
         bpTable += `<tr style="background:var(--stock-blue-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
+        finalHtml += `<div class="card" data-sec="bp"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
         const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
@@ -1590,7 +1596,7 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${wtChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
         wtTable += `<tr style="background:var(--stock-green-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
+        finalHtml += `<div class="card" data-sec="wt"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
         // 섭취 · 투약 노출 (cohort_exposure.js) — 결과 카드 바로 아래에 노출과 교란 점검을 붙인다
         finalHtml += `<div id="coExpo${uniqueSuffix}"></div>`;
@@ -1829,11 +1835,11 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
 
         let finalHtml = headerHtml;
         finalHtml += `<div id="sample-modal-${uniqueSuffix}" role="dialog" aria-modal="true" aria-label="샘플 획득 상세 내역" onclick="if(event.target===this)this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;"><div style="background:var(--sheet); padding:20px; border-radius:2px; border:1px solid var(--ink); width:95%; max-width:700px; max-height:85vh; overflow-y:auto;"><div style="display:flex; justify-content:space-between; align-items:center; border-bottom:3px double var(--ink); padding-bottom:10px; margin-bottom:15px;"><h3 style="margin:0; color:var(--ink);">샘플 획득 상세 내역 (총 <span class="mono">${ratDataList.length}</span>마리)</h3><button class="btn-red btn-small" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='none'">닫기 ✖</button></div><table style="width:100%; border-collapse:collapse; font-size:0.9rem;"><thead><tr style="text-align:center;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">종류</th><th style="padding:8px;">채취일</th><th style="padding:8px;">마지막 MR 기준</th><th style="padding:8px;">메모</th></tr></thead><tbody>${sampleModalRows || '<tr><td colspan="5" style="text-align:center; padding:15px;">데이터가 없습니다.</td></tr>'}</tbody></table></div></div>`;
-        finalHtml += `<div class="card"><h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span class="mono" style="color:var(--ink); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:var(--stock-canary-soft); border:1px solid #E3C55C;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);"><b style="font-size:0.9rem; color:var(--ink);">MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
-        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">ARE 발생률 (마리 수 기준)</h4><div style="background:var(--stock-blue-soft); padding:10px; border-radius:2px; margin-bottom:15px; border:1px solid var(--ink-blue);"><b style="color:var(--ink); font-size:1.05rem;">총 발견된 ARE: <span class="mono">${totalAreCount}</span>개</b> <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateTotal}%; background:var(--ink-blue); height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateValid}%; background:var(--stock-canary); height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed var(--rule); padding-top:15px; margin-bottom:15px;"><div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;"><div style="flex:3 1 300px; min-width:0;"><h5 style="text-align:center; color:var(--ink); margin:0 0 10px;">ARE 발생 부위별 분포</h5><div style="height:320px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div>${window.AreMap && AreMap.statsHtml(ratDataList) ? `<div style="flex:2 1 220px; min-width:0;">${AreMap.statsHtml(ratDataList)}</div>` : ''}</div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:var(--ink-soft);">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
+        finalHtml += `<div class="card" data-sec="info"><h4 style="margin-top:0; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">기본 정보 요약</h4><div class="info-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom:10px;"><div class="info-item"><b>평균 수술 주령</b><br><span class="mono" style="color:var(--ink); font-size:1.2rem;">${avgSurgAge} 주</span></div><div class="info-item" style="cursor:pointer; background:var(--stock-canary-soft); border:1px solid #E3C55C;" onclick="document.getElementById('sample-modal-${uniqueSuffix}').style.display='flex'"><b>획득 샘플 수</b> <span style="font-size:0.75rem; color:var(--red);">(클릭하여 상세확인)</span><br><span style="font-size:0.9rem;">Histology: <b>${smpHist}</b> / Cast: <b>${smpCast}</b> / Fail: <b>${smpFail}</b></span></div></div><div style="background:var(--paper); padding:10px; border-radius:2px; border:1px solid var(--rule);"><b style="font-size:0.9rem; color:var(--ink);">MR 촬영 편차 (수술일 기준)</b><div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">${mrHtml}</div></div></div>`;
+        finalHtml += `<div class="card" data-sec="are"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">ARE 발생률 (마리 수 기준)</h4><div style="background:var(--stock-blue-soft); padding:10px; border-radius:2px; margin-bottom:15px; border:1px solid var(--ink-blue);"><b style="color:var(--ink); font-size:1.05rem;">총 발견된 ARE: <span class="mono">${totalAreCount}</span>개</b> <span class="mono" style="font-size:0.85rem; color:var(--ink-soft); margin-left:5px;">(micro: <b>${totalMicro}</b>개 / macro: <b>${totalMacro}</b>개 / 미확인: <b>${totalUnk}</b>개)</span></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>전체 기준 (Total N = ${totalN})</span><span style="font-weight:bold; color:#333;">${areO} / ${totalN} (${rateTotal}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateTotal}%; background:var(--ink-blue); height:100%;"></div></div></div><div style="margin-bottom: 15px;"><div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:5px; color:var(--ink-soft);"><span>Surgical Failure 제외 (Valid N = ${validN})</span><span style="font-weight:bold; color:#333;">${areO} / ${validN} (${rateValid}%)</span></div><div style="width:100%; background:var(--rule); height:14px; border-radius:2px; overflow:hidden;"><div style="width:${rateValid}%; background:var(--stock-canary); height:100%;"></div></div></div><div style="margin-top:20px; border-top:1px dashed var(--rule); padding-top:15px; margin-bottom:15px;"><div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;"><div style="flex:3 1 300px; min-width:0;"><h5 style="text-align:center; color:var(--ink); margin:0 0 10px;">ARE 발생 부위별 분포</h5><div style="height:320px; position:relative;"><canvas id="${areLocChartId}"></canvas></div></div>${window.AreMap && AreMap.statsHtml(ratDataList) ? `<div style="flex:2 1 220px; min-width:0;">${AreMap.statsHtml(ratDataList)}</div>` : ''}</div></div><button class="data-toggle-btn" onclick="toggleDisplay('${areTableId}')" style="width:100%; margin-top:5px;">▼ ARE 발생 개체 상세 목록 보기</button><div id="${areTableId}" class="data-detail-box" style="display:none; margin-top:10px;"><table style="width:100%; border-collapse:collapse; font-size:0.85rem;"><thead><tr style="background:#f5f5f5;"><th style="padding:8px;">Rat ID</th><th style="padding:8px;">Micro 갯수</th><th style="padding:8px;">Macro 갯수</th><th style="padding:8px;">미확인 갯수</th><th style="padding:8px; color:var(--red);">발견합계</th></tr></thead><tbody>${areDetailRows || '<tr><td colspan="5" style="text-align:center; padding:15px; color:var(--ink-soft);">ARE 발생 개체가 없습니다.</td></tr>'}</tbody></table></div></div>`;
 
         const infSizeChartId = `infSizeChart${uniqueSuffix}`; const infLocChartId = `infLocChart${uniqueSuffix}`;
-        finalHtml += `<div class="card"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
+        finalHtml += `<div class="card" data-sec="inf"><h4 style="margin-top:0; margin-bottom:10px; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:6px;">시점별 뇌경색(Infarction) 현황</h4><div style="font-size:0.8rem; color:var(--ink-soft); margin-bottom:10px;">* Surgical Failure를 제외한 Valid N 기준입니다. 막대에 마우스를 올리면 상세 수치가 나타납니다.</div><div style="display:flex; gap:20px; flex-wrap:wrap;"><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 비율 (크기별)</h5><div style="height:250px; position:relative;"><canvas id="${infSizeChartId}"></canvas></div></div><div style="flex:1; min-width:300px;"><h5 style="text-align:center; color:var(--ink-soft); margin-bottom:5px;">Infarction 발생 위치</h5><div style="height:250px; position:relative;"><canvas id="${infLocChartId}"></canvas></div></div></div></div>`;
 
         const sChartId = `survChart${uniqueSuffix}`, sTableId = `survTable${uniqueSuffix}`;
         const codChartId = `codChart${uniqueSuffix}`, areChartId = `areChart${uniqueSuffix}`;
@@ -1858,7 +1864,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
                 </div>
             `;
 
-            finalHtml += `<div class="card">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
+            finalHtml += `<div class="card" data-sec="surv">${survHeaderHtml}<div class="chart-area" style="height:250px;"><canvas id="${sChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${sTableId}')">▼ 상세 데이터</button><div id="${sTableId}" class="data-detail-box">${survTable}</div><div style="display:flex; gap:20px; margin-top:30px; border-top:1px solid #eee; padding-top:20px; flex-wrap:wrap;"><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">사망 원인 (COD) 비율</h5><div style="height:220px;"><canvas id="${codChartId}"></canvas></div></div><div style="flex:1; min-width:250px; text-align:center;"><h5 style="color:var(--navy); margin-bottom:10px;">전체 ARE 비율 (O/X)</h5><div style="height:220px;"><canvas id="${areChartId}"></canvas></div></div></div></div>`;
         }
 
         const controlPanel = `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;"><button class="crosshair-toggle-btn" onclick="toggleCrosshair()" style="padding:4px 9px; border:1px solid ${isCrosshairEnabled ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isCrosshairEnabled ? 'var(--ink)' : 'var(--paper)'}; color:${isCrosshairEnabled ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">가이드선 ${isCrosshairEnabled ? 'ON' : 'OFF'}</button><button class="indiv-toggle-btn" onclick="toggleIndividual()" style="padding:4px 9px; border:1px solid ${isIndividualVisible ? 'var(--ink)' : 'var(--rule)'}; border-radius:2px; font-size:0.75rem; cursor:pointer; background:${isIndividualVisible ? 'var(--ink)' : 'var(--paper)'}; color:${isIndividualVisible ? 'var(--paper)' : 'var(--ink-soft)'}; transition:0.15s; font-weight:bold;">개별점 ${isIndividualVisible ? 'ON' : 'OFF'}</button><button class="axis-toggle-btn" onclick="toggleXAxisMode()" style="padding:4px 9px; border:none; border-radius:2px; font-size:0.75rem; cursor:pointer; background:var(--ink-blue); color:#fff; transition:0.15s; font-weight:bold;">${window.isAgeMode ? '주령(Age) 연속 보기' : '시점(POD) 보기'}</button><button style="font-size:0.75rem; color:var(--ink); background:var(--paper); border:1px solid var(--rule); padding:4px 9px; border-radius:2px; cursor:pointer; font-weight:bold;" onclick="Chart.getChart('${bpChartId}').resetZoom(); Chart.getChart('${wtChartId}').resetZoom();">줌 초기화</button></div>`;
@@ -1869,7 +1875,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const avgSbpRow = sortedTicksSbp.map(pod => avgsSbp[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataSbp.filter(d => d.rid === id); bpTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${bpChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksSbp.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); bpTable += `<td>${match ? match.y : '-'}</td>`; }); bpTable += `</tr>`; });
         bpTable += `<tr style="background:var(--stock-blue-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgSbpRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
+        finalHtml += `<div class="card" data-sec="bp"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">혈압 (SBP)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${bpChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${bpTableId}')">▼ 상세 데이터</button><div id="${bpTableId}" class="data-detail-box">${bpTable}</div></div>`;
 
         const sortedTicksWt = Array.from(existTicksWt).sort((a, b) => a - b);
         let wtTableHeaders = `<th style="width:40px;">Show</th><th>ID</th>` + sortedTicksWt.map(pod => `<th style="min-width:60px; text-align:center; padding:5px;"><label style="cursor:pointer; display:flex; flex-direction:column; align-items:center;"><input type="checkbox" checked onchange="toggleTimepointVisibility('${wtChartId}', ${pod}, this.checked)" style="transform:scale(1.1); margin-bottom:4px;"><span style="line-height:1;">${getColLabel(pod)}</span></label></th>`).join('');
@@ -1877,7 +1883,7 @@ async function runRatListAnalysis(ratDataList, targetDivId, uniqueSuffix, custom
         const avgWtRow = sortedTicksWt.map(pod => avgsWt[pod] || '-');
         ratIds.forEach(id => { const rInfo = ratInfoMap[id]; const rData = scatterDataWt.filter(d => d.rid === id); wtTable += `<tr><td style="text-align:center;"><input type="checkbox" checked data-ch-rat-vis="${chEsc(id)}" data-chart="${wtChartId}" aria-label="${chEsc(id)} 차트 표시" style="transform:scale(1.2); cursor:pointer;"></td><td><span aria-hidden="true">${rInfo.status === '사망' ? '💀' : '🟢'}</span> ${chEsc(id)}</td>`; sortedTicksWt.forEach(pod => { const match = rData.find(d => { const checkX = window.isAgeMode ? (Math.round(d.realX * 7) / 7) : Math.round(d.realX); return Math.abs(checkX - pod) < 0.5; }); wtTable += `<td>${match ? match.y : '-'}</td>`; }); wtTable += `</tr>`; });
         wtTable += `<tr style="background:var(--stock-green-soft); font-weight:bold;"><td>-</td><td>AVG</td>${avgWtRow.map(v => `<td>${v}</td>`).join('')}</tr></table></div>`;
-        finalHtml += `<div class="card"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
+        finalHtml += `<div class="card" data-sec="wt"><div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; border-bottom:3px double var(--ink); padding-bottom:6px; margin-bottom:8px;"><h4 style="margin:0;">체중 (Weight)</h4>${controlPanel}</div><div class="chart-area" style="height:${chartHeight}"><canvas id="${wtChartId}"></canvas></div><button class="data-toggle-btn" onclick="toggleDisplay('${wtTableId}')">▼ 상세 데이터</button><div id="${wtTableId}" class="data-detail-box">${wtTable}</div></div>`;
 
         resDiv.innerHTML = finalHtml;
 
@@ -2574,6 +2580,7 @@ async function renderCohortCheckboxes(containerId) {
 }
 
 async function loadCohortComparison() {
+    { const ov = document.getElementById('batch-overlay-wrapper'); if (ov) ov.remove(); }
     compScatterCharts = {};
     compScatterDataCache = {};
     compFilterState = {};
@@ -2701,6 +2708,7 @@ async function loadCohortComparison() {
 
             const title = unit.type === 'cohort' ? `Cohort ${unit.val} (전체 통합 비교)` : `Cohort ${unit.val.replace('||', ' ')}`;
             await runCohortAnalysis(unit.expanded, divId, `_comp_${i}`, fixedOptions, title);
+            compAlignSoon();
         }
     } catch(e) { console.error("Comparison Error", e); container.innerHTML = `<p style="color:red">오류: ${e.message}</p>`; }
 }
@@ -2824,6 +2832,226 @@ async function loadTrendCodList() {
 }
 
 // 👇 [최종 기능] 그룹 통합 타임라인 (노란 점선 꿰매기 & 알파벳 마커 & Sham MR 표시) 👇
+// ============================================================
+//  배치 비교 (코호트 비교 → 배치 비교 탭, 2026-11-02)
+//  배치 번호는 개체 번호에서 나온다(global.js getBatchNo, 코호트 14부터). 열마다 기존 코호트 비교와 같은 양식
+//  (runCohortAnalysis — 기본 정보 · ARE · 뇌경색 · 사망 · 혈압 · 체중 · 섭취 · 노출)을 그 배치 개체로 돌리고,
+//  위에 배치를 한 그래프에 겹쳐 보는 카드(cohort_exposure.js ceBatchOverlay)를 붙인다.
+// ============================================================
+const BAT_COLORS = ['#2E7D32', '#E65100', '#6A1B9A', '#00838F', '#AD1457', '#1565C0'];   // 계획서 달력의 배치 색
+async function renderBatchSelectors() {
+    const sel = document.getElementById('bat-cohort');
+    if (!sel) return;
+    const rats = await getRatsWithCache(true);
+    const cohorts = [...new Set(rats.map(r => String(r.cohort)))].filter(c => Number(c) >= BATCH_FROM_COHORT).sort((a, b) => Number(b) - Number(a));
+    sel.innerHTML = cohorts.length ? cohorts.map(c => `<option value="${chEsc(c)}">코호트 ${chEsc(c)}</option>`).join('') : '<option value="">배치가 있는 코호트 없음</option>';
+    await renderBatchList();
+}
+async function renderBatchList() {
+    const sel = document.getElementById('bat-cohort'), box = document.getElementById('bat-list');
+    if (!sel || !box) return;
+    const c = sel.value;
+    if (!c) { box.innerHTML = ''; return; }
+    const cfg = await getCohortConfig(c) || {};
+    const size = Number((cfg.housing || {}).batchSize) || 12;
+    const rats = (await getRatsWithCache()).filter(r => String(r.cohort) === c);
+    const by = {};
+    rats.forEach(r => { const b = getBatchNo(r, size); if (b) (by[b] = by[b] || []).push(r); });
+    box.innerHTML = Object.keys(by).map(Number).sort((a, b) => a - b).map(b => {
+        const alive = by[b].filter(r => r.status !== '사망').length;
+        return `<label style="display:inline-flex; align-items:center; gap:6px; margin:4px 14px 4px 0; cursor:pointer;">
+            <input type="checkbox" class="bat-cb" value="${b}" checked>
+            <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:${BAT_COLORS[(b - 1) % BAT_COLORS.length]};"></span>
+            <b>Batch ${b}</b> <span class="mono" style="color:var(--ink-soft); font-size:0.82rem;">${by[b].length}마리 · 생존 ${alive}</span></label>`;
+    }).join('') || '<span style="color:var(--ink-soft);">배치를 정할 개체가 없습니다.</span>';
+}
+
+async function loadBatchComparison() {
+    compScatterCharts = {}; compScatterDataCache = {}; compFilterState = {};
+    syncChartsSbp = []; syncChartsWt = []; activeCrosshairValSbp = null; activeCrosshairValWt = null;
+    const c = (document.getElementById('bat-cohort') || {}).value;
+    const picked = Array.from(document.querySelectorAll('#bat-list .bat-cb:checked')).map(x => Number(x.value)).sort((a, b) => a - b);
+    if (!c) return alert('코호트를 고르세요.');
+    if (picked.length < 2) return alert('비교할 배치를 2개 이상 고르세요.');
+
+    const container = document.getElementById('comp-res-area');
+    container.innerHTML = '<div class="loader"></div> 배치 데이터 범위 계산 중...';
+    try {
+        const cfg = await getCohortConfig(c) || {};
+        const size = Number((cfg.housing || {}).batchSize) || 12;
+        const bOf = r => getBatchNo(r, size);
+        const snap = await db.collection('rats').where('cohort', '==', c).get();
+        const all = []; snap.forEach(d => { const r = d.data(); if (!r.archived) all.push(r); });
+        const rats = all.filter(r => picked.includes(bOf(r)));
+        const measByRat = await chFetchMeasByRatIds(rats.map(r => r.ratId));
+
+        // 축 · 눈금 범위를 모든 열이 같이 쓴다 (그룹 비교와 같은 계산)
+        let globalMaxSbp = 0, globalMaxWt = 0, globalMinSbp = 9999, globalMinWt = 9999, globalMaxAge = 0, globalMinAge = 999, globalMaxX = 0;
+        const unionStandardTicks = new Set();
+        rats.forEach(r => {
+            const arrAge = r.arrivalAge ? Number(r.arrivalAge) : 6;
+            if (arrAge < globalMinAge) globalMinAge = arrAge;
+            let endAge = arrAge;
+            if (r.status === '사망' && r.deathDate && r.arrivalDate) endAge = arrAge + ((new Date(r.deathDate) - new Date(r.arrivalDate)) / (1000 * 60 * 60 * 24 * 7));
+            else if (r.arrivalDate) endAge = arrAge + (daysBetween(r.arrivalDate) / 7);
+            if (endAge > globalMaxAge) globalMaxAge = endAge;
+            (measByRat[r.ratId] || []).forEach(v => {
+                let pod = null;
+                if (v.timepoint === 'Arrival') pod = (r.arrivalDate && r.surgeryDate) ? Math.floor((new Date(r.arrivalDate) - new Date(r.surgeryDate)) / 86400000) : null;
+                else if (globalPodMap.hasOwnProperty(v.timepoint)) pod = globalPodMap[v.timepoint];
+                else if (r.surgeryDate && v.date) pod = Math.floor((new Date(v.date) - new Date(r.surgeryDate)) / 86400000);
+                if (pod !== null && pod > globalMaxX) globalMaxX = pod;
+                if (v.sbp) { const s = Number(v.sbp); if (s > globalMaxSbp) globalMaxSbp = s; if (s < globalMinSbp) globalMinSbp = s; }
+                if (v.weight) { const w = Number(v.weight); if (w > globalMaxWt) globalMaxWt = w; if (w < globalMinWt) globalMinWt = w; }
+                if (v.timepoint && globalPodMap.hasOwnProperty(v.timepoint)) unionStandardTicks.add(v.timepoint);
+            });
+        });
+        let gapSum = 0, gapCnt = 0;
+        rats.forEach(r => { if (r.arrivalDate && r.surgeryDate) { const g = Math.round((new Date(r.surgeryDate) - new Date(r.arrivalDate)) / 86400000); if (g > 0) { gapSum += g; gapCnt++; } } });
+        const avgGap = gapCnt > 0 ? Math.round(gapSum / gapCnt) : 7;
+        const fixedOptions = { minX: -avgGap - 2, maxX: globalMaxX + 2, minSbp: globalMinSbp, maxSbp: globalMaxSbp, minWt: globalMinWt, maxWt: globalMaxWt,
+                               minAge: globalMinAge, maxAge: globalMaxAge, standardTicks: Array.from(unionStandardTicks), avgGap };
+        let globalMaxAreLoc = 0, globalMaxInfLoc = 0; const infTps = ['D2', 'W1', 'W4', 'W8', 'W12'];
+        picked.forEach(b => {
+            const locStats = {}, infStats = {}; infTps.forEach(tp => infStats[tp] = 0);
+            rats.filter(r => bOf(r) === b).forEach(r => {
+                if (Array.isArray(r.areList)) r.areList.forEach(loc => { let k = loc.side; if (loc.side !== 'BA' && loc.art && loc.art !== '-') k += ' ' + loc.art; locStats[k] = (locStats[k] || 0) + 1; });
+                const fail = (r.cod || extractLegacyCod(r.codFull)) === 'Surgical Failure';
+                if (!fail && Array.isArray(r.mrDates)) r.mrDates.forEach(mr => { if (infTps.includes(mr.timepoint) && mr.date && mr.infarctSize && mr.infarctSize !== 'None') infStats[mr.timepoint]++; });
+            });
+            globalMaxAreLoc = Math.max(globalMaxAreLoc, ...Object.values(locStats), 0);
+            globalMaxInfLoc = Math.max(globalMaxInfLoc, ...Object.values(infStats), 0);
+        });
+        fixedOptions.maxAreLoc = globalMaxAreLoc; fixedOptions.maxInfLoc = globalMaxInfLoc;
+
+        container.innerHTML = '';
+        const groupsData = picked.map(b => ({ name: `Batch ${b}`, color: BAT_COLORS[(b - 1) % BAT_COLORS.length], rats: rats.filter(r => bOf(r) === b) }));
+        renderUnifiedTimeline(groupsData, container);
+        ceBatchOverlay(container, c, rats, bOf, picked, BAT_COLORS, cfg);   // 기다리지 않는다 — 열이 먼저 보이게
+
+        // 배치는 군과 무관 — 그 코호트의 모든 군 키를 주고 배치로 거른다
+        const groupKeys = [...new Set(all.map(r => `${r.cohort}||${r.group || 'G1'}`))];
+        for (let i = 0; i < picked.length; i++) {
+            const b = picked[i];
+            const colDiv = document.createElement('div'); colDiv.className = 'comp-col'; colDiv.id = `comp-res-bat-${i}`; container.appendChild(colDiv);
+            const n = rats.filter(r => bOf(r) === b).length;
+            await runCohortAnalysis(groupKeys, `comp-res-bat-${i}`, `_bat_${i}`, Object.assign({}, fixedOptions, { ratFilter: r => bOf(r) === b }),
+                                    `Batch ${b} · 코호트 ${c} (${n}마리)`);
+            compAlignSoon();
+        }
+    } catch (e) { console.error('Batch Compare Error', e); container.innerHTML = `<p style="color:red">오류: ${chEsc(e.message)}</p>`; }
+}
+
+// ============================================================
+//  비교 화면 좌우 맞춤 — 같은 항목이 같은 높이에 오게 한다 (2026-11-02 사용자)
+//  열마다 카드 길이가 다르거나(개체 수 · 표 길이) 한쪽에 없는 항목(사망 0이면 사망 분석 카드가 없음)이 있으면
+//  아래 카드가 줄줄이 밀려 좌우를 나란히 볼 수 없었다. 카드에 data-sec 이름표를 붙여 두고,
+//  ① 없는 항목은 같은 자리에 '데이터 없음' 칸을 넣고 ② 이름표마다 가장 긴 열의 높이로 맞춘다.
+// ============================================================
+const COMP_SEC_ORDER = ['info', 'are', 'inf', 'surv', 'bp', 'wt', 'ce-daily', 'ce-food', 'ce-met', 'ce-rats'];
+const COMP_SEC_NAME = { info: '기본 정보 요약', are: 'ARE 발생률', inf: '시점별 뇌경색', surv: '사망 분석 · 생존율', bp: '혈압', wt: '체중',
+                        'ce-daily': '물 · 사료 섭취 추이', 'ce-food': '사료 속 BAPN · NaCl', 'ce-met': '메트포민 누적 도달', 'ce-rats': '개체별 노출' };
+function compAlign() {
+    const area = document.getElementById('comp-res-area');
+    if (!area) return;
+    const cols = Array.from(area.querySelectorAll(':scope > .comp-col'));
+    if (cols.length < 2) return;
+    const present = new Set();
+    cols.forEach(c => c.querySelectorAll('[data-sec]').forEach(el => present.add(el.dataset.sec)));
+    const keys = COMP_SEC_ORDER.filter(k => present.has(k)).concat([...present].filter(k => !COMP_SEC_ORDER.includes(k)));
+    cols.forEach(col => {
+        keys.forEach((k, i) => {
+            if (col.querySelector(`[data-sec="${k}"]`)) return;
+            const ph = document.createElement('div');
+            ph.className = 'card comp-ph'; ph.dataset.sec = k;
+            ph.style.cssText = 'color:var(--ink-soft); font-size:0.85rem;';
+            ph.innerHTML = `<h4 style="margin-top:0; color:var(--ink-soft); border-bottom:1px solid var(--rule); padding-bottom:6px;">${COMP_SEC_NAME[k] || k}</h4>이 비교 대상에는 해당 데이터가 없습니다.`;
+            // 일반 카드는 열 바로 아래, 노출(ce-*) 카드는 열 안의 노출 상자(coExpo…) 안에 있다.
+            // 같은 상자 안에서 순서상 다음 항목 앞에 넣고, 없으면 상자 끝(일반 카드는 노출 상자 앞)에 넣는다.
+            const isCe = k.startsWith('ce-');
+            const expo = col.querySelector(':scope > [id^="coExpo"]');
+            const parent = isCe ? (expo || col) : col;
+            const next = keys.slice(i + 1).filter(n => n.startsWith('ce-') === isCe)
+                .map(n => parent.querySelector(`:scope > [data-sec="${n}"]`)).find(Boolean);
+            if (next) parent.insertBefore(ph, next);
+            else if (!isCe && expo) col.insertBefore(ph, expo);
+            else parent.appendChild(ph);
+        });
+    });
+    keys.forEach(k => {
+        const els = cols.map(c => c.querySelector(`[data-sec="${k}"]`)).filter(Boolean);
+        els.forEach(el => { el.style.minHeight = ''; });
+        const h = Math.max(...els.map(el => el.offsetHeight));
+        els.forEach(el => { el.style.minHeight = h + 'px'; el.style.boxSizing = 'border-box'; });
+    });
+    compSyncAxes();
+}
+// 비교 화면의 같은 그래프끼리 가로 · 세로 축을 똑같이 맞춘다 (2026-11-02 사용자: "가장 긴 축을 기준으로").
+// 같은 그래프 = 캔버스 id에서 열 번호만 다른 것 (coChartWt_bat_0 · coChartWt_bat_1 …).
+//  · 숫자 축: 모든 열의 최소 ~ 최대를 합친 범위
+//  · 항목 축(막대 · 주별 선): 모든 열의 항목을 합쳐 같은 칸을 갖게 하고, 없는 칸은 비운다
+//  · 도넛 · 원은 축이 없어 그대로
+function compSyncAxes() {
+    const area = document.getElementById('comp-res-area');
+    if (!area || typeof Chart === 'undefined') return;
+    const fam = {};
+    area.querySelectorAll('.comp-col canvas[id]').forEach(cv => {
+        const m = cv.id.match(/^(.*_(?:comp|grp|bat)_)\d+$/);
+        const ch = Chart.getChart(cv);
+        if (!m || !ch) return;
+        (fam[m[1]] = fam[m[1]] || []).push(ch);
+    });
+    Object.values(fam).forEach(charts => {
+        if (charts.length < 2) return;
+        const type = charts[0].config.type;
+        if (type === 'doughnut' || type === 'pie' || type === 'sankey') return;
+        let changed = false;
+        // 항목 축 — 칸 합치기
+        const cat = charts.every(c => c.scales.x && c.scales.x.type === 'category' && Array.isArray(c.data.labels));
+        if (cat) {
+            const union = [];
+            charts.forEach(c => c.data.labels.forEach(l => { if (!union.some(u => String(u) === String(l))) union.push(l); }));
+            // 칸 이름에 숫자가 있으면 숫자 순(W1 · W2 …, 8주령 · 9주령 · 10주령 …) — 글자 순이면 10이 8보다 앞에 온다
+            const num = l => { const m = String(l).match(/-?\d+(\.\d+)?/); return m ? Number(m[0]) : null; };
+            const fixedOrder = union.some(l => /\n/.test(String(l)));   // 'W1\n(n=12)' 같은 칸은 원래 순서 그대로
+            if (!fixedOrder && union.every(l => num(l) !== null)) union.sort((a, b) => num(a) - num(b));
+            else if (!fixedOrder) union.sort((a, b) => String(a).localeCompare(String(b)));
+            charts.forEach(c => {
+                const old = c.data.labels.map(String);
+                if (old.length === union.length && old.every((l, i) => l === String(union[i]))) return;
+                c.data.datasets.forEach(ds => {
+                    if (!Array.isArray(ds.data) || ds.data.some(v => v !== null && typeof v === 'object')) return;
+                    const prev = ds.data.slice();
+                    ds.data = union.map(l => { const i = old.indexOf(String(l)); return i >= 0 ? prev[i] : null; });
+                });
+                c.data.labels = union.slice();
+                changed = true;
+            });
+        }
+        // 숫자 축 — 가장 넓은 범위
+        ['x', 'y'].forEach(k => {
+            if (k === 'x' && cat) return;
+            const sc = charts.map(c => c.scales[k]).filter(Boolean);
+            if (sc.length !== charts.length || sc.some(s => s.type === 'category')) return;
+            const lo = Math.min(...sc.map(s => s.min)), hi = Math.max(...sc.map(s => s.max));
+            if (!isFinite(lo) || !isFinite(hi)) return;
+            charts.forEach(c => {
+                // c.options는 Chart.js가 풀어 놓은 사본(프록시)이라 거기에 쓰면 내부가 꼬인다 — 원래 설정(config.options)에 쓴다
+                const raw = c.config.options; raw.scales = raw.scales || {};
+                const o = raw.scales[k] = raw.scales[k] || {};
+                if (o.min !== lo || o.max !== hi) { o.min = lo; o.max = hi; changed = true; }
+            });
+        });
+        // update('none')는 축만 다시 그리고 점은 옛 축 기준 픽셀에 남겨 둔다(값이 몇 배로 보였다, 11/2 사용자 발견) — 일반 갱신으로
+        if (changed) charts.forEach(c => c.update());
+    });
+}
+
+let compAlignTimer = null;
+window.addEventListener('resize', () => { clearTimeout(compAlignTimer); compAlignTimer = setTimeout(compAlign, 200); });
+// 생존 곡선처럼 조금 늦게 그려지는 카드가 있어 한 번 맞춘 뒤 두 번 더 맞춘다
+function compAlignSoon() { compAlign(); setTimeout(compAlign, 400); setTimeout(compAlign, 1500); }
+
 function renderUnifiedTimeline(groupsData, container) {
     const existing = document.getElementById('unified-timeline-wrapper');
     if (existing) existing.remove();
@@ -3152,6 +3380,19 @@ function openRatModal(ratId) {
 window.updateSurvivalChart = function(suffix, chartId) {
     const cache = window.survDataCache[suffix];
     if(!cache) return;
+    // 비교 화면이면 다른 열의 같은 체크박스도 맞춰 같이 다시 그린다 — 열마다 제외 기준이 다르면 비교가 안 된다 (2026-11-02)
+    const mm = String(suffix).match(/^(.*_(?:comp|grp|bat)_)\d+$/);
+    if (mm && !window.__survMirror) {
+        window.__survMirror = true;
+        try {
+            const sf = document.getElementById(`chk-exc-surgfail${suffix}`), sa = document.getElementById(`chk-exc-sac${suffix}`);
+            Object.keys(window.survDataCache || {}).filter(k => k !== suffix && k.startsWith(mm[1]) && /^\d+$/.test(k.slice(mm[1].length))).forEach(k => {
+                const a = document.getElementById(`chk-exc-surgfail${k}`), b2 = document.getElementById(`chk-exc-sac${k}`);
+                if (a && sf) a.checked = sf.checked; if (b2 && sa) b2.checked = sa.checked;
+                window.updateSurvivalChart(k, chartId.replace(suffix, k));
+            });
+        } finally { window.__survMirror = false; }
+    }
 
     const excSurgFail = document.getElementById(`chk-exc-surgfail${suffix}`).checked;
     const excSac = document.getElementById(`chk-exc-sac${suffix}`).checked;
@@ -3216,6 +3457,9 @@ window.updateSurvivalChart = function(suffix, chartId) {
         chartInstance.data.labels = survLabels;
         chartInstance.data.datasets[0].data = survData;
         chartInstance.update();
+        // 비교 화면이면 축을 다시 맞춘다 (chMakeChart를 거치지 않는 제자리 갱신)
+        const cvS = document.getElementById(chartId);
+        if (cvS && cvS.closest('.comp-col') && typeof compAlign === 'function') { clearTimeout(window.__compSyncTimer); window.__compSyncTimer = setTimeout(compAlign, 100); }
     } else {
         chMakeChart(chartId, {
             type: 'line',

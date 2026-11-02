@@ -555,6 +555,7 @@ async function go(view, targetId = null, specificTabId = null) {
             <div class="tab-container">
                 <div id="cp-tab-ind" class="tab active" onclick="switchCompTab('ind')">개별 비교</div>
                 <div id="cp-tab-grp" class="tab" onclick="switchCompTab('grp')">그룹 비교</div>
+                <div id="cp-tab-bat" class="tab" onclick="switchCompTab('bat')">배치 비교</div>
             </div>
             <div id="cp-ui-ind">
                 <div id="comp-check-list" style="display:flex; flex-wrap:wrap; gap:15px; margin-bottom:15px; padding:15px; background:var(--paper); border-radius:2px; border:1px solid var(--rule); max-height:150px; overflow-y:auto;">로딩 중...</div>
@@ -579,10 +580,20 @@ async function go(view, targetId = null, specificTabId = null) {
 
                 <button class="btn btn-blue" onclick="loadGroupComparison()">그룹 비교 시작</button>
             </div>
+            <div id="cp-ui-bat" style="display:none;">
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+                    <label style="font-weight:bold; color:var(--ink);">코호트</label>
+                    <select id="bat-cohort" onchange="renderBatchList()" style="padding:8px; border-radius:2px; border:1px solid #C9C5B8; min-width:140px;"><option>로딩 중...</option></select>
+                    <span style="font-size:0.8rem; color:var(--ink-soft);">군을 합쳐 배치끼리 봅니다 (배치 × 군으로 쪼개지 않음)</span>
+                </div>
+                <div id="bat-list" style="padding:10px; background:var(--paper); border:1px solid var(--rule); border-radius:2px; margin-bottom:15px;"></div>
+                <button class="btn btn-blue" onclick="loadBatchComparison()">배치 비교 시작</button>
+            </div>
         </div>
         <div id="comp-res-area" class="comp-grid"></div>`;
         await renderCohortCheckboxes('comp-check-list');
         await renderGroupSelectors();
+        if (typeof renderBatchSelectors === 'function') await renderBatchSelectors();
         return;
     }
 
@@ -715,10 +726,13 @@ function toggleMenu() {
 // 간단한 토글 헬퍼 함수 (script 태그 내 아무데나 추가해주세요)
 function toggleDisplay(id) {
     const el = document.getElementById(id);
-    if(el.style.display === 'none' || el.style.display === '') {
-        el.style.display = 'block';
-    } else {
-        el.style.display = 'none';
+    const show = (el.style.display === 'none' || el.style.display === '');
+    el.style.display = show ? 'block' : 'none';
+    // 비교 화면이면 다른 열의 같은 상세 칸도 같이 열고 닫는다 — 한쪽만 길어져 좌우 줄이 어긋나지 않게 (2026-11-02)
+    const m = String(id).match(/^(.*_(?:comp|grp|bat)_)\d+$/);
+    if (m && el.closest('.comp-col')) {
+        document.querySelectorAll(`#comp-res-area [id^="${m[1]}"]`).forEach(x => { if (/^\d+$/.test(x.id.slice(m[1].length))) x.style.display = show ? 'block' : 'none'; });
+        if (typeof compAlign === 'function') compAlign();
     }
 }
 
@@ -773,10 +787,11 @@ function admTab(mode) {
 
 // --- Group Comparison Helpers ---
 function switchCompTab(mode) {
-    document.getElementById('cp-tab-ind').className = mode==='ind' ? 'tab active' : 'tab';
-    document.getElementById('cp-tab-grp').className = mode==='grp' ? 'tab active' : 'tab';
-    document.getElementById('cp-ui-ind').style.display = mode==='ind' ? 'block' : 'none';
-    document.getElementById('cp-ui-grp').style.display = mode==='grp' ? 'block' : 'none';
+    ['ind', 'grp', 'bat'].forEach(m => {
+        const t = document.getElementById(`cp-tab-${m}`), u = document.getElementById(`cp-ui-${m}`);
+        if (t) t.className = mode === m ? 'tab active' : 'tab';
+        if (u) u.style.display = mode === m ? 'block' : 'none';
+    });
 }
 
 
