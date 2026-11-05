@@ -409,11 +409,15 @@ function ceEventList(rats, cfgBy, rel, med) {
         const podMed = (day, mine) => med(mine.map(r => { const s = doseDateOf(r.surgeryDate), d = day(r); return (s && d) ? Math.round((ceMs(d) - ceMs(s)) / 864e5) : null; }).filter(v => v !== null));
         add(med(rs.map(r => rel(r, doseDateOf(r.ovxDate))).filter(v => v !== null)), pre + 'OVX');
         add(med(rs.map(r => rel(r, doseDateOf(r.surgeryDate))).filter(v => v !== null)) ?? 0, pre + '결찰');
-        ((cfgBy[c] || {}).dosing || []).forEach(rule => {
-            if (!(rule.groups || []).some(g => gks.has(g)) || !(Number(rule.value) > 0)) return;
+        // 같은 처치가 군마다 다른 규칙으로 걸려 있으면(13.5 고염식 G0 · G1처럼) 이름 뒤에 군을 붙여 어느 선인지 가린다
+        const live = ((cfgBy[c] || {}).dosing || []).filter(rule => (rule.groups || []).some(g => gks.has(g)) && Number(rule.value) > 0);
+        const nameOf = rule => short(rule.substance || '') + (rule.medium === 'water' ? ' 시작' : '');
+        const dupName = n => live.filter(rule => nameOf(rule) === n).length > 1;
+        live.forEach(rule => {
             const mine = rs.filter(r => (rule.groups || []).includes(ceGkey(r)));
             const st = med(mine.map(r => rel(r, doseRuleWindow(rule, [r]).start)).filter(v => v !== null));
-            add(st, pre + short(rule.substance || '') + (rule.medium === 'water' ? ' 시작' : ''));
+            const nm = nameOf(rule);
+            add(st, pre + nm + (dupName(nm) ? `(${(rule.groups || []).filter(g => gks.has(g)).join('·')})` : ''));
             // 끝은 설정(endAnchor)에서도, 개체에 적은 고염식 중단일에서도 나온다 (global.js doseRuleWindow)
             if (rule.medium === 'food') {
                 const en = med(mine.map(r => rel(r, doseRuleWindow(rule, [r]).end)).filter(v => v !== null));
@@ -425,8 +429,19 @@ function ceEventList(rats, cfgBy, rel, med) {
             }
         });
     });
+    // 같은 날 같은 이름에 군만 다른 것(C14 고염식(G1·G2) · 고염식(G3))은 군을 모아 하나로
+    const mergeGroups = labels => {
+        const out = [], at = {};
+        labels.forEach(l => {
+            const m = l.match(/^(.*)\(([^()]+)\)$/);
+            if (!m) { out.push(l); return; }
+            if (at[m[1]] === undefined) { at[m[1]] = out.length; out.push({ base: m[1], gs: [] }); }
+            m[2].split('·').forEach(g => { if (!out[at[m[1]]].gs.includes(g)) out[at[m[1]]].gs.push(g); });
+        });
+        return out.map(o => typeof o === 'string' ? o : `${o.base}(${o.gs.sort().join('·')})`);
+    };
     return [...new Set(Object.keys(evMap).map(Number).concat([...switchX]))].sort((a, b) => a - b).map(x => {
-        const label = [...(evMap[x] || [])].join(' · ');
+        const label = mergeGroups([...(evMap[x] || [])]).join(' · ');
         const pod = podOf[x];
         return { x, label: switchX.has(x) ? `전환일${pod !== null && pod !== undefined ? ` (POD ${pod})` : ''}${label ? ' · ' + label : ''}` : label };
     });
@@ -579,26 +594,61 @@ async function ceBatchOverlay(container, cohort, rats, bOf, picked, colors, cfg)
     }
 }
 
-// 처치 시점 세로선 (숫자 x축). 글자는 겹치지 않게 줄을 돌려 가며 단다
+// 처치 시점 세로선 (숫자 x축).
+// 글자는 실제 폭을 재서 비어 있는 가장 위 줄에 단다 — 예전엔 90px 안이면 3줄을 돌려 써서
+// 코호트를 겹쳐 보면 수술 전 구간에 이름 4~5개가 포개졌다 (2026-11-05 사용자).
+// 오른쪽 끝에 걸리는 이름은 선의 왼쪽으로 붙이고, 글자 뒤에 옅은 흰 바탕을 깔아 데이터 선 위에서도 읽히게 한다.
 const ceEventPlugin = {
     id: 'ceEvents',
     afterDatasetsDraw(chart, args, opts) {
         const evs = (opts && opts.list) || [];
         if (!evs.length) return;
         const { ctx, chartArea: area, scales } = chart;
-        let row = 0, lastX = -1e9;
-        evs.forEach(ev => {
-            const x = scales.x.getPixelForValue(ev.x);
-            if (!(x >= area.left && x <= area.right)) return;
-            row = (x - lastX < 90) ? (row + 1) % 3 : 0; lastX = x;
-            ctx.save();
-            ctx.setLineDash([4, 3]); ctx.strokeStyle = '#7A5C00'; ctx.lineWidth = 1.2;
-            ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.fillStyle = '#7A5C00'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'left';
-            ctx.fillText(' ' + ev.label, x + 1, area.top + 10 + row * 12);
-            ctx.restore();
+        const COLOR = '#7A5C00', LINE_H = 13, PAD = 3, GAP = 6, MAX_ROWS = 8;
+        const pts = evs.map(ev => ({ ev, x: scales.x.getPixelForValue(ev.x) }))
+            .filter(p => p.x >= area.left && p.x <= area.right)
+            .sort((a, b) => a.x - b.x);
+        if (!pts.length) return;
+        ctx.save();
+        // 선 먼저 전부
+        ctx.setLineDash([4, 3]); ctx.strokeStyle = COLOR; ctx.lineWidth = 1.2;
+        pts.forEach(p => { ctx.beginPath(); ctx.moveTo(p.x, area.top); ctx.lineTo(p.x, area.bottom); ctx.stroke(); });
+        ctx.setLineDash([]);
+        // 이름 자리 잡기: 줄마다 이미 쓴 오른쪽 끝을 기억하고, 들어갈 수 있는 가장 위 줄로
+        ctx.font = 'bold 10px sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+        const rowEnd = [];
+        const tw = s => ctx.measureText(s).width + PAD * 2;
+        const place = (x, text) => {
+            const w = tw(text);
+            let l = x + 1;
+            if (l + w > area.right) l = Math.max(area.left, x - 1 - w);     // 오른쪽에 자리가 없으면 선 왼쪽에
+            const r = l + w;
+            let row = rowEnd.findIndex(e => e <= l);
+            if (row < 0) {
+                if (rowEnd.length < MAX_ROWS) { row = rowEnd.length; rowEnd.push(-1e9); }
+                else row = rowEnd.indexOf(Math.min(...rowEnd));            // 줄이 다 차면 가장 일찍 끝나는 줄
+            }
+            rowEnd[row] = Math.max(rowEnd[row], r + GAP);
+            const y = area.top + 2 + row * LINE_H;
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(l, y, w, LINE_H - 1);
+            ctx.fillStyle = COLOR;
+            ctx.fillText(text, l + PAD, y + (LINE_H - 1) / 2);
+        };
+        pts.forEach(p => {
+            if (!p.ev.label) return;
+            // 좁은 그래프(비교 화면 열)에서 긴 이름이 잘리지 않게 ' · ' 마디에서 접는다. 오른쪽 자리가 넉넉하면 오른쪽 폭에 맞춘다
+            const right = area.right - p.x - 1, left = p.x - 1 - area.left;
+            const fitW = right >= 90 ? right : Math.max(right, left);
+            const lines = [];
+            p.ev.label.split(' · ').forEach(s => {
+                const cur = lines[lines.length - 1];
+                if (cur !== undefined && tw(cur + ' · ' + s) <= fitW) lines[lines.length - 1] = cur + ' · ' + s;
+                else lines.push(s);
+            });
+            lines.forEach(t => place(p.x, t));
         });
+        ctx.restore();
     }
 };
 

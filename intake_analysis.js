@@ -619,6 +619,7 @@ const iaEventPlugin = {
         if (!events.length) return;
         const { ctx, chartArea: area, scales } = chart;
         const labels = chart.data.labels || [];
+        const pts = [];
         events.forEach(ev => {
             // 측정일 사이에 낀 날짜면 두 점 사이를 비례로 나눈 자리에 세운다
             let x = null;
@@ -635,19 +636,42 @@ const iaEventPlugin = {
                 }
             }
             if (x === null || x < area.left || x > area.right) return;
+            pts.push({ ev, x });
+        });
+        if (!pts.length) return;
+        pts.sort((a, b) => a.x - b.x);
 
-            ctx.save();
+        ctx.save();
+        pts.forEach(({ ev, x }) => {
             ctx.setLineDash(ev.pos === 'bottom' ? [2, 3] : [4, 3]);
             ctx.strokeStyle = ev.color; ctx.lineWidth = 1.5;
             ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.fillStyle = ev.color;
-            ctx.font = 'bold 10px sans-serif';
-            ctx.textAlign = 'left';
-            // 투약 시작은 위에, 케이지 구성 변동은 아래에 — 같은 날이어도 글자가 겹치지 않는다
-            ctx.fillText(' ' + ev.label, x + 1, ev.pos === 'bottom' ? area.bottom - 4 : area.top + 10);
-            ctx.restore();
         });
+        ctx.setLineDash([]);
+        // 글자 자리: 투약 시작은 위에서 아래로, 케이지 구성 변동은 아래에서 위로 쌓는다.
+        // 실제 폭을 재서 비어 있는 첫 줄에 — 며칠 간격 처치(OVX → 고염식)가 한 줄에 포개지던 것 (2026-11-05)
+        const LINE_H = 13, PAD = 3, GAP = 6, MAX_ROWS = 6;
+        ctx.font = 'bold 10px sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+        const rowEnd = { top: [], bottom: [] };
+        pts.forEach(({ ev, x }) => {
+            if (!ev.label) return;
+            const side = ev.pos === 'bottom' ? 'bottom' : 'top', rows = rowEnd[side];
+            const w = ctx.measureText(ev.label).width + PAD * 2;
+            let l = x + 1;
+            if (l + w > area.right) l = Math.max(area.left, x - 1 - w);   // 오른쪽에 자리가 없으면 선 왼쪽에
+            let row = rows.findIndex(e => e <= l);
+            if (row < 0) {
+                if (rows.length < MAX_ROWS) { row = rows.length; rows.push(-1e9); }
+                else row = rows.indexOf(Math.min(...rows));
+            }
+            rows[row] = Math.max(rows[row], l + w + GAP);
+            const y = side === 'bottom' ? area.bottom - 2 - (row + 1) * LINE_H : area.top + 2 + row * LINE_H;
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(l, y, w, LINE_H - 1);
+            ctx.fillStyle = ev.color;
+            ctx.fillText(ev.label, l + PAD, y + (LINE_H - 1) / 2);
+        });
+        ctx.restore();
     }
 };
 
