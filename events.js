@@ -31,6 +31,7 @@ const EV_TYPES = {
     ovx:       { label: 'OVX',           kind: 'save',  field: 'ovxDate' },
     ligation:  { label: '결찰',          kind: 'save',  field: 'surgeryDate' },
     nacl:      { label: '고염식 시작',    kind: 'save',  field: 'naclStartDate' },
+    naclEnd:   { label: '고염식 중단',    kind: 'save',  field: 'naclEndDate' },   // 일반식으로 바꾼 날. C14 G3는 설정이 알아서 하니 따로 적을 필요 없음
     bapn:      { label: 'BAPN 시작',     kind: 'save',  field: 'bapnStartDate' },
     assign:    { label: '군 배정 (전환일)', kind: 'assign' },
     bp:        { label: 'BP 측정',       kind: 'route', view: 'bp',    note: 'BP 계산 & 입력에서 CSV를 올립니다. 그날 케이지별 입력에는 「BP일」 표시를 켜세요 — 반동 구간이 농도 기준에서 빠집니다.' },
@@ -77,6 +78,7 @@ function evCheck(type, r) {
     if (have) return { text: `이미 있음 ${evEsc(have)} — 덮어씁니다` };
     if (type === 'ligation' && !r.ovxDate && evCfg && (evCfg.dosing || []).some(x => x.startAnchor === 'ovx')) return { text: 'OVX 기록 없음' };
     if (type === 'bapn' && !r.surgeryDate) return { text: '결찰 기록 없음' };
+    if (type === 'naclEnd' && !r.ovxDate) return { text: 'OVX 기록 없음' };
     return null;
 }
 
@@ -342,6 +344,7 @@ async function evSave() {
     if (date > today) errs.push(`날짜 ${date}가 오늘(${today})보다 뒤입니다`);
     targets.forEach(r => {
         const patch = evType === 'ligation' ? { surgeryDate: date } : evType === 'ovx' ? { ovxDate: date }
+            : evType === 'nacl' ? { naclStartDate: date } : evType === 'naclEnd' ? { naclEndDate: date }
             : evType === 'sacrifice' ? { sampleDate: date, deathDate: date } : null;
         if (!patch || typeof checkRatDates !== 'function') return;
         const c = checkRatDates(r, patch, today);

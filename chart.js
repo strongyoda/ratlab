@@ -611,6 +611,7 @@ async function loadDetailData(forceId = null) {
                                 </div>`, 'hint-surg-d')}
                             ${rdSchedRow('BAPN 시작', `<input type="date" id="bapn-d" value="${chEsc(rat.bapnStartDate||'')}" aria-label="BAPN 시작일" onchange="rdSet('bapnStartDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-bapn-d')}
                             ${rdSchedRow('투약(물) 시작', `<input type="date" id="dose-start-d" value="${chEsc(rat.doseStartDate||'')}" aria-label="투약 시작일" onchange="rdSet('doseStartDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-dose-start-d')}
+                            ${rdSchedRow('고염식 중단', `<input type="date" id="nacl-end-d" value="${chEsc(rat.naclEndDate||'')}" aria-label="고염식 중단일 (일반식으로 바꾼 날)" title="일반식으로 바꾼 날. 비워 두면 코호트 설정대로" onchange="rdSet('naclEndDate', this.value); rdRefreshHints();" style="${RD_IN}">`, 'hint-nacl-end-d')}
                             ${rdSchedRow('얻은 샘플', `
                                 <select id="sample-tp" aria-label="샘플 종류" onchange="rdSet('sampleType', this.value)" style="${RD_IN}">
                                     <option value="">-</option>
@@ -877,7 +878,7 @@ async function loadDetailData(forceId = null) {
                 tlData.push({ x: age, y: 0, event: 'OVX', type: 'OVX' });
             }
             // 개체에 직접 적은 처치 시작일 (랫드 상세 '기본 일정' · 일괄 입력)
-            [['naclStartDate', '고염식 시작', 'NaCl'], ['bapnStartDate', 'BAPN 시작', 'BAPN'], ['doseStartDate', '투약(물) 시작', 'Dose']].forEach(([k, ev, tp]) => {
+            [['naclStartDate', '고염식 시작', 'NaCl'], ['naclEndDate', '고염식 중단', 'NaCl'], ['bapnStartDate', 'BAPN 시작', 'BAPN'], ['doseStartDate', '투약(물) 시작', 'Dose']].forEach(([k, ev, tp]) => {
                 if (!rat[k]) return;
                 const age = arrivalAgeNum + (new Date(rat[k]) - arrDateObj) / (1000*60*60*24*7);
                 if (!isNaN(age)) tlData.push({ x: age, y: 0, event: ev, type: tp });
@@ -1658,12 +1659,34 @@ async function runCohortAnalysis(targetGroups, targetDivId, uniqueSuffix = '', f
             }
         };
 
+        // 처치 세로선 (OVX · 고염식 · 결찰 · BAPN · 전환일 · 메트포민) — 섭취 그래프와 같은 목록을 이 축(하이브리드 POD · 주령)에 놓는다 (2026-11-05)
+        let coEvents = [];
+        try {
+            const cfgBy = {};
+            (await Promise.all(targetCohorts.map(c => getCohortConfig(c)))).forEach((cf, i) => { cfgBy[targetCohorts[i]] = cf || {}; });
+            const dOf = v => doseDateOf(v), days = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 864e5);
+            const relH = (r, day) => {
+                if (!day) return null;
+                const a = dOf(r.arrivalDate), sg = dOf(r.surgeryDate);
+                if (window.isAgeMode) return a ? (r.arrivalAge ? Number(r.arrivalAge) : 6) + days(a, day) / 7 : null;
+                if (!sg) return null;
+                const pod = days(sg, day);
+                if (pod >= 0 || !a) return pod;
+                const g = days(a, sg), k = days(a, day);
+                return g > 0 ? -avgGap * (1 - Math.max(0, Math.min(k, g)) / g) : pod;
+            };
+            if (typeof ceEventList === 'function') coEvents = ceEventList(rats, cfgBy, relH);
+        } catch (e) { console.warn('처치 세로선 계산 실패', e); }
+        const evPlugins = (typeof ceEventPlugin !== 'undefined') ? [ceEventPlugin] : [];
+
         const wtOpts = createChartOptions(rangeWtX.min, rangeWtX.max, rangeWtY.min, rangeWtY.max);
-        const wtChart = chMakeChart(wtChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
+        wtOpts.plugins.ceEvents = { list: coEvents };
+        const wtChart = chMakeChart(wtChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineWt, borderColor: '#00c853', borderWidth: 2, tension: 0.1, pointRadius: 3 }, { type: 'scatter', label: 'Individual', data: scatterDataWt, backgroundColor: 'rgba(0, 200, 83, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: wtOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin, ...evPlugins] });
         document.getElementById(wtChartId).ondblclick = () => wtChart.resetZoom();
 
         const bpOpts = createChartOptions(rangeSbpX.min, rangeSbpX.max, rangeSbpY.min, rangeSbpY.max);
-        const bpChart = chMakeChart(bpChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin] });
+        bpOpts.plugins.ceEvents = { list: coEvents };
+        const bpChart = chMakeChart(bpChartId, { type: 'scatter', data: { datasets: [{ type: 'line', label: 'Average', data: avgLineSbp, borderColor: '#d32f2f', borderWidth: 2, tension: 0.1 }, { type: 'scatter', label: 'Individual', data: scatterDataSbp, backgroundColor: 'rgba(211, 47, 47, 0.3)', pointRadius: 3, hidden: !isIndividualVisible }] }, options: bpOpts, plugins: [syncCrosshairPlugin, ratTrailPlugin, ...evPlugins] });
         document.getElementById(bpChartId).ondblclick = () => bpChart.resetZoom();
 
         const enableCompareSync = (uniqueSuffix && (uniqueSuffix.includes('_comp_') || uniqueSuffix.includes('_grp_')));

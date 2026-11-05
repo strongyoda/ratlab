@@ -313,6 +313,7 @@ const RD_SCHED = [
     { id: 'surg-d',       ref: 'arrival', fmt: d => `반입 +${d}일` },
     { id: 'bapn-d',       ref: 'surgery', fmt: d => `POD ${d}` },
     { id: 'dose-start-d', ref: 'surgery', fmt: d => `POD ${d}` },
+    { id: 'nacl-end-d',   ref: 'surgery', fmt: d => `POD ${d} · 이날부터 일반식` },
 ];
 function rdDays(a, b) {
     if (!a || !b) return null;

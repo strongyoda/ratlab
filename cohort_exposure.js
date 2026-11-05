@@ -388,33 +388,48 @@ function ceDailyIntake(rats, cages, cfgBy, gkOfCage) {
             if (typeof row.foodPerCapita === 'number' && row.foodPerCapita >= 0) put(food, gk, x, row.foodPerCapita);
         });
     });
-    // 처치 시점 세로선 — 코호트 설정의 규칙(지금 보이는 군에 걸린 것만) + OVX · 결찰. 같은 날은 한 줄로 합친다.
+    const events = ceEventList(rats, cfgBy, (r, day) => { const a = anchorOf(r); return (a && day) ? dd(a.day, day) : null; }, med);
+    return { water, food, events, estCages, gap, anchorOf };
+}
+
+// 처치 시점 세로선 목록 — 코호트 설정의 규칙(보이는 군에 걸린 것만) + OVX · 결찰. 같은 자리는 한 줄로 합친다.
+// rel(r, 'YYYY-MM-DD') = 그 날짜의 가로축 값(그래프마다 축이 달라 밖에서 준다), med = 개체들의 대표값.
+// 사료가 끝나는 날(BAPN free base · 고염식)은 사료가 바뀌는 날이라 「전환일」로 이름을 붙인다 (2026-11-05 사용자).
+function ceEventList(rats, cfgBy, rel, med) {
+    med = med || (a => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return s[Math.floor((s.length - 1) / 2)]; });
     const cohorts = [...new Set(rats.map(r => String(r.cohort)))];
     const multi = cohorts.length > 1;
     const short = s => /NaCl|염/i.test(s) ? '고염식' : /fumarate/i.test(s) ? 'BAPN fumarate' : /BAPN/i.test(s) ? 'BAPN' : /metformin/i.test(s) ? '메트포민' : s;
-    const evMap = {};   // x -> Set(label)
+    const evMap = {}, switchX = new Set(), podOf = {};
     const add = (x, label) => { if (x === null || x === undefined || !isFinite(x)) return; (evMap[x] = evMap[x] || new Set()).add(label); };
     cohorts.forEach(c => {
         const rs = rats.filter(r => String(r.cohort) === c);
         const pre = multi ? `C${c} ` : '';
         const gks = new Set(rs.map(ceGkey));
-        const rel = (r, day) => { const a = anchorOf(r); return (a && day) ? dd(a.day, day) : null; };
+        const podMed = (day, mine) => med(mine.map(r => { const s = doseDateOf(r.surgeryDate), d = day(r); return (s && d) ? Math.round((ceMs(d) - ceMs(s)) / 864e5) : null; }).filter(v => v !== null));
         add(med(rs.map(r => rel(r, doseDateOf(r.ovxDate))).filter(v => v !== null)), pre + 'OVX');
-        add(0, pre + '결찰');
+        add(med(rs.map(r => rel(r, doseDateOf(r.surgeryDate))).filter(v => v !== null)) ?? 0, pre + '결찰');
         ((cfgBy[c] || {}).dosing || []).forEach(rule => {
             if (!(rule.groups || []).some(g => gks.has(g)) || !(Number(rule.value) > 0)) return;
             const mine = rs.filter(r => (rule.groups || []).includes(ceGkey(r)));
             const st = med(mine.map(r => rel(r, doseRuleWindow(rule, [r]).start)).filter(v => v !== null));
             add(st, pre + short(rule.substance || '') + (rule.medium === 'water' ? ' 시작' : ''));
-            // 끝나는 고염식(C14 G3)은 '고염식 중단'으로. BAPN free base 끝은 fumarate 시작과 같은 날이라 따로 안 적는다
-            if (rule.endAnchor && rule.endAnchor !== 'end' && /NaCl|염/i.test(rule.substance || '')) {
+            // 끝은 설정(endAnchor)에서도, 개체에 적은 고염식 중단일에서도 나온다 (global.js doseRuleWindow)
+            if (rule.medium === 'food') {
                 const en = med(mine.map(r => rel(r, doseRuleWindow(rule, [r]).end)).filter(v => v !== null));
-                add(en, pre + `고염식 중단(${(rule.groups || []).join('·')})`);
+                if (en === null || en === undefined) return;
+                switchX.add(en);
+                podOf[en] = podMed(r => doseRuleWindow(rule, [r]).end, mine);
+                // 고염식이 끝나면 '고염식 중단(군)'. BAPN free base 끝은 fumarate 시작과 같은 자리라 이름은 전환일로만
+                if (/NaCl|염/i.test(rule.substance || '')) add(en, pre + `고염식 중단(${(rule.groups || []).join('·')})`);
             }
         });
     });
-    const events = Object.keys(evMap).map(Number).sort((a, b) => a - b).map(x => ({ x, label: [...evMap[x]].join(' · ') }));
-    return { water, food, events, estCages, gap, anchorOf };
+    return [...new Set(Object.keys(evMap).map(Number).concat([...switchX]))].sort((a, b) => a - b).map(x => {
+        const label = [...(evMap[x] || [])].join(' · ');
+        const pod = podOf[x];
+        return { x, label: switchX.has(x) ? `전환일${pod !== null && pod !== undefined ? ` (POD ${pod})` : ''}${label ? ' · ' + label : ''}` : label };
+    });
 }
 
 function ceDailyHtml(sfx, daily) {

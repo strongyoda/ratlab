@@ -18,6 +18,7 @@ const BE_TYPES = {
     ligation: { label: '수술 (Ligation)', field: 'surgeryDate' },
     ovx:      { label: 'OVX',             field: 'ovxDate' },
     nacl:     { label: '고염식 시작',       field: 'naclStartDate' },
+    naclEnd:  { label: '고염식 중단',       field: 'naclEndDate' },   // 일반식으로 바꾼 날 (설정에 없는 중단 · 날짜가 밀린 전환)
     bapn:     { label: 'BAPN 시작',        field: 'bapnStartDate' },
     dose:     { label: '투약(물) 시작',     field: 'doseStartDate' },
     mr:       { label: 'MR 촬영',          field: 'mrDates' },
@@ -259,6 +260,8 @@ async function beSave() {
         const dead = r.status === '사망';
         const patch = beType === 'ligation' ? { surgeryDate: date }
             : beType === 'ovx' ? { ovxDate: date }
+            : beType === 'nacl' ? { naclStartDate: date }
+            : beType === 'naclEnd' ? { naclEndDate: date }
             : beType === 'sacrifice' ? (dead ? { sampleDate: date } : { sampleDate: date, deathDate: date })
             : null;
         if (beType === 'sacrifice' && dead && r.deathDate && date < String(r.deathDate).slice(0, 10))

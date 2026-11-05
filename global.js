@@ -791,18 +791,24 @@ function doseAnchorOf(anchor, r) {
 function doseRuleWindow(rule, occ) {
     let start = null, end = null, missing = 0, endMissing = 0;
     const ends = rule.endAnchor && rule.endAnchor !== 'end';
+    // 고염식은 개체에 직접 적은 날짜(랫드 상세 · 일괄 입력 · 사건 기록의 「고염식 시작 / 고염식 중단」)가 설정보다 우선이다.
+    // 설정은 계획, 개체 날짜는 실제다 — 계획에 없던 중단(13.5 연습군 10/23)이나 하루 밀린 전환도 그대로 반영된다 (2026-11-05)
+    const isSalt = rule.medium === 'food' && /NaCl|염/i.test(rule.substance || '');
+    let ownEnd = 0;
     (occ || []).forEach(r => {
-        const b = doseAnchorOf(rule.startAnchor || 'ligation', r);
+        const ownS = isSalt ? doseDateOf(r.naclStartDate) : null, ownE = isSalt ? doseDateOf(r.naclEndDate) : null;
+        const b = ownS || doseAnchorOf(rule.startAnchor || 'ligation', r);
         if (!b) { missing++; return; }
-        const s = doseShift(b, Number(rule.startOffset) || 0);
+        const s = ownS || doseShift(b, Number(rule.startOffset) || 0);
         if (!start || s < start) start = s;
+        if (ownE) { ownEnd++; if (!end || ownE > end) end = ownE; return; }
         if (!ends) return;
         const e = doseAnchorOf(rule.endAnchor, r);
         if (!e) { endMissing++; return; }
         const off = doseShift(e, (Number(rule.endOffset) || 0) + 1);
         if (!end || off > end) end = off;
     });
-    if (ends && endMissing) end = null;     // 끝 기준일이 빈 개체가 있으면 끝을 모른다 → 계속 들어가는 것으로
+    if ((ends && endMissing) || (!ends && ownEnd && ownEnd < (occ || []).length)) end = null;   // 끝을 모르는 개체가 있으면 계속 들어가는 것으로
     return { start, end, missing };
 }
 function doseRuleOnDate(rule, occ, day) {
@@ -834,7 +840,8 @@ function doseDietResetDate(cfg, occ, today) {
     let out = null;
     ((cfg && cfg.dosing) || []).forEach(rule => {
         if (rule.medium !== 'food' || !/NaCl|염/i.test(rule.substance || '')) return;
-        if (!rule.endAnchor || rule.endAnchor === 'end' || !(rule.groups || []).includes(gkey)) return;
+        // 끝은 설정에서도, 개체에 적은 고염식 중단일에서도 나온다(doseRuleWindow) — 계획에 없던 중단도 메트포민 기준을 리셋한다
+        if (!(rule.groups || []).includes(gkey)) return;
         const w = doseRuleWindow(rule, occ);
         if (w.end && w.end <= today && (!out || w.end > out)) out = w.end;
     });
@@ -1051,7 +1058,8 @@ function checkRatDates(rat, patch, today) {
     const t = today || getTodayStr();
     const d = v => doseDateOf(v);
     const m = Object.assign({}, rat || {}, patch || {});
-    const name = { arrivalDate: '반입일', ovxDate: 'OVX', surgeryDate: '결찰일', deathDate: '사망일', sampleDate: '희생일' };
+    const name = { arrivalDate: '반입일', ovxDate: 'OVX', surgeryDate: '결찰일', deathDate: '사망일', sampleDate: '희생일',
+                   naclStartDate: '고염식 시작', naclEndDate: '고염식 중단' };
     const errors = [], warns = [];
     Object.keys(patch || {}).forEach(k => {
         const v = d(patch[k]);
@@ -1066,6 +1074,9 @@ function checkRatDates(rat, patch, today) {
         if (a && b && a > b && (order[i] in (patch || {}) || order[j] in (patch || {})))
             errors.push(`${name[order[i]]}(${a})이 ${name[order[j]]}(${b})보다 뒤입니다`);
     }
+    // 고염식 중단은 고염식 시작 · OVX보다 뒤여야 한다
+    const ne = d(m.naclEndDate);
+    if (ne && 'naclEndDate' in (patch || {})) ['naclStartDate', 'ovxDate'].forEach(o => { const a = d(m[o]); if (a && a >= ne) errors.push(`고염식 중단(${ne})이 ${name[o]}(${a})보다 앞이거나 같습니다`); });
     ['deathDate', 'sampleDate'].forEach(k => {
         const v = d(m[k]);
         if (!v || !(k in (patch || {}))) return;

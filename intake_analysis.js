@@ -595,8 +595,20 @@ function iaCageEvents(cageId) {
         });
         if (start) out.push({ date: start, label: rule.substance,
                               color: COLOR[rule.substance] || '#5B5F66' });
+        // 끝나는 규칙도 표시 — C14 G3 고염식 중단 · BAPN free base → fumarate. 사료가 끝나는 날은 「전환일」 (2026-11-05)
+        if (typeof doseRuleWindow === 'function') {   // 설정의 끝 + 개체에 적은 고염식 중단일
+            const end = doseRuleWindow(rule, mine).end;
+            if (end) out.push({ date: end, label: /NaCl|염/i.test(rule.substance || '') ? '고염식 중단' : `${rule.substance} 끝`,
+                                color: COLOR[rule.substance] || '#5B5F66', sw: rule.medium === 'food' });
+        }
     });
-    return out.sort((a, b) => a.date.localeCompare(b.date));
+    // 같은 날은 한 줄로 합친다 (전환일엔 사료 끝 · fumarate 시작 · 메트포민 시작이 겹친다)
+    const byDate = {};
+    out.forEach(e => { const g = byDate[e.date] = byDate[e.date] || { date: e.date, labels: [], color: e.color, sw: false };
+        if (!g.labels.includes(e.label)) g.labels.push(e.label); g.sw = g.sw || !!e.sw; });
+    return Object.values(byDate).map(g => ({ date: g.date, color: g.sw ? '#7A5C00' : g.color,
+        label: (g.sw ? '전환일 · ' : '') + g.labels.filter(l => !/ 끝$/.test(l)).join(' · ') }))
+        .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // 세로 눈금선을 그리는 작은 플러그인. 별도 라이브러리 없이 캔버스에 직접 그린다.
