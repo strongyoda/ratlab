@@ -1489,6 +1489,9 @@ async function exportForAI() {
                 if (r.sampleType && r.sampleType !== 'Fail') {
                     aiText += `    * Sample Acquired: ${r.sampleType} on ${r.sampleDate || '-'}${getTemporalStr(r.sampleDate)} (Memo: ${r.sampleMemo || 'None'})\n`;
                 } else if (r.sampleType === 'Fail') { aiText += `    * Sample Acquired: Failed\n`; }
+                // 혈액검사는 샘플 종류와 별개 (Cast · Histology와 같이 있을 수 있다)
+                if ((r.bloodTests || []).length && typeof bloodTestsText === 'function')
+                    aiText += `    * Blood Tests: ${bloodTestsText(r.bloodTests)}\n`;
 
                 // 🌟 [신규] General Memo (상세페이지의 노란 자유서술 메모) 출력
                 if (r.generalMemo && r.generalMemo.trim()) {

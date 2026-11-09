@@ -20,7 +20,8 @@ function rdInit(docId, rat) {
 
 function rdSet(field, value) {
     const before = rdRat[field];
-    const norm = (v) => (v === undefined || v === null) ? '' : v;
+    // 배열 · 객체(혈액검사 목록)는 내용으로 비교한다 — String()이면 전부 '[object Object]'라 바꿔도 안 바뀐 걸로 보인다
+    const norm = (v) => (v === undefined || v === null) ? '' : (typeof v === 'object' ? JSON.stringify(v) : v);
 
     if (String(norm(before)) === String(norm(value))) delete rdDraft[field];
     else rdDraft[field] = value;
@@ -63,8 +64,12 @@ async function rdSave() {
     Object.entries(rdDraft).forEach(([k, v]) => {
         if (k === 'arrivalAge' || k === 'refAge') { if (v !== '' && v !== null && Number(v) > 0) payload[k] = Number(v); }
         else if (k === 'isNonInduction') payload[k] = !!v;
+        else if (k === 'bloodTests') payload[k] = rdBloodClean(v);
         else payload[k] = v;
     });
+    if (payload.bloodTests && payload.bloodTests.bad) {
+        return alert('혈액검사에 검사 항목이 비어 있는 줄이 있습니다.\n\n' + payload.bloodTests.bad + '\n\n항목 이름을 넣거나 그 줄을 지우세요.');
+    }
 
     // Sham 여부가 바뀌었거나 기준주령을 고쳤으면 수술일을 다시 정한다
     const isSham = ('isNonInduction' in payload) ? payload.isNonInduction : !!rdRat.isNonInduction;
@@ -335,6 +340,83 @@ function rdHintText(row) {
 function rdRefreshHints() {
     RD_SCHED.forEach(row => { const el = document.getElementById('hint-' + row.id); if (el) el.textContent = rdHintText(row); });
 }
+// ==========================================
+//  혈액검사 (2026-11-09 사용자) — 「얻은 샘플」(Cast · Histology · 못함)과 별개 필드라 같이 있을 수 있다.
+//  rats.bloodTests = [{ date, test, value, unit, memo }]. value 는 숫자로 읽히면 숫자, 아니면(예: '<0.2') 글자 그대로.
+//  한 번 채혈에 여러 항목이 나오므로 줄을 여러 개 둔다. 저장은 다른 칸과 같이 rdSave 한 번에.
+// ==========================================
+const RD_BLOOD_TESTS = ['Creatinine', 'BUN', 'Na', 'K', 'Cl', 'Glucose', 'ALT', 'AST', 'Albumin', 'Total protein', 'Cholesterol', 'Triglyceride'];
+const RD_BLOOD_UNITS = ['mg/dL', 'mmol/L', 'mEq/L', 'U/L', 'g/dL', 'µmol/L'];
+function rdBloodList() { return (('bloodTests' in rdDraft) ? rdDraft.bloodTests : rdRat.bloodTests) || []; }
+// 처음 그릴 때는 rdInit 전이라 rdRat 이 앞 개체일 수 있다 — 그래서 목록을 직접 받는다 (chart.js loadDetailData)
+function rdBloodHtml(initial) {
+    const list = initial || rdBloodList();
+    const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const rows = list.map((b, i) => `
+        <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; width:100%;">
+            <input type="date" value="${e(b.date)}" aria-label="채혈일" onchange="rdBloodSet(${i}, 'date', this.value)" style="${RD_IN}">
+            <input type="text" list="rd-blood-tests" value="${e(b.test)}" placeholder="검사 항목" aria-label="검사 항목"
+                   oninput="rdBloodSet(${i}, 'test', this.value)" style="${RD_IN} font-family:inherit; width:120px;">
+            <input type="text" inputmode="decimal" value="${e(b.value)}" placeholder="수치" aria-label="수치"
+                   oninput="rdBloodSet(${i}, 'value', this.value)" style="${RD_IN} width:76px;">
+            <input type="text" list="rd-blood-units" value="${e(b.unit)}" placeholder="단위" aria-label="단위"
+                   oninput="rdBloodSet(${i}, 'unit', this.value)" style="${RD_IN} width:76px;">
+            <input type="text" value="${e(b.memo)}" placeholder="메모 (검사처 등)" aria-label="혈액검사 메모"
+                   oninput="rdBloodSet(${i}, 'memo', this.value)" style="${RD_IN} font-family:inherit; flex:1; min-width:100px;">
+            <button type="button" class="btn-small" onclick="rdBloodDel(${i})" aria-label="이 줄 지우기"
+                    style="background:var(--paper); color:var(--stamp); outline:1px solid var(--rule);">✕</button>
+        </div>`).join('');
+    return `${rows || '<span style="font-size:0.8rem; color:var(--ink-soft);">기록 없음</span>'}
+        <button type="button" class="btn-small" onclick="rdBloodAdd()"
+                style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">+ 검사 항목</button>
+        <datalist id="rd-blood-tests">${RD_BLOOD_TESTS.map(t => `<option value="${t}">`).join('')}</datalist>
+        <datalist id="rd-blood-units">${RD_BLOOD_UNITS.map(t => `<option value="${t}">`).join('')}</datalist>`;
+}
+function rdBloodCommit(list, redraw) {
+    rdSet('bloodTests', list);
+    if (redraw) { const el = document.getElementById('rd-blood'); if (el) el.innerHTML = rdBloodHtml(); }
+}
+function rdBloodAdd() {
+    const list = rdBloodList().map(b => ({ ...b }));
+    // 같은 날 여러 항목을 넣는 게 보통이라 바로 윗줄 날짜를 물려준다. 첫 줄은 샘플 채취일 → 사망일 → 오늘
+    const prev = list[list.length - 1];
+    const sampleD = document.getElementById('sample-d')?.value;
+    list.push({ date: (prev && prev.date) || sampleD || rdRat.sampleDate || rdRat.deathDate || getTodayStr(),
+                test: '', value: '', unit: (prev && prev.unit) || '', memo: '' });
+    rdBloodCommit(list, true);
+}
+function rdBloodSet(i, key, val) {
+    const list = rdBloodList().map(b => ({ ...b }));
+    if (!list[i]) return;
+    list[i][key] = val;
+    rdBloodCommit(list, false);   // 한 글자마다 다시 그리면 커서가 빠진다
+}
+function rdBloodDel(i) {
+    const list = rdBloodList().map(b => ({ ...b }));
+    const b = list[i];
+    if (b && (b.test || b.value) && !confirm(`${b.test || '이 줄'} ${b.value || ''} 을(를) 지울까요? (저장해야 반영됩니다)`)) return;
+    list.splice(i, 1);
+    rdBloodCommit(list, true);
+}
+// 저장용 정리: 빈 줄은 버리고, 수치는 숫자로 읽히면 숫자로. 항목 없이 수치만 있는 줄은 bad 로 돌려 저장을 막는다
+function rdBloodClean(list) {
+    const out = [], bad = [];
+    (list || []).forEach(b => {
+        const test = String(b.test || '').trim(), raw = String(b.value ?? '').trim();
+        const unit = String(b.unit || '').trim(), memo = String(b.memo || '').trim();
+        if (!test && !raw && !memo) return;
+        if (!test) { bad.push(`${b.date || '날짜 없음'} · 수치 ${raw || '-'}`); return; }
+        const num = /^-?\d+(\.\d+)?$/.test(raw) ? Number(raw) : raw;
+        out.push({ date: b.date || null, test, value: num, unit, memo });
+    });
+    if (bad.length) out.bad = bad.join('\n');
+    return out;
+}
+// 다른 화면(코호트 분석 표 · 논문 CSV)에서 한 줄로 보여줄 때
+function bloodTestsText(list) {
+    return (list || []).map(b => `${b.test} ${b.value ?? ''}${b.unit ? ' ' + b.unit : ''}${b.date ? ` (${b.date})` : ''}`).join('; ');
+}
+
 function rdSchedRow(label, inner, hintId, extraStyle = '') {
     return `<div style="display:grid; grid-template-columns:112px minmax(0,1fr) auto; align-items:center; gap:10px; padding:7px 12px; border-bottom:1px solid var(--rule); ${extraStyle}">
         <span style="font-size:0.8rem; font-weight:700; color:var(--ink);">${label}</span>

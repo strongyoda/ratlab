@@ -1,6 +1,6 @@
 // ============================================================
 //  케이지별 입력 (Daily Cage Round)
-//  - 작업 순서 그대로: 잔량 재기 → 채울 양 → 쥐 체중·상태 → 다음 케이지
+//  - 작업 순서 그대로: 1 잔량 재기 → 2 물·사료 갈지 + 새 통 빈 무게 → 3 쥐 체중·상태(채우는 동안) → 4 채운 무게 → 원액 (2026-11-09)
 //  - 저장 1회에 물/사료(cageFeeding) + 체중(measurements) + 상태(dailyLogs)로 갈라 저장
 //
 //  [기록 구조] 방문 1회 = 행 1개.
@@ -577,11 +577,13 @@ function ciOpen(cageId) {
         fillScale: '',              // 물 채운 통 무게(원액 넣기 전). 여기서 부피를 구한다
         handlings: '',              // 비우면 체중 잰 날 기준으로 자동
         manualPc: '',               // 쓸 만한 섭취 기록이 없을 때 손으로 넣는 예상 섭취량
-        bottleSwap: false, newTare: '',   // 오늘 물통을 갈았는가 + 새 통 무게
+        // 물을 가는 날 = 새 통을 거는 날 (사용자 2026-11-09: 물통을 갈았다 = 물을 채웠다).
+        // 그래서 700 · 1000 가리지 않고 새로 거는 통의 빈 무게를 2단계에서 매번 받는다.
+        // 비어 있으면 등록된 값(700 = 이 자리 · 1000 = 코호트 설정)으로 빼고, 저장할 때 한 번 묻는다.
+        newTare: '',
         // 오늘 걸 물통 크기. 평소엔 700 통, 주말·연휴처럼 오래 버텨야 할 때만 1000 통을 고른다.
         // 그래서 직전 기록을 물려받지 않고 늘 700에서 시작한다 (금요일 1000이 월요일로 넘어오면 틀린다).
         bottleSize: CI_BOTTLE_STD,
-        bigTare: Number(h.bigBottleTare) > 0 ? String(h.bigBottleTare) : '',
         rats: {}
     };
     ciOccupants(cageId).forEach(r => ciEnsureRatForm(r.ratId));
@@ -626,15 +628,15 @@ function ciRestoreToday(row) {
     ciForm.manualPc       = row.manualPerCapita ? String(row.manualPerCapita) : '';
     ciForm.flags          = (row.flags || []).filter(f => ['이상', '처치일', '수술일', 'BP일'].includes(f));
 
-    if (row.bottleSwapped && Number(row.newBottleTare) > 0) {
-        ciForm.bottleSwap = true;
-        ciForm.newTare = String(row.newBottleTare);
+    // 새 통 빈 무게: 지금 방식은 newBottleTare 에 남는다. 예전 1000 통 기록은 fillBottleTare 에만 있다.
+    if (!ciForm.noWater) {
+        if (Number(row.newBottleTare) > 0) ciForm.newTare = String(row.newBottleTare);
+        else if (ciIsBig(row) && Number(row.fillBottleTare) > 0) ciForm.newTare = String(row.fillBottleTare);
     }
     // 통을 간 날은 자리에 등록된 무게가 이미 새 통으로 바뀌어 있다.
     // 잔량은 그날 쓴 옛 통 무게로 계산해야 하므로 그 값을 그대로 물려준다.
     if (Number(row.bottleTare) > 0) ciForm._tareOverride = Number(row.bottleTare);
     ciForm.bottleSize = ciIsBig(row) ? CI_BOTTLE_BIG : CI_BOTTLE_STD;
-    if (ciIsBig(row) && Number(row.fillBottleTare) > 0) ciForm.bigTare = String(row.fillBottleTare);
     // 그때 저장한 행. 채운 물을 안 바꾸고 다시 저장하면 이미 넣은 원액(doseCc)을 그대로 둔다 (ciUpdateDose)
     ciForm._savedRow = row;
     // 저울 없이 채운 양을 직접 넣었던 기록이면 그 값이 곧 채운 양이다 — 다시 묻거나 '계산 대기'로 막지 않는다
@@ -713,8 +715,8 @@ function ciRenderForm() {
     // 채운 통 무게를 거기에 적게 되므로(실제로 그런 일이 있었다) 아예 감춘다.
     const first = !last;
     const surg = ciForm.flags.includes('수술일');
-    // 통을 간 날은 잔량(옛 통)과 채움(새 통)의 빈 통 무게가 다르다
-    const swapped = !!(ciForm.bottleSwap && Number(ciForm.newTare) > 0);
+    // 물을 가는 날은 잔량(떼어낸 옛 통)과 채움(새로 거는 통)의 빈 통 무게가 다르다
+    const newTareIn = !ciForm.noWater && Number(ciForm.newTare) > 0;
     const fillTare = ciFillTareOf();
 
     body.innerHTML = `
@@ -782,12 +784,12 @@ function ciRenderForm() {
         ${first ? `
         <div style="padding:9px 11px; background:var(--stock-green-soft); border:1px solid var(--approve); border-radius:2px; font-size:0.82rem; color:var(--approve);">
             이 케이지의 <b>첫 기록</b>입니다. 뺄 지난 채움이 없어 잔량은 재지 않습니다.
-            아래 <b>2단계에서 채울 양</b>과 <b>3단계 체중</b>만 넣으세요.
-            <br>새 통에 물을 채워 저울에 올린 값은 <b>2단계</b>에 넣습니다.
+            아래 <b>2단계 새 통 빈 무게</b> · <b>3단계 체중</b> · <b>4단계 채운 무게</b>만 넣으세요.
+            <br>새 통에 물을 채워 저울에 올린 값은 <b>4단계</b>에 넣습니다.
         </div>` : proc ? `
         <div style="padding:9px 11px; background:var(--paper); border:1px dashed var(--rule); border-radius:2px; font-size:0.82rem; color:var(--ink-soft);">
-            이 구간은 계산에서 제외되므로 잔량을 재지 않습니다. 아래 <b>2단계에서 채울 양</b>과
-            <b>3단계 체중</b>만 입력하세요. 체중은 투약량 계산에 필요하니 빠짐없이 넣습니다.
+            이 구간은 계산에서 제외되므로 잔량을 재지 않습니다. 아래 <b>2단계 새 통</b> · <b>3단계 체중</b> ·
+            <b>4단계 채운 무게</b>만 입력하세요. 체중은 투약량 계산에 필요하니 빠짐없이 넣습니다.
         </div>` : `
         ${tare > 0 ? `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:4px;">
@@ -816,28 +818,6 @@ function ciRenderForm() {
             <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g 잔량</span>
         </div>
 
-        ${(tare > 0 && ciForm.bottleSize !== CI_BOTTLE_BIG) ? `
-        <div style="margin-top:2px; padding-top:8px; border-top:1px dashed #eee;">
-            <label style="display:block; font-size:0.85rem;">
-                <input type="checkbox" ${ciForm.bottleSwap ? 'checked' : ''}
-                       onchange="ciToggleBottleSwap(this.checked)" style="width:auto;">
-                오늘 물통을 새것으로 갈았음
-            </label>
-            ${ciForm.bottleSwap ? `
-            <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
-                <span style="width:52px; font-size:0.85rem; color:var(--ink-soft);">새 통</span>
-                <input type="number" step="any" inputmode="decimal" value="${ciEsc(ciForm.newTare)}"
-                       oninput="ciSet('newTare', this.value)" placeholder="빈 통 무게" aria-label="새 물통 빈 무게 (그램)"
-                       style="flex:1; height:38px; font-size:0.95rem;">
-                <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g</span>
-            </div>
-            <div style="font-size:0.75rem; color:#7a5c00; margin:5px 0 0 62px; background:var(--stock-canary-soft);
-                        border:1px solid #E3C55C; padding:6px 9px; border-radius:2px;">
-                방금 잰 건 <b>떼어낸 옛 통(<span class="mono">${tare}</span> g)</b>이라 그 값으로 계산합니다.
-                새 통 무게는 <b>저장할 때</b> 이 자리에 등록되어 다음 회차부터 쓰입니다.
-            </div>` : ''}
-        </div>` : ''}
-
         ${(Number(h.lossPerHandling) > 0 && last) ? `
         <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
             <span style="width:52px; font-size:0.9rem; color:var(--ink-soft);">탈착</span>
@@ -856,7 +836,7 @@ function ciRenderForm() {
     </div>
 
     <div class="card">
-        <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">2 · 다시 채울 양</div>
+        <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">2 · 물 · 사료 갈기 — 새 물통</div>
         <div style="display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; font-size:0.88rem;">
             <label style="cursor:pointer;">
                 <input type="checkbox" ${ciForm.noWater ? 'checked' : ''}
@@ -878,40 +858,6 @@ function ciRenderForm() {
             </span>
         </div>
         ${tare > 0 ? ciBottleSizeRow(lastBig) : ''}
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:170px; ${ciForm.noWater ? 'opacity:0.4; pointer-events:none;' : ''}">
-            ${tare > 0 ? `
-            <div style="flex:1; min-width:170px;">
-                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물 채운 통 무게 (g)</div>
-                <input type="number" step="any" inputmode="decimal" id="ci-fs" value="${ciEsc(ciForm.fillScale)}"
-                       oninput="ciSetFillScale(this.value)" placeholder="원액 넣기 전" aria-label="물 채운 통 무게 (그램)"
-                       style="width:100%; height:42px;">
-                <div style="font-size:0.75rem; color:var(--ink-soft); margin-top:4px;">
-                    ${ciForm.bottleSize === CI_BOTTLE_BIG ? '<b>1000 통</b> ' : ''}빈 통 <b id="ci-fs-tare" class="mono">${fillTare} g</b>${swapped ? ' <b style="color:#b45309;">(새 통)</b>' : ''} 제외 → 물
-                    <b id="ci-fs-out" class="mono" style="color:var(--ink);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
-                    <span style="color:var(--ink-soft);">· ${ciFillHint()} mL면 <span class="mono">${(fillTare + ciFillHint()).toFixed(0)}</span> g 근처</span>
-                    ${swapped ? `<br><span style="color:#b45309;">채워서 다는 건 새 통이라 새 무게로 뺍니다.
-                        1단계에서 잰 잔량은 떼어낸 옛 통(${tare} g) 기준입니다.</span>` : ''}
-                </div>
-            </div>` : `
-            <div>
-                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물 (mL)</div>
-                <input type="number" inputmode="decimal" value="${ciEsc(ciForm.waterGiven)}"
-                       oninput="ciSet('waterGiven', this.value)" aria-label="채울 물 (밀리리터)" style="width:100%; height:42px;">
-            </div>`}
-            </div>
-            ${showBottle ? `
-            <div style="width:100px;">
-                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물통 개수</div>
-                <input type="number" value="${ciEsc(ciForm.bottleCount)}" oninput="ciSet('bottleCount', this.value)"
-                       aria-label="물통 개수" style="width:100%; height:42px;">
-            </div>` : ''}
-            <div style="flex:1; min-width:120px; ${ciForm.noFood ? 'opacity:0.4; pointer-events:none;' : ''}">
-                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">사료 (g)</div>
-                <input type="number" inputmode="decimal" value="${ciEsc(ciForm.foodGiven)}"
-                       oninput="ciSet('foodGiven', this.value)" aria-label="채울 사료 (그램)" style="width:100%; height:42px;">
-            </div>
-        </div>
         ${(ciForm.noWater || ciForm.noFood) ? `
         <div style="margin-top:8px; padding:8px 10px; background:var(--paper); border:1px dashed var(--rule); border-radius:2px; font-size:0.8rem; color:var(--ink-soft);">
             ${ciForm.noWater ? `물은 잰 통(<b id="ci-nr-wr" class="mono">${ciForm.waterRemaining || '-'} g</b>)을 그대로 다시 답니다. 약도 넣지 않습니다.<br>` : ''}
@@ -924,6 +870,47 @@ function ciRenderForm() {
         <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">3 · 쥐 체중과 상태</div>
         ${occ.map(r => ciRatBlock(r)).join('')}
     </div>
+
+    ${(ciForm.noWater && ciForm.noFood) ? '' : `
+    <div class="card">
+        <div class="mono" style="font-size:0.72rem; letter-spacing:0.1em; color:var(--ink); font-weight:700; margin-bottom:10px; border-bottom:3px double var(--ink); padding-bottom:5px;">${ciForm.noWater ? '4 · 채운 사료 무게' : '4 · 채운 무게 → 약 넣을 양'}</div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            ${ciForm.noWater ? '' : `
+            <div style="flex:1; min-width:170px;">
+            ${tare > 0 ? `
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물 채운 통 무게 (g)</div>
+                <input type="number" step="any" inputmode="decimal" id="ci-fs" value="${ciEsc(ciForm.fillScale)}"
+                       oninput="ciSetFillScale(this.value)" placeholder="원액 넣기 전" aria-label="물 채운 통 무게 (그램)"
+                       style="width:100%; height:42px;">
+                <div style="font-size:0.75rem; color:var(--ink-soft); margin-top:4px;">
+                    ${ciForm.bottleSize === CI_BOTTLE_BIG ? '<b>1000 통</b> ' : ''}빈 통 <b id="ci-fs-tare" class="mono">${fillTare} g</b> 제외 → 물
+                    <b id="ci-fs-out" class="mono" style="color:var(--ink);">${ciForm.fillScale === '' ? '-' : Number(ciForm.waterGiven).toFixed(0)} mL</b>
+                    <span style="color:var(--ink-soft);">· ${ciFillHint()} mL면 <span id="ci-fs-near" class="mono">${(fillTare + ciFillHint()).toFixed(0)}</span> g 근처</span>
+                    <div id="ci-fs-tarenote" style="color:var(--stamp); margin-top:2px;" ${newTareIn ? 'hidden' : ''}>
+                        2단계에 새 통 빈 무게를 안 넣어 등록된 값으로 뺍니다.</div>
+                </div>` : `
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물 (mL)</div>
+                <input type="number" inputmode="decimal" value="${ciEsc(ciForm.waterGiven)}"
+                       oninput="ciSet('waterGiven', this.value)" aria-label="채울 물 (밀리리터)" style="width:100%; height:42px;">`}
+            </div>
+            ${showBottle ? `
+            <div style="width:100px;">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">물통 개수</div>
+                <input type="number" value="${ciEsc(ciForm.bottleCount)}" oninput="ciSet('bottleCount', this.value)"
+                       aria-label="물통 개수" style="width:100%; height:42px;">
+            </div>` : ''}`}
+            ${ciForm.noFood ? '' : `
+            <div style="flex:1; min-width:120px;">
+                <div style="font-size:0.78rem; color:var(--ink-soft); margin-bottom:3px;">채운 사료 (g)</div>
+                <input type="number" inputmode="decimal" value="${ciEsc(ciForm.foodGiven)}"
+                       oninput="ciSet('foodGiven', this.value)" aria-label="채운 사료 (그램)" style="width:100%; height:42px;">
+            </div>`}
+        </div>
+        ${ciForm.noWater ? '' : `
+        <div style="font-size:0.75rem; color:var(--ink-soft); margin-top:8px;">
+            채운 통을 저울에 올리면 바로 아래에 넣을 원액이 나옵니다. 원액은 <b>무게를 잰 뒤에</b> 넣습니다.
+        </div>`}
+    </div>`}
 
     <div id="ci-dose"></div>
 
@@ -1043,8 +1030,8 @@ function ciTareOf(cageId) {
 // 채운 양은 다음 구간 섭취량의 기준이라 오차가 그대로 넘어간다.
 function ciFillTareOf() {
     if (ciForm.noWater) return ciTareOf(ciCurrent);       // 같은 통을 다시 건다
-    if (ciForm.bottleSize === CI_BOTTLE_BIG) return Number(ciForm.bigTare) || ciBigTareDefault();
-    if (ciForm.bottleSwap && Number(ciForm.newTare) > 0) return Number(ciForm.newTare);
+    if (Number(ciForm.newTare) > 0) return Number(ciForm.newTare);   // 2단계에서 잰 새 통
+    if (ciForm.bottleSize === CI_BOTTLE_BIG) return ciBigTareDefault();
     // 지난번 1000 통이었으면 ciTareOf 는 그 통 무게를 돌려준다. 오늘 거는 700 통은 자리에 등록된 통이다.
     if (ciIsBig(ciBaseline(ciCurrent))) return ciStdTareOf(ciCurrent);
     return ciTareOf(ciCurrent);
@@ -1080,17 +1067,18 @@ function ciLossConsts(last) {
     };
 }
 function ciSetBottleSize(size) {
+    // 통 크기를 바꾸면 다른 통이다 — 앞 크기로 적은 빈 무게를 그대로 두면 틀린 값으로 뺀다
+    if (ciForm.bottleSize !== size) ciForm.newTare = '';
     ciForm.bottleSize = size;
-    if (size === CI_BOTTLE_BIG) { ciForm.bottleSwap = false; ciForm.newTare = ''; }
     ciRecalcFill();
     ciRenderForm();
 }
-function ciSetBigTare(val) {
-    ciForm.bigTare = val;
+// 새로 거는 통의 빈 무게. 한 글자마다 다시 그리면 커서가 빠지므로 보이는 값만 고친다
+function ciSetNewTare(val) {
+    ciForm.newTare = val;
     ciRecalcFill();
-    ciUpdateCalc();
-    const el = document.getElementById('ci-fs-tare'); if (el) el.textContent = ciFillTareOf() + ' g';
-    const w = document.getElementById('ci-bigtare-warn'); if (w) w.hidden = Number(val) > 0;
+    ciUpdateCalc();   // → ciSyncDerived 가 4단계의 빈 통 · 물 양을 고친다
+    const w = document.getElementById('ci-newtare-warn'); if (w) w.hidden = Number(val) > 0;
 }
 // 채움 무게 안내에 쓸 물 양: 1000 통이면 설정의 1000 통 채움량, 아니면 700
 function ciFillHint() {
@@ -1109,28 +1097,35 @@ function ciBottleSizeRow(lastBig) {
                 style="min-width:84px; ${ciForm.bottleSize === size
                     ? 'background:var(--ink); color:var(--paper);'
                     : 'background:var(--paper); color:var(--ink); outline:1px solid var(--rule);'}">${label}</button>`;
+    // 비어 있을 때 대신 쓰는 값: 700 = 이 자리에 등록된 통(= 지난번 새 통), 1000 = 코호트 설정
+    const fallback = big ? ciBigTareDefault() : ciStdTareOf(ciCurrent);
     return `
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">물통</span>
+            <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">새 통</span>
             ${btn(CI_BOTTLE_STD, '700 통')}${btn(CI_BOTTLE_BIG, '1000 통')}
             <span style="font-size:0.75rem; color:var(--ink-soft);">주말·연휴처럼 오래 버텨야 할 때 1000</span>
         </div>
-        ${big ? `
-        <div style="display:flex; align-items:center; gap:10px; margin:0 0 10px;">
+        <div style="display:flex; align-items:center; gap:10px; margin:0 0 4px;">
             <span style="width:52px; font-size:0.85rem; color:var(--ink-soft);">빈 통</span>
-            <input type="number" step="any" inputmode="decimal" id="ci-bigtare" value="${ciEsc(ciForm.bigTare)}"
-                   oninput="ciSetBigTare(this.value)" placeholder="1000 통 빈 무게" aria-label="1000 통 빈 무게 (그램)"
-                   style="flex:1; height:38px; font-size:0.95rem;">
+            <input type="number" step="any" inputmode="decimal" id="ci-newtare" value="${ciEsc(ciForm.newTare)}"
+                   oninput="ciSetNewTare(this.value)" placeholder="${big ? '1000' : '700'} 통 빈 무게${fallback > 0 ? ` (지난 값 ${fallback})` : ''}"
+                   aria-label="새로 거는 물통 빈 무게 (그램)"
+                   style="flex:1; height:42px; font-size:1rem;">
             <span style="font-size:0.85rem; color:var(--ink-soft); width:52px;">g</span>
         </div>
-        ${!(Number(ciForm.bigTare) > 0) ? `
-        <div id="ci-bigtare-warn" style="font-size:0.78rem; color:var(--stamp); margin:-4px 0 10px 62px;">
-            1000 통 빈 무게를 넣어야 채운 양이 계산됩니다. 코호트 설정에 넣어두면 자동으로 채워집니다.
-        </div>` : ''}
-        ${!(Number(h.bigLossPerHandling) > 0) ? `
+        <div id="ci-newtare-warn" style="font-size:0.76rem; color:var(--stamp); margin:0 0 10px 62px;" ${Number(ciForm.newTare) > 0 ? 'hidden' : ''}>
+            ${fallback > 0
+                ? `새로 거는 통을 비운 채 저울에 올려 넣으세요. 비우면 등록된 <span class="mono">${fallback}</span> g으로 뺍니다.`
+                : `${big ? '1000 통' : '이 자리'} 빈 무게가 등록돼 있지 않습니다 — 넣어야 채운 양이 계산됩니다.`}
+        </div>
+        <div style="font-size:0.75rem; color:var(--ink-soft); margin:-6px 0 10px 62px;">
+            ${ciBaseline(ciCurrent) ? `1단계에서 잰 잔량은 떼어낸 통(<span class="mono">${ciTareOf(ciCurrent)}</span> g) 기준입니다.` : ''}
+            ${big ? '' : '새 통 무게는 저장할 때 이 자리에 등록되어 다음 회차 잔량 계산에 쓰입니다.'}
+        </div>
+        ${(big && !(Number(h.bigLossPerHandling) > 0)) ? `
         <div style="font-size:0.78rem; color:#7a5c00; margin:-4px 0 10px 62px;">
             코호트 설정에 1000 통 탈착 로스가 없어 다음 회차 계산은 700 통 값으로 됩니다.
-        </div>` : ''}` : ''}`;
+        </div>` : ''}`;
 }
 
 // 빈 통 무게가 바뀌면(통 교체 체크·새 통 무게 수정) 채운 양을 다시 구해야 한다
@@ -1166,6 +1161,9 @@ function ciSyncDerived() {
     const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
     set('ci-ws-out', ciForm.waterRemaining === '' ? '- g' : ciForm.waterRemaining + ' g');
     set('ci-fs-out', ciForm.fillScale === '' ? '- mL' : Number(ciForm.waterGiven).toFixed(0) + ' mL');
+    set('ci-fs-tare', ciFillTareOf() + ' g');
+    set('ci-fs-near', (ciFillTareOf() + ciFillHint()).toFixed(0));
+    const tn = document.getElementById('ci-fs-tarenote'); if (tn) tn.hidden = Number(ciForm.newTare) > 0;
     set('ci-nr-wr', (ciForm.waterRemaining || '-') + ' g');
     set('ci-nr-fr', (ciForm.foodRemaining || '-') + ' g');
 }
@@ -1223,16 +1221,6 @@ function ciToggleNoFood(on) {
     const h = (ciConfig && ciConfig.housing) || {};
     if (on) ciForm.foodGiven = ciForm.foodRemaining === '' ? 0 : Number(ciForm.foodRemaining);
     else    ciForm.foodGiven = h.foodFill ?? 250;   // 사료는 항상 설정값으로 리셋
-    ciRenderForm();
-}
-
-// 물통을 가는 날: 지금 저울에 올린 건 '떼어낸 옛 통'이므로 계산은 옛 무게로 하고,
-// 새 통 무게는 저장할 때 이 자리에 등록해 다음 회차부터 쓰이게 한다.
-// (케이지 현황에서 미리 바꿔두면 그날 측정이 새 통 무게로 계산되어 어긋난다)
-function ciToggleBottleSwap(on) {
-    ciForm.bottleSwap = on;
-    if (!on) ciForm.newTare = '';
-    ciRecalcFill();     // 채울 통이 옛 통↔새 통으로 바뀌었으므로 채운 양을 다시 구한다
     ciRenderForm();
 }
 
@@ -1590,7 +1578,12 @@ function ciSanityIssues() {
             out.push({ rat: r.ratId, val: f.weight,
                        msg: `${r.ratId} 체중 ${w} g — 직전 ${ref} g보다 ${Math.abs((w - ref) / ref * 100).toFixed(0)}% ${w > ref ? '많습니다' : '적습니다'}` });
     });
-    if (!ciForm.noWater && ciFillKnown()) {
+    // 저울을 쓰는 케이지인데 새로 거는 통의 빈 무게를 하나도 모르면(1000 통 기본값 미설정 등)
+    // 채운 통 무게가 통째로 물로 잡힌다. 통 용량 초과로 나오기 전에 원인을 바로 말한다.
+    const noFillTare = !ciForm.noWater && ciTareOf(ciCurrent) > 0 && !(ciFillTareOf() > 0);
+    if (noFillTare)
+        out.push({ hard: true, msg: `새로 거는 ${ciForm.bottleSize === CI_BOTTLE_BIG ? '1000' : '700'} 통의 빈 무게가 없습니다 — 2단계에 넣으세요` });
+    if (!ciForm.noWater && ciFillKnown() && !noFillTare) {
         const fill = Number(ciForm.waterGiven) || 0;
         const big = ciForm.bottleSize === CI_BOTTLE_BIG;
         const cap = (big ? CI_BOTTLE_BIG : CI_BOTTLE_STD) * CI_FILL_OVER;
@@ -1774,7 +1767,7 @@ function ciUpdateDose() {
             <b style="color:#7C2A30;">${ciEsc(rule.substance)} 지시량 계산 대기 · 입력값 확인</b>
             <div style="font-size:0.8rem; color:#7C2A30; margin-top:4px; line-height:1.55;">
                 ${insane.map(x => '· ' + ciEsc(x.msg)).join('<br>')}<br>
-                오타면 값을 고치세요. ${soft ? '실제로 잰 값이 맞으면 아래 버튼으로 확인하고 계산합니다.' : '채운 물이 통 용량을 넘는 것은 확인으로 넘길 수 없습니다.'}
+                오타면 값을 고치세요. ${soft ? '실제로 잰 값이 맞으면 아래 버튼으로 확인하고 계산합니다.' : '이 항목은 확인으로 넘길 수 없습니다 — 값을 넣거나 고치세요.'}
             </div>
             ${soft ? `<button type="button" class="btn-small" onclick="ciConfirmSanity()"
                     style="margin-top:8px; background:var(--paper); color:#7C2A30; outline:1px solid var(--stock-pink);">값이 맞습니다 — 계산</button>` : ''}
@@ -2076,9 +2069,37 @@ async function ciSave() {
                      Object.values(ciForm.rats).some(f => f.weight !== '');
     const filled = !ciForm.noWater &&
                    (ciForm.fillScale !== '' || !ciBaseline(savingCage));
+
+    // 물 · 사료를 하나도 안 재고 사망만 표시한 저장 → 사망만 기록한다 (2026-11-09 사용자).
+    // 파일럿 13.5처럼 측정을 멈춘 케이지는 「입력된 값이 없습니다」에 막혀 죽은 개체를 기록할 길이 없었다.
+    // 급여 기록(cageFeeding)은 만들지 않는다 — 잔량 없는 행이 생기면 다음 구간 섭취량이 엉뚱한 기준에서 시작한다.
+    const deadPicked = occ.filter(r => ((ciForm.rats || {})[r.ratId] || {}).dead);
+    const noFeedInput = ciForm.waterRemaining === '' && ciForm.foodRemaining === '' && ciForm.waterScale === ''
+                     && ciForm.fillScale === '' && !ciForm._fillManual;
+    if (deadPicked.length && noFeedInput) {
+        const lastFeed = ciBaseline(savingCage);
+        if (!confirm(`${deadPicked.map(r => r.ratId).join(', ')} 사망만 저장합니다.\n\n` +
+                     `사망일 ${dateStr}${ciIsBackdated() ? ` (오늘 ${getTodayStr()} 아님 — 작업일로 고른 날)` : ''}\n` +
+                     `물 · 사료를 재지 않았으므로 급여 기록은 만들지 않습니다.` +
+                     (lastFeed ? `\n이 케이지 섭취량 기록은 마지막으로 잰 ${lastFeed.dateStr}에서 끝납니다.` : '') +
+                     `\n\n날짜가 다르면 취소하고, 목록 화면 맨 위 「작업일」을 사망을 발견한 날로 바꾼 뒤 다시 저장하세요.\n계속할까요?`)) return;
+        await ciSaveDeathOnly(savingCage, occ, deadPicked, dateStr, now, by);
+        return;
+    }
+
     if (!measured && !filled) {
         ciSaving = false; ciBusy(false);
         return alert('입력된 값이 없습니다.');
+    }
+
+    // 물을 가는 날은 새 통을 건다 (2026-11-09 사용자). 그 통의 빈 무게를 안 넣었으면 등록된 값으로 뺀 것이라 한 번 묻는다.
+    // 통마다 빈 무게가 몇 g씩 달라 채운 양 · 다음 구간 섭취량이 그만큼 어긋난다.
+    if (!ciForm.noWater && ciTareOf(savingCage) > 0 && ciForm.fillScale !== '' && !(Number(ciForm.newTare) > 0)
+        && ciFillTareOf() > 0) {
+        if (!confirm(`2단계 「새 통 빈 무게」가 비어 있습니다.\n\n` +
+                     `등록된 ${ciFillTareOf()} g을 빼서 채운 물을 ${Number(ciForm.waterGiven).toFixed(0)} mL로 계산했습니다.\n` +
+                     `새로 건 통의 빈 무게가 이와 다르면 그만큼 채운 양이 틀립니다.\n\n` +
+                     `이대로 저장할까요?\n(취소 → 2단계에 빈 무게를 넣고 다시 저장)`)) return;
     }
 
     // 채운 통 무게 없이 저장되면 채울 물 칸의 기본값(지난번 채운 양)이 오늘 채운 양으로 굳는다.
@@ -2236,15 +2257,14 @@ async function ciSave() {
         feed.sumBW = bwSum > 0 ? Number(bwSum.toFixed(0)) : null;           // 없으면 null — 덮어쓸 때 옛 값 잔존 방지
         feed.sumBWMeasured = bwAll > 0 ? Number(bwAll.toFixed(0)) : null;   // 그날 실제로 잰 전체 합
 
-        // 물통 교체: 새 통 무게는 이 자리에 등록해 '다음 회차부터' 적용한다.
-        // 오늘 측정은 위에서 이미 옛 통 무게로 계산됐다.
+        // 새로 건 통: 빈 무게를 기록에 남기고, 700 통이면 이 자리에 등록해 '다음 회차 잔량'에 쓴다.
+        // 오늘 잔량은 위에서 이미 떼어낸 옛 통 무게로 계산됐다. 1000 통은 다음 회차에 fillBottleTare 로 읽는다.
+        // (예전엔 「오늘 물통을 새것으로 갈았음」을 따로 켰다 — 물을 가는 날이 곧 통을 가는 날이라 합쳤다)
         let swapTo = null;
-        if (ciForm.bottleSwap) {
-            swapTo = Number(ciForm.newTare);
-            if (!(swapTo > 0)) return alert('새 물통의 빈 통 무게를 입력하세요.');
-            feed.bottleSwapped = true;
-            feed.newBottleTare = swapTo;
-        }
+        const nt = Number(ciForm.newTare);
+        feed.newBottleTare = (!ciForm.noWater && nt > 0) ? nt : null;
+        if (!ciForm.noWater && nt > 0 && ciForm.bottleSize !== CI_BOTTLE_BIG) swapTo = nt;
+        feed.bottleSwapped = !!swapTo;
 
         // 오늘 이미 입력한 케이지면 새로 만들지 않고 덮어쓴다.
         // (두 줄이 생기면 다음 구간이 '몇 분짜리'로 잡혀 섭취량 계산이 망가짐)
@@ -2318,7 +2338,6 @@ async function ciSave() {
 
             // 물통 교체를 끄고 다시 저장: 교체 표시를 지우고, 자리에 등록했던 새 통 무게를 옛 통 무게로 되돌린다
             if (ex.bottleSwapped && !feed.bottleSwapped) {
-                feed.bottleSwapped = false; feed.newBottleTare = null;
                 // 떼어낸 통이 1000 통이었으면 ex.bottleTare 는 1000 통 무게라 자리(700 통) 값으로 쓸 수 없다
                 restoreTare = ciIsBig(ciBaseline(ciCurrent)) ? null : (Number(ex.bottleTare) || null);
                 if (!restoreTare) alert(`물통 교체 표시는 지웁니다. 다만 이 자리의 빈 통 무게(지금 ${v(ex.newBottleTare)} g)를 되돌릴 값을 몰라 그대로 둡니다.\n「케이지 현황」에서 빈 통 무게를 확인해주세요.`);
@@ -2465,6 +2484,70 @@ async function ciSave() {
     } finally {
         ciSaving = false;
         ciBusy(false);
+    }
+}
+
+// 사망만 저장 (ciSave 에서 물 · 사료 입력이 하나도 없고 사망 표시만 있을 때).
+// 개체 상태 · 사망일 · 그날 잰 체중 · 메모를 한 배치로 쓰고, 재실을 닫고, 마지막 생존 확인일을 남긴다.
+// cageFeeding 행은 만들지 않는다. ciSave 의 try/finally 안에서 불리므로 저장 중 표시는 거기서 걷힌다.
+async function ciSaveDeathOnly(cageId, occ, dead, dateStr, now, by) {
+    const fv = r => (ciForm.rats && ciForm.rats[r.ratId]) || {};
+    const ids = dead.map(r => r.ratId);
+    const ratRefs = {};
+    for (let i = 0; i < ids.length; i += 10) {
+        const rs = await db.collection('rats').where('ratId', 'in', ids.slice(i, i + 10)).get();
+        rs.forEach(d => { ratRefs[d.data().ratId] = d.ref; });
+    }
+    const missing = ids.filter(id => !ratRefs[id]);
+    if (missing.length) { alert(`개체 문서를 찾지 못했습니다: ${missing.join(', ')}\n저장하지 않습니다.`); return; }
+
+    const batch = db.batch();
+    for (const r of occ) {
+        const f = fv(r);
+        // 체중을 쟀으면 남긴다 (사체 무게 포함) — 산 개체도 같이
+        if (f.weight !== '' && Number(f.weight) > 0) {
+            batch.set(db.collection('measurements').doc(), {
+                ratId: r.ratId, weight: Number(f.weight), date: dateStr, timepoint: 'Manual',
+                source: 'cageInput', cageId: String(cageId), timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        const total = (f.act || 0) + (f.fur || 0) + (f.eye || 0);
+        if (total > 0 || f.note) {
+            batch.set(db.collection('dailyLogs').doc(), {
+                ratId: r.ratId, date: dateStr, timestamp: new Date().toLocaleTimeString(),
+                scores: { activity: f.act || 0, fur: f.fur || 0, eye: f.eye || 0 }, totalScore: total, note: f.note || '',
+                source: 'cageInput', cageId: String(cageId), createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+    }
+    dead.forEach(r => batch.update(ratRefs[r.ratId], { status: '사망', deathDate: dateStr, deathFoundAt: now }));
+    await batch.commit();
+
+    const housingFail = [];
+    for (const r of dead) { if (await closeOpenHousing(r.ratId, '사망') < 0) housingFail.push(r.ratId); }
+    if (housingFail.length) alert(`사망은 저장됐지만 ${housingFail.join(', ')}의 재실 종료가 실패했습니다.\n「케이지 현황」에서 재실을 닫아주세요.`);
+    for (const r of dead) {
+        try { await ratRefs[r.ratId].update({ lastAliveDate: (await lastAliveDateFor(r.ratId, dateStr)) || null }); }
+        catch (e) { console.warn('lastAliveDate 저장 실패', r.ratId, e); }
+    }
+
+    clearRatsCache();
+    if (typeof invalidateDashboardDom === 'function') invalidateDashboardDom();
+    const houseSnap = await db.collection('ratHousing').where('to', '==', null).get();
+    const rats = await getRatsWithCache(true);
+    ciRats = rats.filter(r => String(r.cohort) === String(ciCohort));
+    ciHousing = [];
+    houseSnap.forEach(d => { const v = d.data(); if (ciRats.some(r => r.ratId === v.ratId)) ciHousing.push(v); });
+
+    // 산 개체가 남았으면 같은 케이지를 다시 열고, 비었으면 목록으로
+    if (ciOccupants(cageId).length) ciOpen(cageId);
+    else { ciCurrent = null; await ciLoad(ciViewToken); }   // 빈 케이지는 목록에서 빠지게 새로 읽는다
+    window.scrollTo(0, 0);
+
+    if (typeof createNewTab === 'function'
+        && confirm(`${ids.join(', ')} 사망(${dateStr})으로 저장했습니다.\n\n지금 사인(COD)을 입력할까요?\n취소하면 「미처리」 목록에 남습니다.`)) {
+        createNewTab('blank');
+        go('detail', ids[0], activeTabId);
     }
 }
 

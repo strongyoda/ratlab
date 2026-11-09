@@ -61,7 +61,7 @@ function pcRatsTable(rats) {
     const head = ['cohort', 'group', 'ratId', 'num', 'status', 'sham_or_naive', 'arrival_date', 'arrival_age_w', 'ovx_date',
         'surgery_date', 'age_at_surgery_w', 'nacl_start_date', 'nacl_end_date', 'bapn_start_date', 'dose_start_date', 'death_date', 'pod_at_death', 'last_alive_date', 'pod_last_alive', 'pod_death_mid', 'age_at_death_w',
         'cod', 'cod_secondary', 'are', 'are_lesions', 'are_macro', 'are_micro', 'are_unknown', 'are_sites',
-        'sample_type', 'sample_date', 'sample_memo', 'memo'];
+        'sample_type', 'sample_date', 'sample_memo', 'blood_tests', 'memo'];
     const rows = rats.map(r => {
         const surg = pcDate(r.surgeryDate), death = pcDate(r.deathDate), c = pcAreCounts(r);
         const list = Array.isArray(r.areList) ? r.areList : [];
@@ -70,7 +70,9 @@ function pcRatsTable(rats) {
             surg, pcAgeW(r, surg), pcDate(r.naclStartDate), pcDate(r.naclEndDate), pcDate(r.bapnStartDate), pcDate(r.doseStartDate), death, pcDays(surg, death), ...pcLastAlive(r, surg, death), pcAgeW(r, death),
             pcCod(r), (r.codSec || []).join('; '), pcAreMain(r), c.macro + c.micro + c.unk, c.macro, c.micro, c.unk,
             list.map(l => `${l.type} ${pcLoc(l)}`).join('; '),
-            r.sampleType || '', pcDate(r.sampleDate), r.sampleMemo || '', r.generalMemo || ''];
+            r.sampleType || '', pcDate(r.sampleDate), r.sampleMemo || '',
+            // 혈액검사: 「항목 수치 단위 (날짜)」를 ; 로 이어 한 칸에 (rat_detail.js bloodTestsText)
+            typeof bloodTestsText === 'function' ? bloodTestsText(r.bloodTests) : '', r.generalMemo || ''];
     });
     return [head, ...rows];
 }
