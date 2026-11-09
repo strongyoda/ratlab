@@ -1144,3 +1144,40 @@ async function lastAliveDateFor(ratId, deathDate) {
     fs.forEach(x => take(x.data().dateStr));
     return best;
 }
+
+// ============================================================
+//  뒤로가기 · 창 닫힘 막기 (2026-11-09 사용자: 입력 중 폰 뒤로가기에 창이 닫혀 입력이 다 날아갔다)
+//  이 앱은 화면을 바꿔도 주소가 그대로라 브라우저 기록이 한 칸뿐이다 → 뒤로가기 = 앱을 떠남.
+//  저장 안 한 입력이 생기면(입력 이벤트 = 사용자 동작이라 크롬이 건너뛰지 않는다) 기록을 한 칸 끼워 두고,
+//  뒤로가기가 그 칸을 빼면(popstate) 정말 나갈지 묻는다. 끝내 페이지를 떠나면 beforeunload 가 한 번 더 막는다.
+//  각 화면은 registerUnsavedCheck(() => '무엇이 저장 안 됐는지' | null) 로 등록한다.
+// ============================================================
+const appUnsavedChecks = [];
+function registerUnsavedCheck(fn) { appUnsavedChecks.push(fn); }
+function appUnsavedReason() {
+    for (const f of appUnsavedChecks) { try { const r = f(); if (r) return r; } catch (e) { /* 화면이 아직 안 열림 */ } }
+    return null;
+}
+let appBackArmed = false, appLeaving = false;
+function appArmBack() {
+    if (appBackArmed) return;
+    try { history.pushState({ rlmGuard: Date.now() }, ''); appBackArmed = true; } catch (e) { /* 무시 */ }
+}
+['input', 'change', 'click'].forEach(t => document.addEventListener(t, () => {
+    // 입력이 반영된 뒤에 판정한다 (같은 이벤트 안에서는 아직 폼 값이 안 바뀌었을 수 있다)
+    setTimeout(() => { if (appUnsavedReason()) appArmBack(); }, 0);
+}, true));
+window.addEventListener('popstate', () => {
+    appBackArmed = false;
+    const why = appUnsavedReason();
+    if (!why) { appLeaving = true; history.back(); return; }   // 저장을 마친 뒤의 뒤로가기는 그대로 나간다
+    if (confirm(`${why}\n\n뒤로 가면 입력한 값이 사라집니다. 정말 나갈까요?\n(취소 → 이 화면에 그대로 남습니다)`)) {
+        appLeaving = true; history.back();
+    } else {
+        appArmBack();
+    }
+});
+window.addEventListener('beforeunload', e => {
+    if (appLeaving || !appUnsavedReason()) return;
+    e.preventDefault(); e.returnValue = '';
+});

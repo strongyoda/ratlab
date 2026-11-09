@@ -59,7 +59,7 @@ const ciEsc = s => String(s ?? '').replace(/[&<>"']/g,
 // (따옴표 든 ID 하나에 그 버튼이 죽는 것을 막고, 키보드 접근도 유지된다)
 function ciOnClick(e) {
     const sc = e.target.closest('[data-ci-score]');
-    if (sc) { ciScore(sc.dataset.rat, sc.dataset.key, Number(sc.dataset.n)); return; }
+    if (sc) { ciScore(sc.dataset.rat, sc.dataset.key, Number(sc.dataset.n)); ciMarkDirty(); return; }
     const op = e.target.closest('[data-ci-open]');
     if (op) ciOpen(op.dataset.ciOpen);
 }
@@ -70,6 +70,66 @@ function ciOnInput(e) {
 function ciOnChange(e) {
     const el = e.target.closest('[data-ci-rat-check]');
     if (el) ciSetRat(el.dataset.rat, 'dead', el.checked);
+}
+
+// ---------- 저장 안 한 입력 지키기 (2026-11-09 사용자: 폰 뒤로가기에 창이 닫혀 입력이 날아갔다) ----------
+// ① global.js 뒤로가기 막기에 '저장 안 함' 여부를 알려 준다.
+// ② 입력할 때마다 이 기기(localStorage)에 임시로 적어 둔다. 창이 끝내 닫혀도 다시 열면 「이어서 하기」로 되살린다.
+//    한 칸만 둔다(지금 입력 중인 케이지). 저장에 성공하거나 「버리기」를 누르면 지운다. 다른 기기와는 공유되지 않는다.
+const CI_DRAFT_KEY = 'rlm-ci-draft';
+const CI_DRAFT_FIELDS = ['waterScale', 'waterRemaining', 'foodRemaining', 'fillScale', 'waterGiven', 'foodGiven', 'bottleCount',
+                         'noWater', 'noFood', 'newTare', 'bottleSize', 'handlings', 'manualPc', 'note', 'flags', '_fillManual'];
+let ciDraftTimer = null;
+function ciMarkDirty() {
+    if (!ciCurrent || !ciForm || !ciForm.rats) return;
+    ciForm._dirty = true;
+    clearTimeout(ciDraftTimer);
+    ciDraftTimer = setTimeout(ciDraftSave, 300);
+}
+function ciDraftSave() {
+    if (!ciCurrent || !ciForm || !ciForm._dirty) return;
+    const form = {};
+    CI_DRAFT_FIELDS.forEach(k => { form[k] = ciForm[k]; });
+    form.rats = ciForm.rats;
+    try {
+        localStorage.setItem(CI_DRAFT_KEY, JSON.stringify({
+            cohort: String(ciCohort), cageId: String(ciCurrent), date: ciDate || getTodayStr(), savedAt: Date.now(), form }));
+    } catch (e) { /* 사생활 모드 등 — 임시 저장 없이 진행 */ }
+}
+function ciDraftGet() { try { return JSON.parse(localStorage.getItem(CI_DRAFT_KEY) || 'null'); } catch (e) { return null; } }
+function ciDraftClear() { clearTimeout(ciDraftTimer); try { localStorage.removeItem(CI_DRAFT_KEY); } catch (e) { /* 무시 */ } }
+// 지금 코호트 · 작업일의 임시 입력 (cageId 를 주면 그 케이지 것만). 하루 넘은 것은 버린다
+function ciDraftFor(cageId) {
+    const d = ciDraftGet();
+    if (!d || !d.form || String(d.cohort) !== String(ciCohort) || d.date !== (ciDate || getTodayStr())) return null;
+    if (Date.now() - Number(d.savedAt) > 24 * 3600e3) return null;
+    if (cageId !== undefined && String(d.cageId) !== String(cageId)) return null;
+    return d;
+}
+function ciDraftTime(d) { return new Date(Number(d.savedAt)).toTimeString().slice(0, 5); }
+function ciDraftRestore() {
+    const d = ciDraftFor(ciCurrent);
+    if (!d) return;
+    CI_DRAFT_FIELDS.forEach(k => { if (d.form[k] !== undefined) ciForm[k] = d.form[k]; });
+    Object.entries(d.form.rats || {}).forEach(([id, f]) => { if (ciForm.rats[id]) Object.assign(ciForm.rats[id], f); });   // 지금 재실한 개체만
+    ciForm._dirty = true;
+    ciForm._draftOffer = null;
+    ciRenderForm();
+}
+function ciDraftDiscard() {
+    if (!confirm('임시로 남아 있던 입력을 버릴까요?')) return;
+    ciDraftClear();
+    ciForm._draftOffer = null;
+    ciRenderForm();
+}
+// 목록의 「이어서 하기」
+function ciDraftResume(cageId) { ciOpen(cageId); ciDraftRestore(); window.scrollTo(0, 0); }
+if (typeof registerUnsavedCheck === 'function') {
+    registerUnsavedCheck(() => {
+        if (!ciCurrent || !ciForm || !ciForm._dirty) return null;
+        const cg = ciCages.find(c => String(c.id) === String(ciCurrent));
+        return `케이지별 입력(${cg ? cg.number + '번' : ''})에 저장 안 한 입력이 있습니다.`;
+    });
 }
 
 // ---------- 진입점 ----------
@@ -105,6 +165,9 @@ async function renderCageInputView(main) {
     bodyEl.addEventListener('click', ciOnClick);
     bodyEl.addEventListener('input', ciOnInput);
     bodyEl.addEventListener('change', ciOnChange);
+    // 입력이 하나라도 생기면 '저장 안 함' 표시 + 임시 저장 (뒤로가기·창 닫힘 대비)
+    bodyEl.addEventListener('input', ciMarkDirty);
+    bodyEl.addEventListener('change', ciMarkDirty);
 
     const sel = document.getElementById('ci-cohort-sel');
     try {
@@ -398,6 +461,16 @@ function ciRenderList() {
     <div class="card" style="background:var(--stock-green-soft); border:1px solid var(--approve);">
         <b class="stamp-in" style="display:inline-block; color:var(--approve); border:2px solid var(--approve); padding:2px 9px; border-radius:2px;">오늘 입력이 모두 끝났습니다.</b>
     </div>` : ''}`;
+
+    // 창이 닫혀 저장 못 한 입력이 남아 있으면 목록 맨 위에서 이어서 하게 한다
+    const d = ciDraftFor();
+    const dc = d && ciCages.find(c => String(c.id) === String(d.cageId));
+    if (dc) body.insertAdjacentHTML('afterbegin', `
+    <div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C; color:#6B571C; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:180px;"><b>${ciEsc(dc.number)}번 케이지에 저장 못 한 입력이 있습니다</b>
+            <span class="mono" style="font-size:0.8rem;">(${ciDraftTime(d)} 입력)</span></div>
+        <button type="button" class="btn-small" onclick="ciDraftResume('${ciEsc(dc.id)}')" style="background:var(--ink); color:var(--paper);">이어서 하기</button>
+    </div>`);
 }
 
 // ---------- 주말 물 예보 ----------
@@ -604,6 +677,9 @@ function ciOpen(cageId) {
     // 안 되는 항목은 제대로 들어갔는지 확인할 길이 아예 없었다.
     if (last && last.dateStr === (ciDate || getTodayStr())) ciRestoreToday(last);
 
+    // 이 케이지에 저장 못 하고 남은 임시 입력이 있으면 맨 위에서 묻는다 (ciDraftRestore)
+    ciForm._draftOffer = ciDraftFor(cageId);
+
     ciRenderForm();
 }
 
@@ -719,8 +795,17 @@ function ciRenderForm() {
     const newTareIn = !ciForm.noWater && Number(ciForm.newTare) > 0;
     const fillTare = ciFillTareOf();
 
+    const dOffer = ciForm._draftOffer;
     body.innerHTML = `
     ${ciLastSavedBanner()}
+    ${dOffer ? `<div class="card" style="background:var(--stock-canary-soft); border:1px solid #E3C55C; color:#6B571C;">
+        <b>저장하지 못한 입력이 남아 있습니다</b> <span class="mono" style="font-size:0.8rem;">(${ciDraftTime(dOffer)} 입력)</span>
+        <div style="font-size:0.8rem; margin-top:3px;">창이 닫히거나 뒤로가기로 나가기 전에 넣던 값입니다.</div>
+        <div style="display:flex; gap:8px; margin-top:8px;">
+            <button type="button" class="btn-small" onclick="ciDraftRestore()" style="background:var(--ink); color:var(--paper);">불러오기</button>
+            <button type="button" class="btn-small" onclick="ciDraftDiscard()" style="background:var(--paper); color:var(--ink); outline:1px solid var(--rule);">버리기</button>
+        </div>
+    </div>` : ''}
     <div class="db-sheet">
     <div class="card" style="padding-bottom:6px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1070,6 +1155,7 @@ function ciSetBottleSize(size) {
     // 통 크기를 바꾸면 다른 통이다 — 앞 크기로 적은 빈 무게를 그대로 두면 틀린 값으로 뺀다
     if (ciForm.bottleSize !== size) ciForm.newTare = '';
     ciForm.bottleSize = size;
+    ciMarkDirty();
     ciRecalcFill();
     ciRenderForm();
 }
@@ -2411,6 +2497,7 @@ async function ciSave() {
         else if (restoreTare) batch.set(db.collection('cages').doc(String(ciCurrent)), { bottleTare: restoreTare }, { merge: true });
 
         await batch.commit();
+        ciDraftClear();   // 저장됐으니 임시 입력은 필요 없다
 
         // 커밋이 끝난 뒤에만 메모리 캐시를 채운다 — 실패했는데 화면만 저장된 척하지 않도록.
         // (다시 열었을 때 되살리기용. 예전엔 화면을 처음 열 때만 채워서, 저장 후 다시 열면
@@ -2522,6 +2609,7 @@ async function ciSaveDeathOnly(cageId, occ, dead, dateStr, now, by) {
     }
     dead.forEach(r => batch.update(ratRefs[r.ratId], { status: '사망', deathDate: dateStr, deathFoundAt: now }));
     await batch.commit();
+    ciDraftClear();
 
     const housingFail = [];
     for (const r of dead) { if (await closeOpenHousing(r.ratId, '사망') < 0) housingFail.push(r.ratId); }

@@ -301,10 +301,14 @@ async function rdRenderCageInfo(ratId, containerId) {
     }
 }
 
-// 페이지를 벗어날 때 저장 안 한 변경이 있으면 알린다
-window.addEventListener('beforeunload', (e) => {
-    if (rdDirtyCount()) { e.preventDefault(); e.returnValue = ''; }
-});
+// 페이지를 벗어날 때(뒤로가기 포함) 저장 안 한 변경이 있으면 알린다 — global.js 뒤로가기 막기
+if (typeof registerUnsavedCheck === 'function') {
+    registerUnsavedCheck(() => rdDirtyCount() ? `랫드 상세(${(rdRat && rdRat.ratId) || ''})에 저장 안 한 변경이 ${rdDirtyCount()}개 있습니다.` : null);
+} else {
+    window.addEventListener('beforeunload', (e) => {
+        if (rdDirtyCount()) { e.preventDefault(); e.returnValue = ''; }
+    });
+}
 
 
 // ==========================================
